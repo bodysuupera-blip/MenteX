@@ -22,6 +22,22 @@ jobs:
           unzip -o MENTEX_Android_1_2_CloudBuild.zip -d mentex
           find mentex -maxdepth 3 -type f | head -50
 
+      - name: Corrigir compatibilidade JVM
+        run: |
+          APP_GRADLE=$(find mentex -path '*/app/build.gradle' -type f | head -1)
+          echo "Arquivo encontrado: $APP_GRADLE"
+
+          cat >> "$APP_GRADLE" <<'EOF'
+
+          // Correção para compatibilidade Java/Kotlin JVM 17
+          android {
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
+          EOF
+
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v6
         with:
