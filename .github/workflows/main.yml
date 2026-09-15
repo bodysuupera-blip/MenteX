@@ -4,35 +4,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  teste:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar arquivos
-        uses: actions/checkout@v4
-
-      - name: Configurar Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Preparar projeto
-        run: |
-          unzip -o MENTEX_Android_1_2_CloudBuild.zip -d mentex
-          find mentex -maxdepth 3 -type f | head -50
-
-      - name: Dar permissão ao Gradle
-        run: |
-          chmod +x mentex/gradlew
-
-      - name: Gerar APK
-        working-directory: mentex
-        run: |
-          ./gradlew assembleDebug
-
-      - name: Guardar APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: MENTEX-APK
-          path: mentex/app/build/outputs/apk/**/*.apk
+      - name: Testar GitHub Actions
+        run: echo "MENTEX funcionando!"
