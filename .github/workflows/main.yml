@@ -20,19 +20,19 @@ jobs:
       - name: Preparar projeto MENTEX
         run: |
           unzip -o MENTEX_Android_1_2_CloudBuild.zip -d mentex
-          find mentex -maxdepth 2 -type f | head -50
+          find mentex -maxdepth 3 -type f | head -50
 
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '8.7'
 
-      - name: Compilar APK
+      - name: Gerar APK
         run: |
           cd mentex
           gradle assembleDebug --stacktrace
 
-      - name: Enviar APK
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-APK
