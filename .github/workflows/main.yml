@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - principal
 
 permissions:
   contents: read
@@ -17,7 +18,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configurar Java
+      - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -39,9 +40,18 @@ jobs:
           cd /tmp/mentex
           gradle assembleDebug --stacktrace
 
+      - name: Localizar APK
+        run: |
+          find /tmp/mentex -type f -name "*.apk" -print
+
       - name: Copiar APK
         run: |
-          cp /tmp/mentex/app/build/outputs/apk/debug/app-debug.apk ./MENTEX-2.8.apk
+          APK=$(find /tmp/mentex -type f -name "app-debug.apk" | head -n 1)
+          if [ -z "$APK" ]; then
+            echo "APK não encontrado"
+            exit 1
+          fi
+          cp "$APK" ./MENTEX-2.8.apk
           ls -lh ./MENTEX-2.8.apk
 
       - name: Enviar APK
