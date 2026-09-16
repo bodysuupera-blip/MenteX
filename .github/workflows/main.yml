@@ -30,8 +30,8 @@ unzip -o MENTEX_Android_2_7_Interface_Visual.zip -d /tmp/mentex
 
       - name: Gerar APK
         run: |
-          cd mentex
-          gradle assembleDebug --stacktrace
+cd /tmp/mentex
+gradle assembleDebug --stacktrace
 
       - name: Enviar APK
         uses: actions/upload-artifact@v4
