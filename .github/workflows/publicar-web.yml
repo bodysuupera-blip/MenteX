@@ -1,0 +1,69 @@
+name: Publicar MENTEX Web
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - principal
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+
+      - name: Preparar MENTEX Web
+        run: |
+          rm -rf /tmp/mentex-web
+          mkdir -p /tmp/mentex-web
+          ZIP=$(find . -maxdepth 1 -type f -name 'MENTEX_Web_200_GitHub_Pages*.zip' | head -1)
+
+          if [ -z "$ZIP" ]; then
+            echo "ERRO: ZIP do MENTEX Web não encontrado."
+            exit 1
+          fi
+
+          unzip -o "$ZIP" -d /tmp/mentex-web
+
+          INDEX=$(find /tmp/mentex-web -type f -name 'index.html' | head -1)
+
+          if [ -z "$INDEX" ]; then
+            echo "ERRO: index.html não encontrado."
+            exit 1
+          fi
+
+          PASTA=$(dirname "$INDEX")
+
+          rm -rf _site
+          mkdir -p _site
+          cp -a "$PASTA"/. _site/
+
+          echo "=== ARQUIVOS DO SITE ==="
+          find _site -maxdepth 3 -type f | head -100
+
+      - name: Configurar GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Preparar publicação
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./_site
+
+      - name: Publicar no GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
