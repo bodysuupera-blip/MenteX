@@ -23,71 +23,11 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Procurar ZIP do MENTEX
-        run: |
-          echo "ZIPs encontrados:"
-          ls -lh MENTEX_Android_2_8*.zip
-
       - name: Preparar projeto MENTEX
         run: |
           rm -rf /tmp/mentex
           mkdir -p /tmp/mentex
-
-          ZIP=$(ls -t MENTEX_Android_2_8*.zip | head -n 1)
-
-          echo "Usando: $ZIP"
-
-          unzip -o "$ZIP" -d /tmp/mentex
-
-      - name: Ativar tela inteira
-        run: |
-          FILE=$(find /tmp/mentex -type f -name "MainActivity.kt" | head -n 1)
-
-          echo "MainActivity encontrada:"
-          echo "$FILE"
-
-          python3 - "$FILE" <<'PY'
-          import sys
-
-          file = sys.argv[1]
-
-          with open(file, "r", encoding="utf-8") as f:
-              text = f.read()
-
-          codigo = '''
-                  // MENTEX - Tela inteira
-                  window.setFlags(
-                      android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN,
-                      android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN
-                  )
-
-                  window.decorView.systemUiVisibility =
-                      android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
-                      android.view.View.SYSTEM_UI_FLAG_FULLSCREEN or
-                      android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-                      android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
-                      android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
-                      android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-          '''
-
-          if "MENTEX - Tela inteira" not in text:
-              marcador = "super.onCreate(savedInstanceState)"
-              text = text.replace(
-                  marcador,
-                  marcador + "\\n" + codigo,
-                  1
-              )
-
-          with open(file, "w", encoding="utf-8") as f:
-              f.write(text)
-
-          print("Tela inteira ativada com sucesso.")
-          PY
-
-      - name: Verificar projeto
-        run: |
-          find /tmp/mentex -name "MainActivity.kt" -print
-          find /tmp/mentex/app/src/main -maxdepth 3 -type f | head -50
+          unzip -o MENTEX_Android_2_8_1_Corrigido.zip -d /tmp/mentex
 
       - name: Preparar Gradle
         uses: gradle/actions/setup-gradle@v6
@@ -99,14 +39,13 @@ jobs:
           cd /tmp/mentex
           gradle assembleDebug --stacktrace
 
+      - name: Procurar APK
+        run: |
+          find /tmp/mentex/app/build/outputs -type f -name "*.apk" -print
+
       - name: Copiar APK
         run: |
-          cp /tmp/mentex/app/build/outputs/apk/debug/app-debug.apk ./MENTEX-TELA-INTEIRA.apk
-          ls -lh ./MENTEX-TELA-INTEIRA.apk
+          cp /tmp/mentex/app/build/outputs/apk/debug/app-debug.apk ./MENTEX-2.8.1.apk
+          ls -lh ./MENTEX-2.8.1.apk
 
-      - name: Enviar APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: MENTEX-TELA-INTEIRA
-          path: ./MENTEX-TELA-INTEIRA.apk
-          if-no-files-found: error
+      - name: Enviar
