@@ -30,24 +30,25 @@ jobs:
           echo "Arquivos disponíveis:"
           ls -lh
           echo ""
-          echo "Procurando ZIP atualizado:"
-          ls -lh MENTEX_Android_2_8_Voz_Atualizada.zip
+          echo "Verificando ZIP atualizado:"
+          test -f MENTEX_Android_2_8_Voz_Atualizada.zip
+          echo "ZIP atualizado encontrado!"
 
       - name: Preparar projeto MENTEX
         run: |
           rm -rf /tmp/mentex
           mkdir -p /tmp/mentex
-
           unzip -o MENTEX_Android_2_8_Voz_Atualizada.zip -d /tmp/mentex
 
           echo ""
-          echo "Projeto extraído:"
-          find /tmp/mentex -maxdepth 3 -type f | head -100
+          echo "Projeto extraído com sucesso."
 
       - name: Verificar áudio da voz
         run: |
-          echo "Procurando arquivos de áudio:"
-          find /tmp/mentex -type f -name "*.mp3" -o -name "*.wav" -o -name "*.ogg" -print
+          echo "Arquivos de áudio encontrados:"
+          find /tmp/mentex -type f -name "*.mp3" -print
+          echo ""
+          echo "Verificação concluída."
 
       - name: Preparar Gradle
         uses: gradle/actions/setup-gradle@v6
@@ -57,4 +58,30 @@ jobs:
       - name: Gerar APK
         run: |
           cd /tmp/mentex
-          grad
+          gradle assembleDebug --stacktrace
+
+      - name: Procurar APK
+        run: |
+          echo "Procurando APK:"
+          find /tmp/mentex -type f -name "*.apk" -print
+
+      - name: Copiar APK
+        run: |
+          APK=$(find /tmp/mentex -type f -name "app-debug.apk" | head -n 1)
+
+          if [ -z "$APK" ]; then
+            echo "ERRO: APK não encontrado."
+            exit 1
+          fi
+
+          cp "$APK" ./MENTEX-2.8-VOZ-ATUALIZADA.apk
+
+          echo "APK pronto:"
+          ls -lh ./MENTEX-2.8-VOZ-ATUALIZADA.apk
+
+      - name: Enviar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MENTEX-2.8-VOZ-ATUALIZADA
+          path: ./MENTEX-2.8-VOZ-ATUALIZADA.apk
+          if-no-files-found: error
