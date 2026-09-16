@@ -2,6 +2,9 @@ name: Gerar APK MENTEX
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -14,27 +17,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configurar Java
+      - name: Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      mkdir -p /tmp/mentex
-unzip -o MENTEX_Android_2_7_Interface_Visual.zip -d /tmp/mentex
+      - name: Preparar projeto MENTEX
+        run: |
+          mkdir -p /tmp/mentex
+          unzip -o MENTEX_Android_2_7_Interface_Visual.zip -d /tmp/mentex
 
-      - name: Configurar Gradle
+      - name: Preparar Gradle
         uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '8.7'
 
       - name: Gerar APK
         run: |
-cd /tmp/mentex
-gradle assembleDebug --stacktrace
+          cd /tmp/mentex
+          gradle assembleDebug
 
       - name: Enviar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-APK
-          path: mentex/app/build/outputs/apk/debug/app-debug.apk
+          path: /tmp/mentex/app/build/outputs/apk/debug/app-debug.apk
