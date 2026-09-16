@@ -14,6 +14,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Baixar código do repositório
         uses: actions/checkout@v4
 
@@ -22,14 +23,19 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
 
       - name: Preparar projeto MENTEX
         run: |
           rm -rf /tmp/mentex
           mkdir -p /tmp/mentex
           unzip -o MENTEX_Android_2_8_1_Corrigido.zip -d /tmp/mentex
+          echo "Projeto preparado:"
+          ls -la /tmp/mentex
+          echo "MainActivity:"
+          sed -n '1,220p' /tmp/mentex/app/src/main/java/br/com/mentex/game/MainActivity.kt
 
-      - name: Preparar Gradle
+      - name: Configurar Gradle 8.7
         uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '8.7'
@@ -39,17 +45,18 @@ jobs:
           cd /tmp/mentex
           gradle assembleDebug --stacktrace
 
-      - name: Procurar APK
+      - name: Conferir APK
         run: |
-          find /tmp/mentex/app/build/outputs -type f -name "*.apk" -print
+          ls -lh /tmp/mentex/app/build/outputs/apk/debug/
+          test -f /tmp/mentex/app/build/outputs/apk/debug/app-debug.apk
 
       - name: Copiar APK
         run: |
-          cp /tmp/mentex/app/build/outputs/apk/debug/app-debug.apk ./MENTEX-2.8.1.apk
-          ls -lh ./MENTEX-2.8.1.apk
+          cp /tmp/mentex/app/build/outputs/apk/debug/app-debug.apk ./MENTEX-2.8.2.apk
+          ls -lh ./MENTEX-2.8.2.apk
 
       - name: Enviar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-APK-2.8.1
-          path: ./MENTEX-2.8.1.apk
+          name: MENTEX-APK-2.8.2
+          path: ./MENTEX-2.8.2.apk
