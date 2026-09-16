@@ -19,7 +19,7 @@ jobs:
 
       - name: Preparar projeto
         run: |
-          unzip -o MENTEX_Android_1_2_CloudBuild.zip -d mentex
+          unzip -o MENTEX_Android_1_2_Corrigido_JVM17.zip -d mentex
           find mentex -maxdepth 3 -type f | head -50
 
       - name: Corrigir compatibilidade JVM
