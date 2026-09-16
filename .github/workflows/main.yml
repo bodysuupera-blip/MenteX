@@ -28,7 +28,7 @@ jobs:
         run: |
           rm -rf /tmp/mentex
           mkdir -p /tmp/mentex
-          unzip -o MENTEX_Android_2_8_Voz_Masculina_Palhaco.zip -d /tmp/mentex
+          unzip -o MENTEX_Android_2_8_Voz_Atualizada.zip -d /tmp/mentex
 
       - name: Preparar Gradle
         uses: gradle/actions/setup-gradle@v6
