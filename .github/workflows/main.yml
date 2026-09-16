@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar arquivos
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Configurar Java
@@ -23,7 +23,7 @@ jobs:
       - name: Preparar projeto MENTEX
         run: |
           mkdir -p mentex
-          unzip -o MENTEX_Android_2_0.zip -d mentex
+          unzip -o MENTEX_Android_1_2_Kotlin23.zip -d mentex
 
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v6
