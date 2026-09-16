@@ -1,4 +1,4 @@
-name: Gerar APK MENTEX 3.0
+name: Gerar APK MENTEX TESTE 999
 
 on:
   workflow_dispatch:
@@ -17,11 +17,11 @@ jobs:
       - name: Baixar código do repositório
         uses: actions/checkout@v4
 
-      - name: Preparar projeto MENTEX 3.0
+      - name: Preparar projeto MENTEX TESTE
         run: |
           rm -rf /tmp/mentex
           mkdir -p /tmp/mentex
-          unzip -o MENTEX_Android_3_0_200_Fases.zip -d /tmp/mentex
+          unzip -o MENTEX_Android_3_0_TESTE_999_Coracoes.zip -d /tmp/mentex
 
       - name: Configurar Java 17
         uses: actions/setup-java@v5
@@ -34,38 +34,36 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Conferir projeto
+      - name: Localizar projeto
         run: |
-          echo "=== PROJETO MENTEX 3.0 ==="
-          find /tmp/mentex -maxdepth 3 -type f | head -100
-
-          echo "=== ARQUIVOS GRADLE ==="
-          find /tmp/mentex \
-            -name "build.gradle*" \
-            -o -name "settings.gradle*"
+          echo "=== ARQUIVOS ==="
+          find /tmp/mentex -maxdepth 4 -type f | head -150
 
       - name: Gerar APK
         run: |
           cd /tmp/mentex
           gradle assembleDebug --stacktrace
 
-      - name: Localizar APK
+      - name: Encontrar APK
         run: |
           echo "=== APK GERADO ==="
-          find /tmp/mentex/app/build/outputs \
-            -type f \
-            -name "*.apk" \
-            -print
+          find /tmp/mentex -type f -name "*.apk" -print
 
       - name: Copiar APK
         run: |
-          cp /tmp/mentex/app/build/outputs/apk/debug/app-debug.apk \
-            ./MENTEX-3.0-200-Fases.apk
+          APK=$(find /tmp/mentex -type f -name "app-debug.apk" | head -1)
 
-          ls -lh ./MENTEX-3.0-200-Fases.apk
+          if [ -z "$APK" ]; then
+            echo "ERRO: APK não encontrado."
+            exit 1
+          fi
+
+          cp "$APK" ./MENTEX-TESTE-999-Coracoes.apk
+
+          ls -lh ./MENTEX-TESTE-999-Coracoes.apk
 
       - name: Enviar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-3.0-200-Fases
-          path: ./MENTEX-3.0-200-Fases.apk
+          name: MENTEX-TESTE-999-Coracoes
+          path: ./MENTEX-TESTE-999-Coracoes.apk
