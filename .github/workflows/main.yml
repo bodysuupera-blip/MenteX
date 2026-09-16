@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - principal
+      - main
 
 permissions:
   contents: read
@@ -14,7 +14,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
       - name: Baixar código do repositório
         uses: actions/checkout@v4
 
@@ -28,9 +27,7 @@ jobs:
         run: |
           rm -rf /tmp/mentex
           mkdir -p /tmp/mentex
-          unzip -o MENTEX_Android_2_8_1_Corrigido.zip -d /tmp/mentex
-          echo "Projeto MENTEX preparado"
-          ls -la /tmp/mentex
+          unzip -o MENTEX_Android_2_8_2_Tela_Inicial.zip -d /tmp/mentex
 
       - name: Configurar Gradle 8.7
         uses: gradle/actions/setup-gradle@v6
@@ -44,14 +41,11 @@ jobs:
 
       - name: Conferir APK
         run: |
-          echo "Procurando APK..."
-          find /tmp/mentex/app/build/outputs -type f -name "*.apk" -print
-          test -f /tmp/mentex/app/build/outputs/apk/debug/app-debug.apk
+          ls -lh /tmp/mentex/app/build/outputs/apk/debug/app-debug.apk
 
       - name: Copiar APK
         run: |
           cp /tmp/mentex/app/build/outputs/apk/debug/app-debug.apk ./MENTEX-2.8.2.apk
-          ls -lh ./MENTEX-2.8.2.apk
 
       - name: Enviar APK
         uses: actions/upload-artifact@v4
