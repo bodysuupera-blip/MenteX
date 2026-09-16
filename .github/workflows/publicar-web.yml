@@ -31,10 +31,11 @@ jobs:
         run: |
           rm -rf /tmp/mentex-web
           mkdir -p /tmp/mentex-web
-          ZIP=$(find . -maxdepth 1 -type f -name 'MENTEX_Web_200_GitHub_Pages*.zip' | head -1)
 
-          if [ -z "$ZIP" ]; then
-            echo "ERRO: ZIP do MENTEX Web não encontrado."
+          ZIP="./MENTEX_WEB_999_Voz.zip"
+
+          if [ ! -f "$ZIP" ]; then
+            echo "ERRO: MENTEX_WEB_999_Voz.zip não encontrado."
             exit 1
           fi
 
@@ -54,7 +55,7 @@ jobs:
           cp -a "$PASTA"/. _site/
 
           echo "=== ARQUIVOS DO SITE ==="
-          find _site -maxdepth 3 -type f | head -100
+          find _site -maxdepth 3 -type f
 
       - name: Configurar GitHub Pages
         uses: actions/configure-pages@v5
