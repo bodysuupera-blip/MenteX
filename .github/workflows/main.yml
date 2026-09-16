@@ -20,10 +20,8 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Preparar projeto MENTEX
-        run: |
-          mkdir -p mentex
-          unzip -o MENTEX_Android_2_7_Interface_Visual.zip
+      mkdir -p /tmp/mentex
+unzip -o MENTEX_Android_2_7_Interface_Visual.zip -d /tmp/mentex
 
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v6
