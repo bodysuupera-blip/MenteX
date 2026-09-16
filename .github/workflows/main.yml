@@ -1,4 +1,4 @@
-name: Gerar APK MENTEX
+name: Gerar APK MENTEX 3.1
 
 on:
   workflow_dispatch:
@@ -40,48 +40,26 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Preparação Gradle
+      - name: Preparar Gradle
         uses: gradle/actions/setup-gradle@v6
 
       - name: Dar permissão ao Gradle
         run: |
-          find /tmp/mentex -name "gradlew" -exec chmod +x {} \;
-
-      - name: Localizar projeto Android
-        run: |
-          ROOT=$(find /tmp/mentex -type f -name "settings.gradle*" -o -name "build.gradle*" | head -1)
-
-          if [ -z "$ROOT" ]; then
-            echo "ERRO: projeto Gradle não encontrado."
-            exit 1
-          fi
-
-          PROJECT_DIR=$(dirname "$ROOT")
-          echo "Projeto encontrado em: $PROJECT_DIR"
-
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          chmod +x /tmp/mentex/gradlew
 
       - name: Gerar APK
         run: |
-          cd "$PROJECT_DIR"
+          cd /tmp/mentex
+          ./gradlew assembleDebug --stacktrace
 
-          if [ -f "./gradlew" ]; then
-            ./gradlew assembleDebug --stacktrace
-          else
-            echo "ERRO: gradlew não encontrado."
-            exit 1
-          fi
-
-      - name: Localizar APK
+      - name: Verificar APK
         run: |
           echo "=== APK GERADO ==="
-          find "$PROJECT_DIR" -type f -name "*.apk" -print
+          find /tmp/mentex -type f -name "*.apk" -print
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-Android-3.1
-          path: |
-            /tmp/mentex/**/*.apk
-            /tmp/mentex/**/build/outputs/apk/**/*.apk
+          path: /tmp/mentex/app/build/outputs/apk/**/*.apk
           if-no-files-found: error
