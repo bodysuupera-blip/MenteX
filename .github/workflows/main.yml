@@ -17,7 +17,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Java
+      - name: Configurar Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -25,8 +25,9 @@ jobs:
 
       - name: Preparar projeto MENTEX
         run: |
+          rm -rf /tmp/mentex
           mkdir -p /tmp/mentex
-          unzip -o MENTEX_Android_2_7_Interface_Visual.zip -d /tmp/mentex
+          unzip -o MENTEX_Android_2_8_Voz_Masculina_Palhaco.zip -d /tmp/mentex
 
       - name: Preparar Gradle
         uses: gradle/actions/setup-gradle@v6
@@ -36,10 +37,9 @@ jobs:
       - name: Gerar APK
         run: |
           cd /tmp/mentex
-          gradle assembleDebug
+          gradle assembleDebug --stacktrace
 
       - name: Enviar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-APK
-          path: /tmp/mentex/app/build/outputs/apk/debug/app-debug.apk
+          name: MENTEX-APK-2.8
