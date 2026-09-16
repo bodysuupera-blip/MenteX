@@ -39,7 +39,13 @@ jobs:
           cd /tmp/mentex
           gradle assembleDebug --stacktrace
 
+      - name: Copiar APK
+        run: |
+          cp /tmp/mentex/app/build/outputs/apk/debug/app-debug.apk ./MENTEX-2.8.apk
+          ls -lh ./MENTEX-2.8.apk
+
       - name: Enviar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-APK-2.8
+          path: ./MENTEX-2.8.apk
