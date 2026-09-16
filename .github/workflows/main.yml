@@ -1,87 +1,98 @@
-name: Gerar APK MENTEX
+package br.com.mentex.game
 
-on:
-  workflow_dispatch:
-  push:
-    branches:
-      - main
-      - principal
+import android.app.Activity
+import android.os.Bundle
+import android.os.Build
+import android.view.View
+import android.view.Window
+import android.view.WindowInsets
+import android.view.WindowInsetsController
+import android.webkit.WebView
+import android.webkit.WebViewClient
 
-permissions:
-  contents: read
+class MainActivity : Activity() {
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
+    private lateinit var webView: WebView
 
-    steps:
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
 
-      - name: Baixar código do repositório
-        uses: actions/checkout@v4
+        // Tela inteira
+        entrarEmTelaCheia()
 
-      - name: Configurar Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
+        // WebView
+        webView = WebView(this)
 
-      - name: Verificar arquivo MENTEX
-        run: |
-          echo "Arquivos disponíveis:"
-          ls -lh
-          echo ""
-          echo "Verificando ZIP atualizado:"
-          test -f MENTEX_Android_2_8_Voz_Atualizada.zip
-          echo "ZIP atualizado encontrado!"
+        webView.settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            allowFileAccess = true
+            allowContentAccess = true
+            mediaPlaybackRequiresUserGesture = false
+        }
 
-      - name: Preparar projeto MENTEX
-        run: |
-          rm -rf /tmp/mentex
-          mkdir -p /tmp/mentex
-          unzip -o MENTEX_Android_2_8_Voz_Atualizada.zip -d /tmp/mentex
+        webView.webViewClient = WebViewClient()
 
-          echo ""
-          echo "Projeto extraído com sucesso."
+        // Faz o jogo ocupar toda a tela
+        webView.systemUiVisibility =
+            View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+            View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+            View.SYSTEM_UI_FLAG_FULLSCREEN or
+            View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
 
-      - name: Verificar áudio da voz
-        run: |
-          echo "Arquivos de áudio encontrados:"
-          find /tmp/mentex -type f -name "*.mp3" -print
-          echo ""
-          echo "Verificação concluída."
+        setContentView(webView)
 
-      - name: Preparar Gradle
-        uses: gradle/actions/setup-gradle@v6
-        with:
-          gradle-version: '8.7'
+        // Abre o MENTEX
+        webView.loadUrl("file:///android_asset/index.html")
+    }
 
-      - name: Gerar APK
-        run: |
-          cd /tmp/mentex
-          gradle assembleDebug --stacktrace
+    private fun entrarEmTelaCheia() {
 
-      - name: Procurar APK
-        run: |
-          echo "Procurando APK:"
-          find /tmp/mentex -type f -name "*.apk" -print
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
 
-      - name: Copiar APK
-        run: |
-          APK=$(find /tmp/mentex -type f -name "app-debug.apk" | head -n 1)
+            window.setDecorFitsSystemWindows(false)
 
-          if [ -z "$APK" ]; then
-            echo "ERRO: APK não encontrado."
-            exit 1
-          fi
+            window.insetsController?.let { controller ->
 
-          cp "$APK" ./MENTEX-2.8-VOZ-ATUALIZADA.apk
+                controller.hide(
+                    WindowInsets.Type.statusBars() or
+                    WindowInsets.Type.navigationBars()
+                )
 
-          echo "APK pronto:"
-          ls -lh ./MENTEX-2.8-VOZ-ATUALIZADA.apk
+                controller.systemBarsBehavior =
+                    WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
 
-      - name: Enviar APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: MENTEX-2.8-VOZ-ATUALIZADA
-          path: ./MENTEX-2.8-VOZ-ATUALIZADA.apk
-          if-no-files-found: error
+        } else {
+
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility =
+                View.SYSTEM_UI_FLAG_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+        }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+
+        if (hasFocus) {
+            entrarEmTelaCheia()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        entrarEmTelaCheia()
+    }
+
+    override fun onDestroy() {
+        webView.destroy()
+        super.onDestroy()
+    }
+}
