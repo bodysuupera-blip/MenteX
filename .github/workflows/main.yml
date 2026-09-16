@@ -23,7 +23,7 @@ jobs:
       - name: Preparar projeto MENTEX
         run: |
           mkdir -p mentex
-          unzip -o MENTEX_Android_2_2_Cerebro_Falando.zip -d mentex
+          unzip -o MENTEX_Android_2_4_Capa_MENTEX.zip -d mentex
 
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v6
