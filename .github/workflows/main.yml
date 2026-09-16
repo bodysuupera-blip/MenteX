@@ -17,6 +17,17 @@ jobs:
       - name: Baixar código do repositório
         uses: actions/checkout@v4
 
+      - name: Configurar Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Instalar Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
       - name: Preparar projeto MENTEX 3.1
         run: |
           rm -rf /tmp/mentex
@@ -25,32 +36,41 @@ jobs:
           ZIP="./MENTEX_Android_3_1_Nova_Tela_Inicial.zip"
 
           if [ ! -f "$ZIP" ]; then
-            echo "ERRO: $ZIP não encontrado."
+            echo "ERRO: $ZIP não encontrado na raiz do repositório."
             exit 1
           fi
 
           unzip -o "$ZIP" -d /tmp/mentex
 
-          echo "=== PROJETO MENTEX ==="
-          find /tmp/mentex -maxdepth 3 -type f | head -100
+          echo "=== ARQUIVOS DO PROJETO ==="
+          find /tmp/mentex -maxdepth 4 -type f | sort
 
-      - name: Configurar Java 17
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Preparar Gradle
-        uses: gradle/actions/setup-gradle@v6
-
-      - name: Dar permissão ao Gradle
-        run: |
-          chmod +x /tmp/mentex/gradlew
-
-      - name: Gerar APK
+      - name: Verificar projeto Gradle
         run: |
           cd /tmp/mentex
-          ./gradlew assembleDebug --stacktrace
+
+          if [ ! -f "settings.gradle" ]; then
+            echo "ERRO: settings.gradle não encontrado."
+            exit 1
+          fi
+
+          if [ ! -f "build.gradle" ]; then
+            echo "ERRO: build.gradle não encontrado."
+            exit 1
+          fi
+
+          if [ ! -f "app/build.gradle" ]; then
+            echo "ERRO: app/build.gradle não encontrado."
+            exit 1
+          fi
+
+          echo "Projeto Gradle encontrado."
+
+      - name: Gerar APK MENTEX 3.1
+        run: |
+          cd /tmp/mentex
+
+          gradle :app:assembleDebug --stacktrace
 
       - name: Verificar APK
         run: |
