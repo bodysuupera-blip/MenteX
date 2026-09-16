@@ -20,10 +20,10 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - - name: Preparar projeto MENTEX
-  run: |
-    mkdir -p mentex
-    unzip -o MENTEX_Android_2_0.zip -d mentex
+      - name: Preparar projeto MENTEX
+        run: |
+          mkdir -p mentex
+          unzip -o MENTEX_Android_2_0.zip -d mentex
 
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v6
