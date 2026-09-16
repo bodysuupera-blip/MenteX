@@ -32,10 +32,10 @@ jobs:
           rm -rf /tmp/mentex-web
           mkdir -p /tmp/mentex-web
 
-          ZIP="./MENTEX_WEB_999_Voz.zip"
+          ZIP="./MENTEX_WEB_999_Voz_IA_Abertura.zip"
 
           if [ ! -f "$ZIP" ]; then
-            echo "ERRO: MENTEX_WEB_999_Voz.zip não encontrado."
+            echo "ERRO: MENTEX_WEB_999_Voz_IA_Abertura.zip não encontrado."
             exit 1
           fi
 
