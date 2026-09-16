@@ -14,7 +14,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
       - name: Baixar código do repositório
         uses: actions/checkout@v4
 
@@ -22,7 +21,7 @@ jobs:
         run: |
           rm -rf /tmp/mentex
           mkdir -p /tmp/mentex
-          unzip -o MENTEX_Android_2_8_2_Tela_Inicial.zip -d /tmp/mentex
+          unzip -o MENTEX_Android_2_8_4_Tempo_Dinamico.zip -d /tmp/mentex
 
       - name: Configurar Java 17
         uses: actions/setup-java@v5
@@ -35,6 +34,32 @@ jobs:
         with:
           gradle-version: '8.7'
 
+      - name: Conferir projeto
+        run: |
+          echo "Arquivos do projeto:"
+          find /tmp/mentex -maxdepth 3 -type f | head -100
+          echo "Arquivos Gradle:"
+          find /tmp/mentex -name "build.gradle*" -o -name "settings.gradle*"
+
+      - name: Gerar APK
+        run: |
+          cd /tmp/mentex
+          gradle assembleDebug --stacktrace
+
+      - name: Conferir APK
+        run: |
+          find /tmp/mentex/app/build/outputs -type f -name "*.apk" -print
+
+      - name: Copiar APK
+        run: |
+          cp /tmp/mentex/app/build/outputs/apk/debug/app-debug.apk ./MENTEX-2.8.4.apk
+          ls -lh ./MENTEX-2.8.4.apk
+
+      - name: Enviar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MENTEX-APK-2.8.4
+          path: ./MENTEX-2.8.4.apk
       - name: Conferir projeto
         run: |
           echo "Arquivos do projeto:"
