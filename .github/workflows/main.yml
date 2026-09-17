@@ -15,54 +15,45 @@ jobs:
 
     steps:
 
-      - name: Baixar projeto
+      - name: Baixar código
         uses: actions/checkout@v4
 
-      - name: Encontrar e extrair ZIP do MENTEX
+      - name: Procurar MENTEX 3.9 correto
         shell: bash
         run: |
           set -e
 
+          ZIP="./MENTEX_Android_3_9_PASTA_CORRETA.zip"
+
           echo "================================="
-          echo " PROCURANDO ZIP DO MENTEX"
+          echo " PROCURANDO MENTEX 3.9"
           echo "================================="
 
-          ZIP=$(find . -maxdepth 2 -type f \
-            -iname "MENTEX_Android*.zip" \
-            | head -1)
-
-          if [ -z "$ZIP" ]; then
-            echo "ERRO: nenhum ZIP MENTEX encontrado."
+          if [ ! -f "$ZIP" ]; then
+            echo "ERRO: o arquivo correto não está no GitHub:"
+            echo "$ZIP"
             echo ""
-            echo "Arquivos ZIP encontrados:"
-            find . -type f -iname "*.zip"
+            echo "ZIPs encontrados no repositório:"
+            find . -type f -iname "*.zip" -print
             exit 1
           fi
 
-          echo "ZIP encontrado:"
+          echo "ZIP CORRETO ENCONTRADO:"
           echo "$ZIP"
 
           rm -rf /tmp/mentex
           mkdir -p /tmp/mentex
 
-          echo "Extraindo ZIP..."
-
           unzip -o "$ZIP" -d /tmp/mentex
 
-          echo "================================="
-          echo " ZIP EXTRAÍDO"
-          echo "================================="
+          echo ""
+          echo "Conteúdo:"
+          find /tmp/mentex -maxdepth 4 -type f
 
-          find /tmp/mentex -maxdepth 5 -type f | head -200
-
-      - name: Localizar projeto Android
+      - name: Encontrar projeto Android
         shell: bash
         run: |
           set -e
-
-          echo "================================="
-          echo " PROCURANDO PROJETO ANDROID"
-          echo "================================="
 
           SETTINGS=$(find /tmp/mentex \
             -type f \
@@ -70,20 +61,76 @@ jobs:
             | head -1)
 
           if [ -z "$SETTINGS" ]; then
-            echo "ERRO: settings.gradle não encontrado."
-            echo ""
-            echo "Estrutura encontrada:"
-            find /tmp/mentex -maxdepth 6 -type f
+            echo "ERRO: projeto Android não encontrado."
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$SETTINGS")
 
-          echo "Projeto encontrado:"
+          echo "Projeto:"
           echo "$PROJECT_DIR"
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
+      - name: Configurar Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Compilar MENTEX 3.9
+        shell: bash
+        run: |
+          set -e
+
+          cd "$PROJECT_DIR"
+
+          echo "================================="
+          echo " COMPILANDO MENTEX 3.9"
+          echo "================================="
+
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+            ./gradlew clean assembleDebug --stacktrace
+          else
+            gradle clean assembleDebug --stacktrace
+          fi
+
+      - name: Encontrar APK
+        shell: bash
+        run: |
+          set -e
+
+          APK=$(find "$PROJECT_DIR" \
+            -type f \
+            -name "*.apk" \
+            | head -1)
+
+          if [ -z "$APK" ]; then
+            echo "ERRO: APK não encontrado."
+            exit 1
+          fi
+
+          echo "APK:"
+          echo "$APK"
+
+          echo "APK=$APK" >> "$GITHUB_ENV"
+
+      - name: Disponibilizar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MENTEX-3.9-NOVO
+          path: ${{ env.APK }}
+          if-no-files-found: error
+
+      - name: Finalizado
+        run: |
+          echo "================================="
+          echo " MENTEX 3.9 NOVO GERADO"
+          echo "================================="
       - name: Configurar Java 17
         uses: actions/setup-java@v5
         with:
