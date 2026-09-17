@@ -99,8 +99,8 @@ jobs:
           cd "$PROJECT_DIR"
 
           echo "======================================"
-          echo "      COMPILANDO MENTEX 3.9"
-          echo "       5 CORAÇÕES ❤️"
+          echo "       COMPILANDO MENTEX 3.9"
+          echo "          5 CORAÇÕES"
           echo "======================================"
 
           if [ -f "./gradlew" ]; then
@@ -133,6 +133,14 @@ jobs:
           path: ${{ env.APK }}
           if-no-files-found: error
 
+      - name: Finalizado
+        run: |
+          echo "======================================"
+          echo " MENTEX 3.9 GERADO COM SUCESSO!"
+          echo " 5 CORAÇÕES"
+          echo " PRÊMIOS"
+          echo " 200 FASES"
+          echo "======================================"
       - name: Finalizado
         run: |
           echo "======================================"
