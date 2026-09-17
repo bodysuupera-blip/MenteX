@@ -1,4 +1,4 @@
-name: Gerar APK MENTEX 3.4
+name: Gerar APK MENTEX 3.5
 
 on:
   workflow_dispatch:
@@ -28,15 +28,17 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Preparar projeto MENTEX 3.4
+      - name: Preparar projeto MENTEX 3.5
         run: |
           rm -rf /tmp/mentex
           mkdir -p /tmp/mentex
 
-          ZIP="./MENTEX_Android_3_4_Musica_Apenas_Inicio.zip"
+          ZIP="./MENTEX_Android_3_5_Jogo_Completo.zip"
 
           if [ ! -f "$ZIP" ]; then
             echo "ERRO: $ZIP não encontrado na raiz do repositório."
+            echo "Arquivos ZIP encontrados:"
+            find . -maxdepth 2 -type f -name "*.zip" -print
             exit 1
           fi
 
@@ -58,34 +60,28 @@ jobs:
 
           PROJECT_DIR=$(dirname "$SETTINGS")
 
-          echo "Projeto Android:"
+          echo "Projeto encontrado em:"
           echo "$PROJECT_DIR"
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      - name: Verificar projeto
+      - name: Verificar projeto Android
         run: |
           cd "$PROJECT_DIR"
-
-          echo "=== PROJETO ==="
-          pwd
-
-          echo "=== ARQUIVOS ==="
-          ls -la
-
-          if [ ! -f "build.gradle" ] && [ ! -f "build.gradle.kts" ]; then
-            echo "ERRO: build.gradle não encontrado."
-            exit 1
-          fi
 
           if [ ! -d "app" ]; then
             echo "ERRO: pasta app não encontrada."
             exit 1
           fi
 
+          if [ ! -f "build.gradle" ] && [ ! -f "build.gradle.kts" ]; then
+            echo "ERRO: build.gradle não encontrado."
+            exit 1
+          fi
+
           echo "Projeto Android OK."
 
-      - name: Gerar APK MENTEX 3.4
+      - name: Gerar APK MENTEX 3.5
         run: |
           cd "$PROJECT_DIR"
 
@@ -99,7 +95,7 @@ jobs:
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-Android-3.4
+          name: MENTEX-Android-3.5
           path: |
             /tmp/mentex/**/build/outputs/apk/**/*.apk
           if-no-files-found: error
