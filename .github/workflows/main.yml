@@ -18,33 +18,35 @@ jobs:
       - name: Baixar código
         uses: actions/checkout@v6
 
-      - name: Verificar ZIP do MENTEX
+      - name: Verificar ZIP Rafael
         shell: bash
         run: |
           set -e
 
-          ZIP="./MENTEX_Android_4_0_10_CORACOES_250_FASES_LOJA.zip"
+          ZIP="./MENTEX_Rafael_10_CORACOES_250_FASES_JOGO_COMPLETO.zip"
 
           echo "======================================"
-          echo "       MENTEX 4.0"
-          echo "       10 CORAÇÕES"
-          echo "       250 FASES"
-          echo "       LOJA + PERFIL + RANKING"
-          echo "       + OPÇÕES + JOGO"
+          echo "          MENTEX RAFAEL"
+          echo "======================================"
+          echo "10 CORAÇÕES"
+          echo "250 FASES"
+          echo "JOGO COMPLETO"
+          echo "LOJA + PERFIL + RANKING + OPÇÕES"
           echo "======================================"
 
           if [ ! -f "$ZIP" ]; then
             echo "ERRO: ZIP não encontrado:"
             echo "$ZIP"
             echo ""
-            echo "ZIPs disponíveis:"
+            echo "Arquivos ZIP disponíveis:"
             find . -maxdepth 2 -type f -iname "*.zip" -print
             exit 1
           fi
 
+          echo "ZIP encontrado:"
           ls -lh "$ZIP"
 
-      - name: Extrair MENTEX
+      - name: Extrair projeto
         shell: bash
         run: |
           set -e
@@ -53,8 +55,10 @@ jobs:
           mkdir -p /tmp/mentex
 
           unzip -o \
-            "./MENTEX_Android_4_0_10_CORACOES_250_FASES_LOJA.zip" \
+            "./MENTEX_Rafael_10_CORACOES_250_FASES_JOGO_COMPLETO.zip" \
             -d /tmp/mentex
+
+          echo "Projeto extraído."
 
       - name: Localizar projeto Android
         shell: bash
@@ -67,12 +71,13 @@ jobs:
 
           if [ -z "$SETTINGS" ]; then
             echo "ERRO: settings.gradle não encontrado."
+            find /tmp/mentex -maxdepth 5 -type f
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$SETTINGS")
 
-          echo "Projeto:"
+          echo "Projeto encontrado:"
           echo "$PROJECT_DIR"
 
           if [ ! -d "$PROJECT_DIR/app" ]; then
@@ -94,6 +99,8 @@ jobs:
       - name: Preparar Gradle
         shell: bash
         run: |
+          set -e
+
           cd "$PROJECT_DIR"
 
           if [ -f "./gradlew" ]; then
@@ -106,6 +113,13 @@ jobs:
           set -e
 
           cd "$PROJECT_DIR"
+
+          echo "======================================"
+          echo "        COMPILANDO MENTEX"
+          echo "        10 CORAÇÕES"
+          echo "        250 FASES"
+          echo "        JOGO COMPLETO"
+          echo "======================================"
 
           if [ -f "./gradlew" ]; then
             ./gradlew clean assembleDebug --stacktrace
@@ -128,11 +142,28 @@ jobs:
             exit 1
           fi
 
-          echo "APK encontrado:"
+          echo "======================================"
+          echo "APK ENCONTRADO:"
           echo "$APK"
+          echo "======================================"
 
           echo "APK=$APK" >> "$GITHUB_ENV"
 
+      - name: Disponibilizar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MENTEX-RAFAEL-10-CORACOES-250-FASES-${{ github.run_number }}
+          path: ${{ env.APK }}
+          if-no-files-found: error
+
+      - name: Finalizado
+        run: |
+          echo "======================================"
+          echo " MENTEX RAFAEL GERADO COM SUCESSO!"
+          echo " 10 CORAÇÕES"
+          echo " 250 FASES"
+          echo " JOGO COMPLETO"
+          echo "======================================"
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
