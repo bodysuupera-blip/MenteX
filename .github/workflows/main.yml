@@ -1,4 +1,4 @@
-name: Gerar APK MENTEX 3.3
+name: Gerar APK MENTEX 3.4
 
 on:
   workflow_dispatch:
@@ -28,12 +28,12 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Preparar projeto MENTEX 3.3
+      - name: Preparar projeto MENTEX 3.4
         run: |
           rm -rf /tmp/mentex
           mkdir -p /tmp/mentex
 
-          ZIP="./MENTEX_Android_3_3_Musica_Inicial.zip"
+          ZIP="./MENTEX_Android_3_4_Musica_Apenas_Inicio.zip"
 
           if [ ! -f "$ZIP" ]; then
             echo "ERRO: $ZIP não encontrado na raiz do repositório."
@@ -47,7 +47,9 @@ jobs:
 
       - name: Localizar projeto Android
         run: |
-          SETTINGS=$(find /tmp/mentex -type f -name "settings.gradle" -o -name "settings.gradle.kts" | head -1)
+          SETTINGS=$(find /tmp/mentex \
+            -type f \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+            | head -1)
 
           if [ -z "$SETTINGS" ]; then
             echo "ERRO: settings.gradle não encontrado."
@@ -56,7 +58,7 @@ jobs:
 
           PROJECT_DIR=$(dirname "$SETTINGS")
 
-          echo "Projeto Android encontrado em:"
+          echo "Projeto Android:"
           echo "$PROJECT_DIR"
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
@@ -65,7 +67,7 @@ jobs:
         run: |
           cd "$PROJECT_DIR"
 
-          echo "=== DIRETÓRIO DO PROJETO ==="
+          echo "=== PROJETO ==="
           pwd
 
           echo "=== ARQUIVOS ==="
@@ -81,7 +83,9 @@ jobs:
             exit 1
           fi
 
-      - name: Gerar APK MENTEX 3.3
+          echo "Projeto Android OK."
+
+      - name: Gerar APK MENTEX 3.4
         run: |
           cd "$PROJECT_DIR"
 
@@ -95,7 +99,7 @@ jobs:
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-Android-3.3
+          name: MENTEX-Android-3.4
           path: |
             /tmp/mentex/**/build/outputs/apk/**/*.apk
           if-no-files-found: error
