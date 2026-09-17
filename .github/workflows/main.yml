@@ -51,11 +51,10 @@ jobs:
           rm -rf /tmp/mentex
           mkdir -p /tmp/mentex
 
-          unzip -o \
-            "./MENTEX_Android_4_0_10_CORACOES_250_FASES.zip" \
+          unzip -o "./MENTEX_Android_4_0_10_CORACOES_250_FASES.zip" \
             -d /tmp/mentex
 
-          echo "MENTEX extraído."
+          echo "MENTEX extraído com sucesso."
 
       - name: Localizar projeto Android
         shell: bash
@@ -68,18 +67,14 @@ jobs:
 
           if [ -z "$SETTINGS" ]; then
             echo "ERRO: settings.gradle não encontrado."
-            echo ""
-            echo "Arquivos encontrados:"
-            find /tmp/mentex -maxdepth 6 -type f
+            find /tmp/mentex -maxdepth 5 -type f
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$SETTINGS")
 
-          echo "======================================"
-          echo "PROJETO ANDROID ENCONTRADO:"
+          echo "Projeto encontrado:"
           echo "$PROJECT_DIR"
-          echo "======================================"
 
           if [ ! -d "$PROJECT_DIR/app" ]; then
             echo "ERRO: pasta app não encontrada."
@@ -106,10 +101,6 @@ jobs:
 
           if [ -f "./gradlew" ]; then
             chmod +x ./gradlew
-            echo "Gradle Wrapper encontrado."
-          else
-            echo "Gradle Wrapper não encontrado."
-            echo "Será utilizado o Gradle instalado no runner."
           fi
 
       - name: Compilar MENTEX
@@ -120,14 +111,9 @@ jobs:
           cd "$PROJECT_DIR"
 
           echo "======================================"
-          echo "          COMPILANDO MENTEX"
-          echo "======================================"
-          echo "❤️  10 CORAÇÕES"
-          echo "🎮 250 FASES"
-          echo "🛒 LOJA"
-          echo "👤 PERFIL"
-          echo "🏆 RANKING"
-          echo "⚙️ OPÇÕES"
+          echo "       COMPILANDO MENTEX"
+          echo "       10 CORAÇÕES"
+          echo "       250 FASES"
           echo "======================================"
 
           if [ -f "./gradlew" ]; then
@@ -135,10 +121,6 @@ jobs:
           else
             gradle clean assembleDebug --stacktrace
           fi
-
-          echo "======================================"
-          echo "       COMPILAÇÃO CONCLUÍDA"
-          echo "======================================"
 
       - name: Encontrar APK
         shell: bash
@@ -151,23 +133,14 @@ jobs:
 
           if [ -z "$APK" ]; then
             echo "ERRO: APK não foi encontrado."
-
-            echo ""
-            echo "APKs encontrados:"
-            find "$PROJECT_DIR" -type f -name "*.apk" -print
-
+            find "$PROJECT_DIR" -type f -name "*.apk"
             exit 1
           fi
 
           echo "======================================"
-          echo "          APK ENCONTRADO"
-          echo "======================================"
-
+          echo "APK ENCONTRADO:"
           echo "$APK"
-
-          echo ""
-          echo "Tamanho:"
-          ls -lh "$APK"
+          echo "======================================"
 
           echo "APK=$APK" >> "$GITHUB_ENV"
 
@@ -179,16 +152,9 @@ jobs:
           if-no-files-found: error
 
       - name: Finalizado
-        shell: bash
         run: |
           echo "======================================"
-          echo "     MENTEX GERADO COM SUCESSO!"
-          echo "======================================"
-          echo "❤️ 10 CORAÇÕES"
-          echo "🎮 250 FASES"
-          echo "🛒 LOJA"
-          echo "👤 PERFIL"
-          echo "🏆 RANKING"
-          echo "⚙️ OPÇÕES"
-          echo "▶️ JOGAR AGORA"
+          echo "    MENTEX GERADO COM SUCESSO!"
+          echo "    10 CORAÇÕES"
+          echo "    250 FASES"
           echo "======================================"
