@@ -14,23 +14,25 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
       - name: Baixar código
         uses: actions/checkout@v4
 
-      - name: Extrair MENTEX 3.9
+      - name: Extrair MENTEX 3.9 - 5 Corações
         shell: bash
         run: |
           set -e
 
-          ZIP="./MENTEX_Android_3_9_PASTA_CORRETA.zip"
+          ZIP="./MENTEX_Android_3_9_5_CORACOES_DEFINITIVO.zip"
 
-          echo "Procurando:"
-          echo "$ZIP"
+          echo "======================================"
+          echo "   VERIFICANDO ARQUIVO DO MENTEX"
+          echo "======================================"
 
           if [ ! -f "$ZIP" ]; then
-            echo "ERRO: ZIP do MENTEX 3.9 não encontrado."
-            echo "Arquivos ZIP disponíveis:"
+            echo "ERRO: arquivo não encontrado:"
+            echo "$ZIP"
+            echo ""
+            echo "Arquivos ZIP encontrados:"
             find . -type f -iname "*.zip" -print
             exit 1
           fi
@@ -47,8 +49,7 @@ jobs:
         run: |
           set -e
 
-          SETTINGS=$(find /tmp/mentex \
-            -type f \
+          SETTINGS=$(find /tmp/mentex -type f \
             \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
             | head -1)
 
@@ -90,16 +91,17 @@ jobs:
             chmod +x ./gradlew
           fi
 
-      - name: Compilar MENTEX 3.9
+      - name: Compilar APK MENTEX
         shell: bash
         run: |
           set -e
 
           cd "$PROJECT_DIR"
 
-          echo "=================================="
-          echo "     COMPILANDO MENTEX 3.9"
-          echo "=================================="
+          echo "======================================"
+          echo "      COMPILANDO MENTEX 3.9"
+          echo "       5 CORAÇÕES ❤️"
+          echo "======================================"
 
           if [ -f "./gradlew" ]; then
             ./gradlew clean assembleDebug --stacktrace
@@ -112,10 +114,7 @@ jobs:
         run: |
           set -e
 
-          APK=$(find "$PROJECT_DIR" \
-            -type f \
-            -name "*.apk" \
-            | head -1)
+          APK=$(find "$PROJECT_DIR" -type f -name "*.apk" | head -1)
 
           if [ -z "$APK" ]; then
             echo "ERRO: APK não foi gerado."
@@ -130,12 +129,15 @@ jobs:
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-3.9-NOVO
+          name: MENTEX-3.9-5-CORACOES
           path: ${{ env.APK }}
           if-no-files-found: error
 
       - name: Finalizado
         run: |
-          echo "=================================="
+          echo "======================================"
           echo " MENTEX 3.9 GERADO COM SUCESSO!"
-          echo "=================================="
+          echo " ❤️ 5 CORAÇÕES"
+          echo " 🪙 PRÊMIOS"
+          echo " 🎮 200 FASES"
+          echo "======================================"
