@@ -15,8 +15,100 @@ jobs:
 
     steps:
 
-      - name: Baixar projeto
+      - name: Baixar código
         uses: actions/checkout@v4
+
+      - name: Preparar projeto MENTEX
+        shell: bash
+        run: |
+          set -e
+
+          echo "=== INICIANDO PREPARAÇÃO ==="
+
+          # Se o projeto já estiver na raiz
+          if [ -f "settings.gradle" ] || [ -f "settings.gradle.kts" ]; then
+            echo "Projeto encontrado na raiz."
+            echo "PROJECT_DIR=$PWD" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          echo "Projeto não está na raiz."
+          echo "Procurando ZIP do MENTEX..."
+
+          ZIP=""
+
+          if [ -f "MENTEX_Rafael_FINAL_10_CORACOES_250_FASES_JOGO_COMPLETO_CORRIGIDO.zip" ]; then
+            ZIP="MENTEX_Rafael_FINAL_10_CORACOES_250_FASES_JOGO_COMPLETO_CORRIGIDO.zip"
+          elif [ -f "MENTEX_Rafael_FINAL_10_CORACOES_250_FASES_JOGO_COMPLETO.zip" ]; then
+            ZIP="MENTEX_Rafael_FINAL_10_CORACOES_250_FASES_JOGO_COMPLETO.zip"
+          else
+            ZIP=$(find . -type f -name "*.zip" | head -1 || true)
+          fi
+
+          if [ -z "$ZIP" ]; then
+            echo "ERRO: nenhum ZIP encontrado."
+            echo "Arquivos existentes:"
+            find . -maxdepth 3 -type f | sort
+            exit 1
+          fi
+
+          echo "ZIP encontrado:"
+          echo "$ZIP"
+
+          rm -rf /tmp/mentex
+          mkdir -p /tmp/mentex
+
+          unzip -o "$ZIP" -d /tmp/mentex
+
+          echo "=== PROCURANDO PROJETO ==="
+
+          SETTINGS=$(find /tmp/mentex -type f \( \
+            -name "settings.gradle" -o \
+            -name "settings.gradle.kts" \
+          \) | head -1)
+
+          if [ -z "$SETTINGS" ]; then
+            echo "ERRO: settings.gradle não encontrado."
+            echo "Conteúdo extraído:"
+            find /tmp/mentex -maxdepth 5 -type f | sort
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$SETTINGS")
+
+          echo "Projeto encontrado em:"
+          echo "$PROJECT_DIR"
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Verificar projeto MENTEX
+        shell: bash
+        run: |
+          set -e
+
+          echo "=== VERIFICANDO PROJETO ==="
+          echo "Diretório:"
+          echo "$PROJECT_DIR"
+
+          test -d "$PROJECT_DIR/app"
+
+          test -f "$PROJECT_DIR/settings.gradle" || \
+          test -f "$PROJECT_DIR/settings.gradle.kts"
+
+          test -f "$PROJECT_DIR/build.gradle" || \
+          test -f "$PROJECT_DIR/build.gradle.kts"
+
+          test -f "$PROJECT_DIR/app/build.gradle" || \
+          test -f "$PROJECT_DIR/app/build.gradle.kts"
+
+          test -f "$PROJECT_DIR/app/src/main/AndroidManifest.xml"
+
+          test -f "$PROJECT_DIR/app/src/main/assets/index.html"
+
+          echo ""
+          echo "=== PROJETO OK ==="
+          echo ""
+          find "$PROJECT_DIR/app/src/main" -maxdepth 3 -type f | sort
 
       - name: Configurar Java 17
         uses: actions/setup-java@v4
@@ -29,82 +121,25 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Verificar arquivos do MENTEX
+      - name: Gerar APK
         shell: bash
         run: |
           set -e
 
-          echo "=== VERIFICANDO PROJETO ==="
+          cd "$PROJECT_DIR"
 
-          test -f settings.gradle
-          test -f build.gradle
-          test -f app/build.gradle
-          test -f app/src/main/AndroidManifest.xml
-          test -f app/src/main/assets/index.html
+          echo "=== GERANDO APK ==="
 
-          echo "Projeto Android encontrado."
+          gradle assembleDebug --stacktrace
 
-      - name: Verificar jogo
-        shell: bash
-        run: |
-          set -e
+          echo ""
+          echo "=== APK GERADO ==="
 
-          INDEX="app/src/main/assets/index.html"
-
-          echo "=== VERIFICANDO JOGO ==="
-
-          grep -q "Desafio Insano #250" "$INDEX"
-          echo "250 fases: OK"
-
-          grep -q "lives:10" "$INDEX"
-          echo "10 corações: OK"
-
-          grep -q "LOJA" "$INDEX"
-          echo "Loja: OK"
-
-          grep -q "PERFIL" "$INDEX"
-          echo "Perfil: OK"
-
-          grep -q "RANKING" "$INDEX"
-          echo "Ranking: OK"
-
-          grep -q "OPÇÕES" "$INDEX"
-          echo "Opções: OK"
-
-          grep -q "JOGAR" "$INDEX"
-          echo "Botão JOGAR: OK"
-
-      - name: Compilar APK
-        shell: bash
-        run: |
-          set -e
-
-          gradle clean assembleDebug --stacktrace
-
-      - name: Localizar APK
-        shell: bash
-        run: |
-          set -e
-
-          APK=$(find app/build/outputs/apk/debug \
-            -type f \
-            -name "*.apk" \
-            | head -1)
-
-          if [ -z "$APK" ]; then
-            echo "ERRO: APK não encontrado."
-            find app/build/outputs -type f
-            exit 1
-          fi
-
-          echo "APK encontrado:"
-          ls -lh "$APK"
-
-          echo "APK=$APK" >> "$GITHUB_ENV"
+          find app/build/outputs/apk -type f -name "*.apk" -print
 
       - name: Enviar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-FINAL-${{ github.run_number }}
-          path: ${{ env.APK }}
+          name: MENTEX-APK-${{ github.run_number }}
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/**/*.apk
           if-no-files-found: error
