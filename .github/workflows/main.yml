@@ -41,7 +41,7 @@ jobs:
           if [ ! -f "$ZIP" ]; then
             echo "ERRO: $ZIP não encontrado."
             echo ""
-            echo "Arquivos ZIP encontrados no repositório:"
+            echo "ZIPs encontrados:"
             find . -maxdepth 2 -type f -name "*.zip" -print
             exit 1
           fi
@@ -52,8 +52,8 @@ jobs:
           unzip -o "$ZIP" -d /tmp/mentex
 
           echo ""
-          echo "=== ARQUIVOS DO PROJETO ==="
-          find /tmp/mentex -maxdepth 5 -type f | sort
+          echo "=== ARQUIVOS EXTRAÍDOS ==="
+          find /tmp/mentex -maxdepth 4 -type f | sort
 
       - name: Localizar projeto Android
         run: |
@@ -64,15 +64,12 @@ jobs:
 
           if [ -z "$SETTINGS" ]; then
             echo "ERRO: settings.gradle não encontrado."
-            echo ""
-            echo "Conteúdo encontrado:"
-            find /tmp/mentex -maxdepth 5 -type f | sort
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$SETTINGS")
 
-          echo "Projeto Android encontrado:"
+          echo "Projeto encontrado:"
           echo "$PROJECT_DIR"
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
@@ -81,7 +78,7 @@ jobs:
         run: |
           cd "$PROJECT_DIR"
 
-          echo "=== DIRETÓRIO DO PROJETO ==="
+          echo "=== DIRETÓRIO ==="
           pwd
 
           echo ""
@@ -101,22 +98,20 @@ jobs:
             exit 1
           fi
 
-          if [ ! -f "gradlew" ]; then
-            echo "ERRO: gradlew não encontrado."
+          if [ ! -f "settings.gradle" ] && [ ! -f "settings.gradle.kts" ]; then
+            echo "ERRO: settings.gradle não encontrado."
             exit 1
           fi
 
-          chmod +x gradlew
-
           echo "Projeto Android OK."
 
-      - name: Gerar APK MENTEX 3.6
+      - name: Gerar APK MENTEX
         run: |
           cd "$PROJECT_DIR"
 
-          echo "=== INICIANDO BUILD ==="
+          echo "=== INICIANDO COMPILAÇÃO ==="
 
-          ./gradlew :app:assembleDebug \
+          gradle :app:assembleDebug \
             --no-daemon \
             --stacktrace
 
@@ -129,7 +124,7 @@ jobs:
             -name "*.apk" \
             -print
 
-      - name: Verificar se APK existe
+      - name: Verificar APK
         run: |
           APK=$(find "$PROJECT_DIR" \
             -type f \
@@ -137,7 +132,7 @@ jobs:
             | head -1)
 
           if [ -z "$APK" ]; then
-            echo "ERRO: nenhum APK foi encontrado."
+            echo "ERRO: nenhum APK foi gerado."
             exit 1
           fi
 
