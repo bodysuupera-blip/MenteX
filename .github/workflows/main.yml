@@ -23,17 +23,19 @@ jobs:
         run: |
           set -e
 
-          ZIP="./MENTEX_Android_3_9_2_5_CORACOES_SEM_CRASH.zip"
+          ZIP="./MENTEX_Android_4_0_10_CORACOES_250_FASES.zip"
 
           echo "======================================"
-          echo "     VERIFICANDO MENTEX 3.9.2"
+          echo "       VERIFICANDO MENTEX 4.0"
+          echo "       10 CORAÇÕES"
+          echo "       250 FASES"
           echo "======================================"
 
           if [ ! -f "$ZIP" ]; then
             echo "ERRO: ZIP não encontrado:"
             echo "$ZIP"
             echo ""
-            echo "ZIPs disponíveis:"
+            echo "Arquivos ZIP disponíveis:"
             find . -maxdepth 2 -type f -iname "*.zip" -print
             exit 1
           fi
@@ -49,7 +51,9 @@ jobs:
           rm -rf /tmp/mentex
           mkdir -p /tmp/mentex
 
-          unzip -o "./MENTEX_Android_3_9_2_5_CORACOES_SEM_CRASH.zip" -d /tmp/mentex
+          unzip -o \
+            "./MENTEX_Android_4_0_10_CORACOES_250_FASES.zip" \
+            -d /tmp/mentex
 
           echo "MENTEX extraído."
 
@@ -59,12 +63,14 @@ jobs:
           set -e
 
           SETTINGS=$(find /tmp/mentex -type f \
-            \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+            -name "settings.gradle" -o -name "settings.gradle.kts" \
             | head -1)
 
           if [ -z "$SETTINGS" ]; then
             echo "ERRO: settings.gradle não encontrado."
-            find /tmp/mentex -maxdepth 5 -type f
+            echo ""
+            echo "Arquivos encontrados:"
+            find /tmp/mentex -maxdepth 6 -type f
             exit 1
           fi
 
@@ -85,87 +91,4 @@ jobs:
       - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Configurar Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Preparar Gradle
-        shell: bash
-        run: |
-          set -e
-
-          cd "$PROJECT_DIR"
-
-          if [ -f "./gradlew" ]; then
-            chmod +x ./gradlew
-          fi
-
-          echo "Gradle preparado."
-
-      - name: Compilar MENTEX
-        shell: bash
-        run: |
-          set -e
-
-          cd "$PROJECT_DIR"
-
-          echo "======================================"
-          echo "        COMPILANDO MENTEX"
-          echo "        5 CORAÇÕES"
-          echo "        200 FASES"
-          echo "======================================"
-
-          if [ -f "./gradlew" ]; then
-            ./gradlew clean assembleDebug --stacktrace
-          else
-            gradle clean assembleDebug --stacktrace
-          fi
-
-          echo "======================================"
-          echo "      COMPILAÇÃO CONCLUÍDA"
-          echo "======================================"
-
-      - name: Encontrar APK
-        shell: bash
-        run: |
-          set -e
-
-          APK=$(find "$PROJECT_DIR" -type f \
-            -path "*/build/outputs/apk/debug/*.apk" \
-            | head -1)
-
-          if [ -z "$APK" ]; then
-            echo "ERRO: APK não foi encontrado."
-            echo ""
-            echo "Arquivos APK encontrados:"
-            find "$PROJECT_DIR" -type f -name "*.apk" -print
-            exit 1
-          fi
-
-          echo "======================================"
-          echo "APK ENCONTRADO:"
-          echo "$APK"
-          echo "======================================"
-
-          ls -lh "$APK"
-
-          echo "APK=$APK" >> "$GITHUB_ENV"
-
-      - name: Disponibilizar APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: MENTEX-3.9.2-5-CORACOES-${{ github.run_number }}
-          path: ${{ env.APK }}
-          if-no-files-found: error
-
-      - name: Finalizado
-        shell: bash
-        run: |
-          echo "======================================"
-          echo " MENTEX GERADO COM SUCESSO!"
-          echo " 5 CORAÇÕES"
-          echo " 200 FASES"
-          echo " APK DISPONIBILIZADO"
-          echo "======================================"
+          distribution
