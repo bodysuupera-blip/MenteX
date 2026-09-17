@@ -1,4 +1,4 @@
-name: Gerar APK MENTEX 3.1
+name: Gerar APK MENTEX 3.3
 
 on:
   workflow_dispatch:
@@ -23,17 +23,17 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Instalar Gradle 8.7
+      - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
-      - name: Preparar projeto MENTEX 3.1
+      - name: Preparar projeto MENTEX 3.3
         run: |
           rm -rf /tmp/mentex
           mkdir -p /tmp/mentex
 
-          ZIP="./MENTEX_Android_3_1_Nova_Tela_Inicial.zip"
+          ZIP="./MENTEX_Android_3_3_Musica_Inicial.zip"
 
           if [ ! -f "$ZIP" ]; then
             echo "ERRO: $ZIP não encontrado na raiz do repositório."
@@ -43,43 +43,59 @@ jobs:
           unzip -o "$ZIP" -d /tmp/mentex
 
           echo "=== ARQUIVOS DO PROJETO ==="
-          find /tmp/mentex -maxdepth 4 -type f | sort
+          find /tmp/mentex -maxdepth 5 -type f | sort
 
-      - name: Verificar projeto Gradle
+      - name: Localizar projeto Android
         run: |
-          cd /tmp/mentex
+          SETTINGS=$(find /tmp/mentex -type f -name "settings.gradle" -o -name "settings.gradle.kts" | head -1)
 
-          if [ ! -f "settings.gradle" ]; then
+          if [ -z "$SETTINGS" ]; then
             echo "ERRO: settings.gradle não encontrado."
             exit 1
           fi
 
-          if [ ! -f "build.gradle" ]; then
+          PROJECT_DIR=$(dirname "$SETTINGS")
+
+          echo "Projeto Android encontrado em:"
+          echo "$PROJECT_DIR"
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Verificar projeto
+        run: |
+          cd "$PROJECT_DIR"
+
+          echo "=== DIRETÓRIO DO PROJETO ==="
+          pwd
+
+          echo "=== ARQUIVOS ==="
+          ls -la
+
+          if [ ! -f "build.gradle" ] && [ ! -f "build.gradle.kts" ]; then
             echo "ERRO: build.gradle não encontrado."
             exit 1
           fi
 
-          if [ ! -f "app/build.gradle" ]; then
-            echo "ERRO: app/build.gradle não encontrado."
+          if [ ! -d "app" ]; then
+            echo "ERRO: pasta app não encontrada."
             exit 1
           fi
 
-          echo "Projeto Gradle encontrado."
-
-      - name: Gerar APK MENTEX 3.1
+      - name: Gerar APK MENTEX 3.3
         run: |
-          cd /tmp/mentex
+          cd "$PROJECT_DIR"
 
           gradle :app:assembleDebug --stacktrace
 
-      - name: Verificar APK
+      - name: Localizar APK
         run: |
           echo "=== APK GERADO ==="
-          find /tmp/mentex -type f -name "*.apk" -print
+          find "$PROJECT_DIR" -type f -name "*.apk" -print
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-Android-3.1
-          path: /tmp/mentex/app/build/outputs/apk/**/*.apk
+          name: MENTEX-Android-3.3
+          path: |
+            /tmp/mentex/**/build/outputs/apk/**/*.apk
           if-no-files-found: error
