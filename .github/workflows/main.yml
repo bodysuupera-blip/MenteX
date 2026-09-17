@@ -15,127 +15,121 @@ jobs:
 
     steps:
 
-      - name: Baixar código
+      - name: Baixar projeto
         uses: actions/checkout@v4
 
-      - name: Preparar projeto MENTEX
+      - name: Localizar projeto MENTEX
         shell: bash
         run: |
           set -e
 
-          echo "=== INICIANDO PREPARAÇÃO ==="
+          echo "=== LOCALIZANDO PROJETO ==="
 
-          # Se o projeto já estiver na raiz
-          if [ -f "settings.gradle" ] || [ -f "settings.gradle.kts" ]; then
-            echo "Projeto encontrado na raiz."
-            echo "PROJECT_DIR=$PWD" >> "$GITHUB_ENV"
-            exit 0
-          fi
+          if [ -f "settings.gradle" ]; then
+            PROJECT_DIR="$PWD"
 
-          echo "Projeto não está na raiz."
-          echo "Procurando ZIP do MENTEX..."
+          elif [ -f "settings.gradle.kts" ]; then
+            PROJECT_DIR="$PWD"
 
-          ZIP=""
-
-          if [ -f "MENTEX_Rafael_FINAL_10_CORACOES_250_FASES_JOGO_COMPLETO_CORRIGIDO.zip" ]; then
-            ZIP="MENTEX_Rafael_FINAL_10_CORACOES_250_FASES_JOGO_COMPLETO_CORRIGIDO.zip"
-          elif [ -f "MENTEX_Rafael_FINAL_10_CORACOES_250_FASES_JOGO_COMPLETO.zip" ]; then
-            ZIP="MENTEX_Rafael_FINAL_10_CORACOES_250_FASES_JOGO_COMPLETO.zip"
           else
             ZIP=$(find . -type f -name "*.zip" | head -1 || true)
+
+            if [ -z "$ZIP" ]; then
+              echo "ERRO: nenhum projeto ou ZIP encontrado."
+              find . -maxdepth 4 -type f | sort
+              exit 1
+            fi
+
+            echo "ZIP encontrado:"
+            echo "$ZIP"
+
+            rm -rf /tmp/mentex
+            mkdir -p /tmp/mentex
+
+            unzip -o "$ZIP" -d /tmp/mentex
+
+            SETTINGS=$(find /tmp/mentex -type f \
+              \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+              | head -1)
+
+            if [ -z "$SETTINGS" ]; then
+              echo "ERRO: settings.gradle não encontrado dentro do ZIP."
+              find /tmp/mentex -maxdepth 5 -type f | sort
+              exit 1
+            fi
+
+            PROJECT_DIR=$(dirname "$SETTINGS")
           fi
 
-          if [ -z "$ZIP" ]; then
-            echo "ERRO: nenhum ZIP encontrado."
-            echo "Arquivos existentes:"
-            find . -maxdepth 3 -type f | sort
-            exit 1
-          fi
-
-          echo "ZIP encontrado:"
-          echo "$ZIP"
-
-          rm -rf /tmp/mentex
-          mkdir -p /tmp/mentex
-
-          unzip -o "$ZIP" -d /tmp/mentex
-
-          echo "=== PROCURANDO PROJETO ==="
-
-          SETTINGS=$(find /tmp/mentex -type f \( \
-            -name "settings.gradle" -o \
-            -name "settings.gradle.kts" \
-          \) | head -1)
-
-          if [ -z "$SETTINGS" ]; then
-            echo "ERRO: settings.gradle não encontrado."
-            echo "Conteúdo extraído:"
-            find /tmp/mentex -maxdepth 5 -type f | sort
-            exit 1
-          fi
-
-          PROJECT_DIR=$(dirname "$SETTINGS")
-
-          echo "Projeto encontrado em:"
+          echo "PROJETO:"
           echo "$PROJECT_DIR"
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      - name: Verificar projeto MENTEX
+      - name: Verificar projeto
         shell: bash
         run: |
           set -e
 
-          echo "=== VERIFICANDO PROJETO ==="
-          echo "Diretório:"
-          echo "$PROJECT_DIR"
+          echo "=== VERIFICANDO PROJETO MENTEX ==="
 
           test -d "$PROJECT_DIR/app"
 
-          test -f "$PROJECT_DIR/settings.gradle" || \
-          test -f "$PROJECT_DIR/settings.gradle.kts"
+          if [ -f "$PROJECT_DIR/settings.gradle" ]; then
+            echo "settings.gradle OK"
+          elif [ -f "$PROJECT_DIR/settings.gradle.kts" ]; then
+            echo "settings.gradle.kts OK"
+          else
+            echo "ERRO: settings.gradle não encontrado"
+            exit 1
+          fi
 
-          test -f "$PROJECT_DIR/build.gradle" || \
-          test -f "$PROJECT_DIR/build.gradle.kts"
-
-          test -f "$PROJECT_DIR/app/build.gradle" || \
-          test -f "$PROJECT_DIR/app/build.gradle.kts"
+          if [ -f "$PROJECT_DIR/build.gradle" ]; then
+            echo "build.gradle OK"
+          elif [ -f "$PROJECT_DIR/build.gradle.kts" ]; then
+            echo "build.gradle.kts OK"
+          else
+            echo "ERRO: build.gradle não encontrado"
+            exit 1
+          fi
 
           test -f "$PROJECT_DIR/app/src/main/AndroidManifest.xml"
-
           test -f "$PROJECT_DIR/app/src/main/assets/index.html"
 
           echo ""
-          echo "=== PROJETO OK ==="
-          echo ""
-          find "$PROJECT_DIR/app/src/main" -maxdepth 3 -type f | sort
+          echo "================================"
+          echo " PROJETO MENTEX ENCONTRADO"
+          echo "================================"
 
       - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
 
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.7'
+          gradle-version: "8.7"
 
-      - name: Gerar APK
+      - name: Compilar APK
         shell: bash
         run: |
           set -e
 
           cd "$PROJECT_DIR"
 
-          echo "=== GERANDO APK ==="
+          echo "=== COMPILANDO MENTEX ==="
 
           gradle assembleDebug --stacktrace
 
           echo ""
           echo "=== APK GERADO ==="
 
-          find app/build/outputs/apk -type f -name "*.apk" -print
+          find app/build/outputs/apk \
+            -type f \
+            -name "*.apk" \
+            -print
 
       - name: Enviar APK
         uses: actions/upload-artifact@v4
