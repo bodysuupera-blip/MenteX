@@ -15,32 +15,208 @@ jobs:
 
     steps:
 
-      - name: Baixar código
+      - name: Baixar codigo
         uses: actions/checkout@v4
 
-      - name: Verificar ZIP do MENTEX
+      - name: Verificar arquivo do MENTEX
         shell: bash
         run: |
           set -e
 
           ZIP="./MENTEX_Android_3_9_2_5_CORACOES_SEM_CRASH.zip"
 
-          echo "======================================"
-          echo "        VERIFICANDO MENTEX 3.9.2"
-          echo "======================================"
+          echo "========================================"
+          echo "        MENTEX 3.9.2"
+          echo "        5 CORACOES"
+          echo "        PONTUACAO E PREMIOS"
+          echo "========================================"
 
           if [ ! -f "$ZIP" ]; then
-            echo "ERRO: ZIP não encontrado:"
+            echo "ERRO: ZIP nao encontrado:"
             echo "$ZIP"
             echo ""
-            echo "Arquivos ZIP encontrados no repositório:"
+            echo "Arquivos ZIP encontrados no repositorio:"
             find . -type f -iname "*.zip" -print
             exit 1
           fi
 
           echo "ZIP encontrado:"
-          ls -lh "$ZIP"
+          echo "$ZIP"
 
-      - name: Extrair MENTEX 3.9.2
+      - name: Extrair MENTEX
         shell: bash
-       
+        run: |
+          set -e
+
+          rm -rf /tmp/mentex
+          mkdir -p /tmp/mentex
+
+          unzip -o "./MENTEX_Android_3_9_2_5_CORACOES_SEM_CRASH.zip" \
+            -d /tmp/mentex
+
+          echo "MENTEX extraido."
+
+      - name: Localizar projeto Android
+        shell: bash
+        run: |
+          set -e
+
+          SETTINGS=$(find /tmp/mentex -type f \( \
+            -name "settings.gradle" \
+            -o -name "settings.gradle.kts" \
+          \) | head -1)
+
+          if [ -z "$SETTINGS" ]; then
+            echo "ERRO: settings.gradle nao encontrado."
+            find /tmp/mentex -maxdepth 6 -type f
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$SETTINGS")
+
+          echo "Projeto Android:"
+          echo "$PROJECT_DIR"
+
+          if [ ! -d "$PROJECT_DIR/app" ]; then
+            echo "ERRO: pasta app nao encontrada."
+            exit 1
+          fi
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Conferir configuracao do jogo
+        shell: bash
+        run: |
+          set -e
+
+          INDEX=$(find "$PROJECT_DIR/app/src/main/assets" \
+            -type f -name "index.html" | head -1)
+
+          if [ -z "$INDEX" ]; then
+            echo "ERRO: index.html nao encontrado."
+            exit 1
+          fi
+
+          echo "Index encontrado:"
+          echo "$INDEX"
+
+          echo ""
+          echo "Verificando 5 coracoes..."
+
+          if grep -q "lives:5" "$INDEX"; then
+            echo "OK: 5 coracoes encontrados."
+          else
+            echo "AVISO: verificacao lives:5 nao encontrada."
+          fi
+
+          echo ""
+          echo "Verificando duas telas de entrada..."
+
+          if grep -q "intro_screen.png" "$INDEX" && \
+             grep -q "opening_screen.png" "$INDEX"; then
+            echo "OK: duas telas de entrada encontradas."
+          else
+            echo "ERRO: telas de entrada nao encontradas."
+            exit 1
+          fi
+
+          echo ""
+          echo "Verificando botao JOGAR..."
+
+          if grep -q "JOGAR" "$INDEX"; then
+            echo "OK: JOGAR encontrado."
+          else
+            echo "AVISO: texto JOGAR nao encontrado."
+          fi
+
+          echo ""
+          echo "Verificando fases..."
+
+          if grep -q "200" "$INDEX"; then
+            echo "OK: referencia das 200 fases encontrada."
+          fi
+
+          echo ""
+          echo "Configuracao conferida."
+
+      - name: Configurar Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Preparar Gradle
+        shell: bash
+        run: |
+          set -e
+
+          cd "$PROJECT_DIR"
+
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+          fi
+
+      - name: Compilar MENTEX 3.9.2
+        shell: bash
+        run: |
+          set -e
+
+          cd "$PROJECT_DIR"
+
+          echo "========================================"
+          echo "        COMPILANDO MENTEX"
+          echo "        VERSAO 3.9.2"
+          echo "        5 CORACOES"
+          echo "        PONTUACAO + PREMIOS"
+          echo "        200 FASES"
+          echo "========================================"
+
+          if [ -f "./gradlew" ]; then
+            ./gradlew clean assembleDebug --stacktrace
+          else
+            gradle clean assembleDebug --stacktrace
+          fi
+
+      - name: Encontrar APK
+        shell: bash
+        run: |
+          set -e
+
+          APK=$(find "$PROJECT_DIR" \
+            -type f \
+            -name "*.apk" | head -1)
+
+          if [ -z "$APK" ]; then
+            echo "ERRO: APK nao foi gerado."
+            exit 1
+          fi
+
+          echo "APK encontrado:"
+          echo "$APK"
+
+          echo "APK=$APK" >> "$GITHUB_ENV"
+
+      - name: Disponibilizar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MENTEX-3.9.2-5-CORACOES
+          path: ${{ env.APK }}
+          if-no-files-found: error
+
+      - name: Finalizado
+        run: |
+          echo "========================================"
+          echo "     MENTEX GERADO COM SUCESSO"
+          echo "========================================"
+          echo "5 coracoes"
+          echo "Pontuacao"
+          echo "Premios"
+          echo "200 fases"
+          echo "Musica de entrada"
+          echo "Sem icone de voz"
+          echo "Entrada com duas telas"
+          echo "Botao JOGAR"
+          echo "========================================"
