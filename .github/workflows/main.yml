@@ -17,22 +17,18 @@ jobs:
       - name: Baixar código
         uses: actions/checkout@v4
 
-      - name: Extrair MENTEX 3.9 - 5 Corações
+      - name: Extrair MENTEX 3.9.1 - 5 Corações
         shell: bash
         run: |
           set -e
 
-          ZIP="./MENTEX_Android_3_9_5_CORACOES_DEFINITIVO.zip"
-
-          echo "======================================"
-          echo "   VERIFICANDO ARQUIVO DO MENTEX"
-          echo "======================================"
+          ZIP="./MENTEX_Android_3_9_1_5_CORACOES_CERTINHO.zip"
 
           if [ ! -f "$ZIP" ]; then
-            echo "ERRO: arquivo não encontrado:"
+            echo "ERRO: ZIP não encontrado:"
             echo "$ZIP"
             echo ""
-            echo "Arquivos ZIP encontrados:"
+            echo "ZIPs encontrados:"
             find . -type f -iname "*.zip" -print
             exit 1
           fi
@@ -61,7 +57,7 @@ jobs:
 
           PROJECT_DIR=$(dirname "$SETTINGS")
 
-          echo "Projeto encontrado em:"
+          echo "Projeto encontrado:"
           echo "$PROJECT_DIR"
 
           if [ ! -d "$PROJECT_DIR/app" ]; then
@@ -91,17 +87,12 @@ jobs:
             chmod +x ./gradlew
           fi
 
-      - name: Compilar APK MENTEX
+      - name: Compilar MENTEX 3.9.1
         shell: bash
         run: |
           set -e
 
           cd "$PROJECT_DIR"
-
-          echo "======================================"
-          echo "       COMPILANDO MENTEX 3.9"
-          echo "          5 CORAÇÕES"
-          echo "======================================"
 
           if [ -f "./gradlew" ]; then
             ./gradlew clean assembleDebug --stacktrace
@@ -129,10 +120,17 @@ jobs:
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-3.9-5-CORACOES
+          name: MENTEX-3.9.1-5-CORACOES
           path: ${{ env.APK }}
           if-no-files-found: error
 
+      - name: Finalizado
+        run: |
+          echo "MENTEX 3.9.1 GERADO COM SUCESSO"
+          echo "5 CORAÇÕES"
+          echo "PONTUAÇÃO"
+          echo "MOEDAS E PRÊMIOS"
+          echo "200 FASES"
       - name: Finalizado
         run: |
           echo "======================================"
