@@ -39,25 +39,62 @@ jobs:
         with:
           gradle-version: '8.13'
 
-      - name: Verificar projeto
+      - name: Encontrar projeto MENTEX
+        shell: bash
         run: |
-          echo "Procurando projeto MENTEX..."
+          set -e
 
-          test -f settings.gradle
-          test -f build.gradle
-          test -f app/build.gradle
+          echo "Procurando settings.gradle..."
 
-          echo "Projeto encontrado!"
-          echo "settings.gradle OK"
-          echo "build.gradle OK"
-          echo "app/build.gradle OK"
+          PROJECT_DIR=$(find . \
+            -type f \
+            \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+            -not -path "./.git/*" \
+            -print \
+            | head -n 1 \
+            | xargs -r dirname)
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERRO: Não encontrei settings.gradle."
+            echo ""
+            echo "Arquivos existentes no GitHub:"
+            find . -maxdepth 5 -type f -not -path "./.git/*" | sort
+            exit 1
+          fi
+
+          echo "Projeto encontrado:"
+          echo "$PROJECT_DIR"
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Verificar projeto
+        shell: bash
+        run: |
+          cd "$PROJECT_DIR"
+
+          echo "Projeto: $PWD"
+          ls -la
+
+          test -f settings.gradle || test -f settings.gradle.kts
+          test -f build.gradle || test -f build.gradle.kts
+
+          if [ ! -d "app" ]; then
+            echo "ERRO: pasta app não encontrada."
+            exit 1
+          fi
+
+          echo "Projeto MENTEX OK!"
 
       - name: Limpar projeto
+        shell: bash
         run: |
+          cd "$PROJECT_DIR"
           gradle clean
 
       - name: Gerar APK
+        shell: bash
         run: |
+          cd "$PROJECT_DIR"
           gradle assembleDebug --stacktrace
 
       - name: Enviar APK
