@@ -18,84 +18,202 @@ jobs:
       - name: Baixar código
         uses: actions/checkout@v4
 
+
       - name: Preparar projeto MENTEX
         shell: bash
         run: |
           set -e
 
           echo "======================================"
-          echo "     PROCURANDO ZIP DO MENTEX"
+          echo "     PROCURANDO ZIP DO PROJETO"
           echo "======================================"
 
-          ZIP_FILE=""
+          BASE_ZIP=""
 
           if [ -f "./MENTEX_Android_3_9_2_5_CORACOES_SEM_CRASH.zip" ]; then
-            ZIP_FILE="./MENTEX_Android_3_9_2_5_CORACOES_SEM_CRASH.zip"
+            BASE_ZIP="./MENTEX_Android_3_9_2_5_CORACOES_SEM_CRASH.zip"
 
           elif [ -f "./MENTEX_Android_3_1_Nova_Tela_Inicial_CORRIGIDO.zip" ]; then
-            ZIP_FILE="./MENTEX_Android_3_1_Nova_Tela_Inicial_CORRIGIDO.zip"
+            BASE_ZIP="./MENTEX_Android_3_1_Nova_Tela_Inicial_CORRIGIDO.zip"
 
           else
-            ZIP_FILE=$(find . -maxdepth 2 -type f -name "*.zip" -not -path "./.git/*" -print -quit)
+            BASE_ZIP=$(find . -maxdepth 2 -type f -name "*.zip" \
+              ! -name "MENTEX_ATUALIZACAO_LOJA_10_CORACOES.zip" \
+              ! -path "./.git/*" \
+              -print -quit)
           fi
 
-          if [ -z "$ZIP_FILE" ]; then
-            echo "ERRO: Nenhum ZIP do MENTEX encontrado."
+          if [ -z "$BASE_ZIP" ]; then
+            echo "ERRO: ZIP do projeto Android não encontrado."
             echo ""
-            echo "Arquivos encontrados:"
-            find . -maxdepth 3 -type f -print
+            echo "ZIPs encontrados:"
+            find . -maxdepth 2 -type f -name "*.zip" -print
             exit 1
           fi
 
           echo ""
-          echo "ZIP ENCONTRADO:"
-          echo "$ZIP_FILE"
+          echo "ZIP BASE:"
+          echo "$BASE_ZIP"
+
 
           echo ""
           echo "======================================"
-          echo "       EXTRAINDO PROJETO"
+          echo "   PROCURANDO ATUALIZAÇÃO DO MENTEX"
+          echo "======================================"
+
+          UPDATE_ZIP="./MENTEX_ATUALIZACAO_LOJA_10_CORACOES.zip"
+
+          if [ ! -f "$UPDATE_ZIP" ]; then
+            echo "ERRO: MENTEX_ATUALIZACAO_LOJA_10_CORACOES.zip não encontrado."
+            echo ""
+            echo "ZIPs encontrados:"
+            find . -maxdepth 2 -type f -name "*.zip" -print
+            exit 1
+          fi
+
+          echo ""
+          echo "ZIP DE ATUALIZAÇÃO:"
+          echo "$UPDATE_ZIP"
+
+
+          echo ""
+          echo "======================================"
+          echo "       EXTRAINDO PROJETO BASE"
           echo "======================================"
 
           rm -rf extracted_mentex
           mkdir -p extracted_mentex
 
-          unzip -o "$ZIP_FILE" -d extracted_mentex
+          unzip -o "$BASE_ZIP" -d extracted_mentex
+
 
           echo ""
           echo "======================================"
-          echo "       EXTRAÇÃO CONCLUÍDA"
+          echo "      VERIFICANDO PROJETO BASE"
           echo "======================================"
-
-          echo ""
-          echo "Arquivos principais:"
-          ls -la extracted_mentex
-
-          echo ""
-          echo "Verificando projeto Android..."
-
-          if [ ! -f "extracted_mentex/build.gradle" ] && [ ! -f "extracted_mentex/build.gradle.kts" ]; then
-            echo "ERRO: build.gradle não encontrado na raiz."
-            echo ""
-            echo "Procurando arquivos Gradle:"
-            find extracted_mentex -type f -name "build.gradle" -print
-            exit 1
-          fi
 
           if [ ! -d "extracted_mentex/app" ]; then
             echo "ERRO: pasta app não encontrada."
             exit 1
           fi
 
-          PROJECT_DIR="$GITHUB_WORKSPACE/extracted_mentex"
+          if [ ! -f "extracted_mentex/build.gradle" ] && \
+             [ ! -f "extracted_mentex/build.gradle.kts" ]; then
+            echo "ERRO: build.gradle não encontrado."
+            exit 1
+          fi
+
 
           echo ""
           echo "======================================"
-          echo "       PROJETO ANDROID ENCONTRADO"
+          echo "      EXTRAINDO ATUALIZAÇÃO"
           echo "======================================"
 
-          echo "$PROJECT_DIR"
+          rm -rf update_mentex
+          mkdir -p update_mentex
+
+          unzip -o "$UPDATE_ZIP" -d update_mentex
+
+
+          echo ""
+          echo "Arquivos da atualização:"
+          find update_mentex -maxdepth 3 -type f -print
+
+
+          echo ""
+          echo "======================================"
+          echo "      PROCURANDO INDEX ATUALIZADO"
+          echo "======================================"
+
+          UPDATED_HTML=$(find update_mentex \
+            -type f \
+            -name "index.html" \
+            -print -quit)
+
+          if [ -z "$UPDATED_HTML" ]; then
+            echo "ERRO: index.html atualizado não encontrado."
+            exit 1
+          fi
+
+          echo "HTML ATUALIZADO:"
+          echo "$UPDATED_HTML"
+
+
+          echo ""
+          echo "======================================"
+          echo "   PROCURANDO HTML DO APLICATIVO"
+          echo "======================================"
+
+          TARGET_HTML=""
+
+          if [ -f "extracted_mentex/app/src/main/assets/index.html" ]; then
+            TARGET_HTML="extracted_mentex/app/src/main/assets/index.html"
+
+          else
+            TARGET_HTML=$(find extracted_mentex/app/src/main/assets \
+              -type f \
+              \( -name "*.html" -o -name "*.htm" \) \
+              -print -quit)
+          fi
+
+          if [ -z "$TARGET_HTML" ]; then
+            echo "ERRO: nenhum HTML encontrado em app/src/main/assets."
+            echo ""
+            echo "Arquivos HTML encontrados no projeto:"
+            find extracted_mentex/app \
+              -type f \
+              \( -name "*.html" -o -name "*.htm" \) \
+              -print
+
+            exit 1
+          fi
+
+          echo ""
+          echo "HTML ORIGINAL:"
+          echo "$TARGET_HTML"
+
+
+          echo ""
+          echo "======================================"
+          echo "      ATUALIZANDO HTML DO MENTEX"
+          echo "======================================"
+
+          cp "$UPDATED_HTML" "$TARGET_HTML"
+
+          echo ""
+          echo "HTML atualizado com sucesso."
+
+
+          echo ""
+          echo "======================================"
+          echo "       VERIFICANDO ASSETS"
+          echo "======================================"
+
+          ASSETS_DIR="extracted_mentex/app/src/main/assets"
+
+          if [ -d "$ASSETS_DIR" ]; then
+            echo ""
+            echo "Assets encontrados:"
+            ls -lh "$ASSETS_DIR"
+          else
+            echo "ERRO: pasta assets não encontrada."
+            exit 1
+          fi
+
+
+          echo ""
+          echo "======================================"
+          echo "      CONFIGURANDO PROJETO"
+          echo "======================================"
+
+          PROJECT_DIR="$GITHUB_WORKSPACE/extracted_mentex"
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+          echo ""
+          echo "PROJETO FINAL:"
+          echo "$PROJECT_DIR"
+
 
       - name: Verificar projeto
         shell: bash
@@ -113,7 +231,7 @@ jobs:
           pwd
 
           echo ""
-          echo "Arquivos principais:"
+          echo "Arquivos:"
           ls -la
 
           echo ""
@@ -123,20 +241,23 @@ jobs:
             exit 1
           fi
 
-          if [ ! -f "build.gradle" ] && [ ! -f "build.gradle.kts" ]; then
+          if [ ! -f "build.gradle" ] && \
+             [ ! -f "build.gradle.kts" ]; then
             echo "ERRO: build.gradle não encontrado."
             exit 1
           fi
 
-          if [ ! -f "app/build.gradle" ] && [ ! -f "app/build.gradle.kts" ]; then
+          if [ ! -f "app/build.gradle" ] && \
+             [ ! -f "app/build.gradle.kts" ]; then
             echo "ERRO: Gradle do aplicativo não encontrado."
             exit 1
           fi
 
           echo ""
-          echo "PROJETO ANDROID VALIDADO COM SUCESSO"
+          echo "PROJETO ANDROID OK"
 
-      - name: Verificar arquivos do MENTEX
+
+      - name: Confirmar atualização MENTEX
         shell: bash
         run: |
           set -e
@@ -144,44 +265,39 @@ jobs:
           cd "$PROJECT_DIR"
 
           echo "======================================"
-          echo "       VERIFICANDO ASSETS"
+          echo "   CONFIRMANDO HTML ATUALIZADO"
           echo "======================================"
 
-          ASSETS_DIR="app/src/main/assets"
+          HTML_FILE=$(find app/src/main/assets \
+            -type f \
+            -name "index.html" \
+            -print -quit)
 
-          if [ -d "$ASSETS_DIR" ]; then
-
-            echo ""
-            echo "Pasta de assets encontrada:"
-            echo "$ASSETS_DIR"
-
-            echo ""
-            echo "Arquivos disponíveis:"
-            ls -lh "$ASSETS_DIR"
-
-            echo ""
-
-            if [ -f "$ASSETS_DIR/intro_screen.png" ]; then
-              echo "OK: intro_screen.png"
-            else
-              echo "AVISO: intro_screen.png não encontrada"
-            fi
-
-            if [ -f "$ASSETS_DIR/opening_screen.png" ]; then
-              echo "OK: opening_screen.png"
-            else
-              echo "AVISO: opening_screen.png não encontrada"
-            fi
-
-            if [ -f "$ASSETS_DIR/mentex_musica_inicio.wav" ]; then
-              echo "OK: mentex_musica_inicio.wav"
-            else
-              echo "AVISO: mentex_musica_inicio.wav não encontrada"
-            fi
-
-          else
-            echo "AVISO: pasta assets não encontrada."
+          if [ -z "$HTML_FILE" ]; then
+            echo "ERRO: index.html não encontrado."
+            exit 1
           fi
+
+          echo ""
+          echo "HTML:"
+          echo "$HTML_FILE"
+
+          echo ""
+          echo "Tamanho:"
+          ls -lh "$HTML_FILE"
+
+          echo ""
+          echo "Procurando configuração de 10 corações..."
+
+          if grep -qi "10" "$HTML_FILE"; then
+            echo "OK: referência a 10 encontrada no HTML."
+          else
+            echo "AVISO: não foi encontrada referência simples a 10."
+          fi
+
+          echo ""
+          echo "HTML PRONTO PARA O APK"
+
 
       - name: Java 17
         uses: actions/setup-java@v4
@@ -189,10 +305,12 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+
       - name: Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.7"
+
 
       - name: Verificar Gradle
         shell: bash
@@ -206,6 +324,7 @@ jobs:
           echo "======================================"
 
           gradle --version
+
 
       - name: Gerar APK
         shell: bash
@@ -230,6 +349,7 @@ jobs:
             -type f \
             -name "*.apk" \
             -print
+
 
       - name: Verificar APK
         shell: bash
@@ -257,6 +377,7 @@ jobs:
 
           echo ""
           ls -lh "$APK"
+
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
