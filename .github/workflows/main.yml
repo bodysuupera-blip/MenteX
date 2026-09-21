@@ -1,4 +1,4 @@
-name: Gerar APK MENTEX
+name: Construir APK MENTEX
 
 on:
   push:
@@ -30,7 +30,6 @@ jobs:
           packages: 'platform-tools'
 
       - name: Instalar Android SDK 36
-        shell: bash
         run: |
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platforms;android-36" "build-tools;36.0.0"
@@ -40,31 +39,60 @@ jobs:
         with:
           gradle-version: '8.13'
 
-      - name: Verificar projeto
+      - name: Encontrar projeto MENTEX
         shell: bash
         run: |
-          if [ ! -f "settings.gradle" ] && [ ! -f "settings.gradle.kts" ]; then
-            echo "ERRO: settings.gradle não encontrado na raiz."
-            find . -maxdepth 4 -type f | sort
+          set -e
+
+          PROJECT_DIR=""
+
+          if [ -f "settings.gradle" ]; then
+            PROJECT_DIR="$PWD"
+          elif [ -f "settings.gradle.kts" ]; then
+            PROJECT_DIR="$PWD"
+          else
+            PROJECT_DIR=$(find . \
+              -type f \
+              \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+              -not -path "./.git/*" \
+              -print -quit | xargs -r dirname || true)
+          fi
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERRO: settings.gradle não encontrado."
+            echo "O projeto MENTEX precisa estar enviado para o GitHub."
             exit 1
           fi
 
-          if [ ! -f "app/build.gradle" ] && [ ! -f "app/build.gradle.kts" ]; then
-            echo "ERRO: app/build.gradle não encontrado."
+          echo "Projeto encontrado em: $PROJECT_DIR"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Verificar projeto
+        run: |
+          cd "$PROJECT_DIR"
+          ls -la
+
+          if [ ! -f "settings.gradle" ] && [ ! -f "settings.gradle.kts" ]; then
+            echo "ERRO: settings.gradle não encontrado."
+            exit 1
+          fi
+
+          if [ ! -d "app" ]; then
+            echo "ERRO: pasta app não encontrada."
             exit 1
           fi
 
       - name: Limpar projeto
-        shell: bash
         run: |
+          cd "$PROJECT_DIR"
           gradle clean
 
       - name: Gerar APK
-        shell: bash
         run: |
+          cd "$PROJECT_DIR"
           gradle assembleDebug --stacktrace
 
-      - name: Publicar APK
+      - name: Enviar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-APK
