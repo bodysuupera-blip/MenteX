@@ -19,7 +19,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -29,53 +29,39 @@ jobs:
         with:
           packages: 'platform-tools'
 
-      - name: Instalar Android SDK necessário
+      - name: Instalar Android SDK 36
         shell: bash
         run: |
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
-          yes | sdkmanager --licenses || true
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
 
-      - name: Encontrar projeto Android
-        shell: bash
-        run: |
-          PROJECT_DIR=$(find . -type f \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
-            -not -path "./.git/*" \
-            -printf '%h\n' | head -n 1)
-
-          if [ -z "$PROJECT_DIR" ]; then
-            echo "ERRO: settings.gradle ou settings.gradle.kts não encontrado."
-            echo "Estrutura do repositório:"
-            find . -maxdepth 4 -type f | sort | head -300
-            exit 1
-          fi
-
-          echo "Projeto Android encontrado em: $PROJECT_DIR"
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-
-      - name: Instalar Gradle
-        uses: gradle/actions/setup-gradle@v4
+      - name: Configurar Gradle 8.13
+        uses: gradle/actions/setup-gradle@v6
         with:
-          gradle-version: '8.7'
+          gradle-version: '8.13'
 
       - name: Verificar projeto
         shell: bash
         run: |
-          cd "$PROJECT_DIR"
-          echo "Pasta do projeto:"
-          pwd
-          echo "Arquivos:"
-          ls -la
+          if [ ! -f "settings.gradle" ] && [ ! -f "settings.gradle.kts" ]; then
+            echo "ERRO: settings.gradle não encontrado na raiz."
+            find . -maxdepth 4 -type f | sort
+            exit 1
+          fi
+
+          if [ ! -f "app/build.gradle" ] && [ ! -f "app/build.gradle.kts" ]; then
+            echo "ERRO: app/build.gradle não encontrado."
+            exit 1
+          fi
 
       - name: Limpar projeto
         shell: bash
         run: |
-          cd "$PROJECT_DIR"
           gradle clean
 
       - name: Gerar APK
         shell: bash
         run: |
-          cd "$PROJECT_DIR"
           gradle assembleDebug --stacktrace
 
       - name: Publicar APK
