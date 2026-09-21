@@ -49,7 +49,6 @@ jobs:
 
           PROJECT_DIR=""
 
-          # Primeiro procura o projeto diretamente no repositório
           SETTINGS=$(find . \
             -type f \
             \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
@@ -58,18 +57,14 @@ jobs:
 
           if [ -n "$SETTINGS" ]; then
             PROJECT_DIR=$(dirname "$SETTINGS")
-            echo "Projeto encontrado diretamente no repositório."
+            echo "Projeto encontrado diretamente."
           fi
 
-          # Se não encontrou, procura o ZIP do MENTEX
           if [ -z "$PROJECT_DIR" ]; then
 
             ZIP="./MENTEX_PRONTO_GITHUB_APK.zip"
 
             if [ ! -f "$ZIP" ]; then
-              echo "ZIP principal não encontrado."
-              echo "Procurando qualquer ZIP com projeto Android..."
-
               ZIP=$(find . \
                 -type f \
                 -name "*.zip" \
@@ -82,8 +77,7 @@ jobs:
               exit 1
             fi
 
-            echo "ZIP encontrado:"
-            echo "$ZIP"
+            echo "ZIP encontrado: $ZIP"
 
             rm -rf /tmp/mentex
             mkdir -p /tmp/mentex
@@ -97,22 +91,14 @@ jobs:
 
             if [ -z "$SETTINGS" ]; then
               echo "ERRO: settings.gradle não encontrado dentro do ZIP."
-              echo ""
-              echo "Arquivos encontrados:"
-              find /tmp/mentex -maxdepth 6 -type f | sort
               exit 1
             fi
 
             PROJECT_DIR=$(dirname "$SETTINGS")
 
-            echo "Projeto encontrado dentro do ZIP."
+            echo "Projeto encontrado dentro do ZIP:"
+            echo "$PROJECT_DIR"
           fi
-
-          echo ""
-          echo "===================================="
-          echo "PROJETO:"
-          echo "$PROJECT_DIR"
-          echo "===================================="
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
@@ -123,39 +109,17 @@ jobs:
 
           cd "$PROJECT_DIR"
 
-          echo "===================================="
-          echo "VERIFICANDO PROJETO MENTEX"
-          echo "===================================="
-
-          echo "Pasta:"
+          echo "Projeto:"
           pwd
 
-          echo ""
           echo "Arquivos:"
           ls -la
 
-          echo ""
+          test -f settings.gradle || test -f settings.gradle.kts
+          test -f build.gradle || test -f build.gradle.kts
+          test -d app
 
-          if [ ! -f "settings.gradle" ] && [ ! -f "settings.gradle.kts" ]; then
-            echo "ERRO: settings.gradle não encontrado."
-            exit 1
-          fi
-
-          if [ ! -f "build.gradle" ] && [ ! -f "build.gradle.kts" ]; then
-            echo "ERRO: build.gradle não encontrado."
-            exit 1
-          fi
-
-          if [ ! -d "app" ]; then
-            echo "ERRO: pasta app não encontrada."
-            exit 1
-          fi
-
-          echo "settings.gradle: OK"
-          echo "build.gradle: OK"
-          echo "app/: OK"
-          echo ""
-          echo "PROJETO MENTEX OK!"
+          echo "Projeto MENTEX OK!"
 
       - name: Limpar projeto
         shell: bash
@@ -168,12 +132,46 @@ jobs:
         shell: bash
         run: |
           set -e
+
           cd "$PROJECT_DIR"
+
           gradle assembleDebug --stacktrace
+
+      - name: Localizar APK gerado
+        shell: bash
+        run: |
+          set -e
+
+          echo "Procurando APK..."
+
+          APK=$(find "$PROJECT_DIR" \
+            -type f \
+            -name "*.apk" \
+            -path "*/build/outputs/apk/debug/*" \
+            -print -quit || true)
+
+          if [ -z "$APK" ]; then
+            echo "ERRO: APK não encontrado."
+            echo ""
+            echo "Arquivos APK existentes:"
+            find "$PROJECT_DIR" -type f -name "*.apk" || true
+            exit 1
+          fi
+
+          echo "APK encontrado:"
+          echo "$APK"
+
+          mkdir -p "$GITHUB_WORKSPACE/apk"
+
+          cp "$APK" "$GITHUB_WORKSPACE/apk/MENTEX-debug.apk"
+
+          echo ""
+          echo "APK preparado para download:"
+          ls -lh "$GITHUB_WORKSPACE/apk/MENTEX-debug.apk"
 
       - name: Enviar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-APK
-          path: '**/build/outputs/apk/debug/*.apk'
+          path: apk/MENTEX-debug.apk
           if-no-files-found: error
