@@ -4,130 +4,110 @@ on:
   push:
     branches:
       - main
-
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-
   construir:
-
     runs-on: ubuntu-latest
 
     steps:
 
-      # ==========================================
-      # 1. BAIXAR O CÓDIGO
-      # ==========================================
-
       - name: Baixar código
-
         uses: actions/checkout@v4
 
-
-      # ==========================================
-      # 2. ENCONTRAR O PROJETO ANDROID
-      # ==========================================
-
-      - name: Encontrar projeto
-
+      - name: Preparar projeto MENTEX
         shell: bash
-
         run: |
-
           set -e
 
-          echo "=== PROCURANDO PROJETO MENTEX ==="
+          echo "=== PROCURANDO ARQUIVO ZIP DO MENTEX ==="
 
-          PROJECT_DIR=$(find . -type f \( \
-            -name "settings.gradle" \
-            -o \
-            -name "settings.gradle.kts" \
-          \) \
-          -not -path "./.git/*" \
-          -print \
-          -quit \
-          | xargs -r dirname)
+          ZIP_FILE=""
 
-          if [ -z "$PROJECT_DIR" ]; then
-
-            echo "ERRO: Projeto Android não encontrado."
-
-            echo "Arquivos encontrados:"
-
-            find . -maxdepth 4 -type f | head -100
-
-            exit 1
-
+          if [ -f "./MENTEX_Android_3_9_2_5_CORACOES_SEM_CRASH.zip" ]; then
+            ZIP_FILE="./MENTEX_Android_3_9_2_5_CORACOES_SEM_CRASH.zip"
+          elif [ -f "./MENTEX_Android_3_1_Nova_Tela_Inicial_CORRIGIDO.zip" ]; then
+            ZIP_FILE="./MENTEX_Android_3_1_Nova_Tela_Inicial_CORRIGIDO.zip"
+          else
+            ZIP_FILE=$(find . -maxdepth 2 -type f -name "*.zip" -not -path "./.git/*" -print -quit)
           fi
 
-          PROJECT_DIR="${PROJECT_DIR#./}"
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERRO: Nenhum arquivo ZIP encontrado."
+            echo ""
+            echo "Arquivos disponíveis:"
+            find . -maxdepth 3 -type f -print
+            exit 1
+          fi
 
-          echo "PROJETO ENCONTRADO:"
+          echo "ZIP ENCONTRADO:"
+          echo "$ZIP_FILE"
+
+          echo ""
+          echo "=== EXTRAINDO PROJETO ==="
+
+          mkdir -p extracted_mentex
+
+          unzip -o "$ZIP_FILE" -d extracted_mentex
+
+          echo ""
+          echo "=== PROCURANDO PROJETO ANDROID ==="
+
+          PROJECT_DIR=$(find extracted_mentex \
+            -type f \
+            -name "settings.gradle" -o -name "settings.gradle.kts" \
+            -print -quit | xargs -r dirname)
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERRO: Projeto Android não encontrado depois de extrair o ZIP."
+            echo ""
+            echo "Conteúdo extraído:"
+            find extracted_mentex -maxdepth 5 -type f -print
+            exit 1
+          fi
+
+          echo ""
+          echo "=== PROJETO ENCONTRADO ==="
           echo "$PROJECT_DIR"
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-
-      # ==========================================
-      # 3. VERIFICAR PROJETO
-      # ==========================================
-
       - name: Verificar projeto
-
         shell: bash
-
         run: |
-
           set -e
 
           cd "$PROJECT_DIR"
 
           echo "=== PROJETO OK ==="
-
+          echo ""
           echo "Diretório:"
           pwd
 
           echo ""
-
-          echo "Arquivos principais:"
-
+          echo "Arquivos:"
           ls -la
 
           echo ""
 
           if [ ! -d "app" ]; then
-
             echo "ERRO: pasta app não encontrada."
-
             exit 1
-
           fi
 
-          if [ ! -f "app/build.gradle" ] && \
-             [ ! -f "app/build.gradle.kts" ]; then
-
+          if [ ! -f "app/build.gradle" ] && [ ! -f "app/build.gradle.kts" ]; then
             echo "ERRO: arquivo Gradle do app não encontrado."
-
             exit 1
-
           fi
 
-          echo "PROJETO OK"
-
-
-      # ==========================================
-      # 4. PREPARAR ARQUIVOS DA ABERTURA
-      # ==========================================
+          echo "PROJETO ANDROID VALIDADO COM SUCESSO"
 
       - name: Preparar abertura do MENTEX
-
         shell: bash
-
         run: |
-
           set -e
 
           cd "$PROJECT_DIR"
@@ -138,211 +118,74 @@ jobs:
 
           mkdir -p "$ASSETS_DIR"
 
-          echo "Procurando primeira imagem..."
+          echo ""
+          echo "=== PROCURANDO IMAGENS ==="
 
           INTRO=$(find "$GITHUB_WORKSPACE" \
             -type f \
             -name "intro_screen.png" \
             -not -path "*/.git/*" \
-            -print \
-            -quit)
+            -print -quit)
 
           if [ -z "$INTRO" ]; then
-
-            echo "ERRO: intro_screen.png não encontrada."
-
-            exit 1
-
+            echo "AVISO: intro_screen.png não encontrada."
+          else
+            echo "Primeira imagem:"
+            echo "$INTRO"
+            cp "$INTRO" "$ASSETS_DIR/intro_screen.png"
           fi
-
-          echo "Primeira imagem encontrada:"
-          echo "$INTRO"
-
-
-          echo "Procurando segunda imagem..."
 
           RULES=$(find "$GITHUB_WORKSPACE" \
             -type f \
             -name "opening_screen.png" \
             -not -path "*/.git/*" \
-            -print \
-            -quit)
+            -print -quit)
 
           if [ -z "$RULES" ]; then
-
-            echo "ERRO: opening_screen.png não encontrada."
-
-            exit 1
-
+            echo "AVISO: opening_screen.png não encontrada."
+          else
+            echo "Segunda imagem:"
+            echo "$RULES"
+            cp "$RULES" "$ASSETS_DIR/opening_screen.png"
           fi
-
-          echo "Segunda imagem encontrada:"
-          echo "$RULES"
-
-
-          echo "Procurando música..."
 
           MUSIC=$(find "$GITHUB_WORKSPACE" \
             -type f \
             -name "mentex_musica_inicio.wav" \
             -not -path "*/.git/*" \
-            -print \
-            -quit)
+            -print -quit)
 
           if [ -z "$MUSIC" ]; then
-
-            echo "ERRO: mentex_musica_inicio.wav não encontrada."
-
-            exit 1
-
+            echo "AVISO: mentex_musica_inicio.wav não encontrada."
+          else
+            echo "Música:"
+            echo "$MUSIC"
+            cp "$MUSIC" "$ASSETS_DIR/mentex_musica_inicio.wav"
           fi
 
-          echo "Música encontrada:"
-          echo "$MUSIC"
-
-
-          # Copiar arquivos
-
-          cp "$INTRO" \
-             "$ASSETS_DIR/intro_screen.png"
-
-          cp "$RULES" \
-             "$ASSETS_DIR/opening_screen.png"
-
-          cp "$MUSIC" \
-             "$ASSETS_DIR/mentex_musica_inicio.wav"
-
-
           echo ""
-          echo "=== ARQUIVOS COPIADOS ==="
+          echo "=== ASSETS DO MENTEX ==="
 
-          ls -lh "$ASSETS_DIR"
-
-
-      # ==========================================
-      # 5. JAVA 17
-      # ==========================================
+          ls -lh "$ASSETS_DIR" || true
 
       - name: Java 17
-
         uses: actions/setup-java@v4
-
         with:
-
           distribution: temurin
-
           java-version: "17"
 
-
-      # ==========================================
-      # 6. GRADLE 8.7
-      # ==========================================
-
       - name: Gradle 8.7
-
         uses: gradle/actions/setup-gradle@v4
-
         with:
-
           gradle-version: "8.7"
 
-
-      # ==========================================
-      # 7. VERIFICAR GRADLE
-      # ==========================================
-
       - name: Verificar Gradle
-
         shell: bash
-
         run: |
-
           set -e
 
           cd "$PROJECT_DIR"
 
           echo "=== VERSÃO DO GRADLE ==="
 
-          gradle --version
-
-
-      # ==========================================
-      # 8. GERAR APK
-      # ==========================================
-
-      - name: Gerar APK
-
-        shell: bash
-
-        run: |
-
-          set -e
-
-          cd "$PROJECT_DIR"
-
-          echo "=== GERANDO APK MENTEX ==="
-
-          gradle assembleDebug --stacktrace
-
-          echo ""
-
-          echo "=== APK PRONTO ==="
-
-          find app/build/outputs/apk \
-            -type f \
-            -name "*.apk" \
-            -print
-
-
-      # ==========================================
-      # 9. VERIFICAR APK
-      # ==========================================
-
-      - name: Verificar APK
-
-        shell: bash
-
-        run: |
-
-          set -e
-
-          cd "$PROJECT_DIR"
-
-          APK=$(find app/build/outputs/apk \
-            -type f \
-            -name "*.apk" \
-            -print \
-            -quit)
-
-          if [ -z "$APK" ]; then
-
-            echo "ERRO: APK não foi encontrado."
-
-            exit 1
-
-          fi
-
-          echo "APK ENCONTRADO:"
-          echo "$APK"
-
-          echo ""
-
-          ls -lh "$APK"
-
-
-      # ==========================================
-      # 10. DISPONIBILIZAR APK
-      # ==========================================
-
-      - name: Disponibilizar APK
-
-        uses: actions/upload-artifact@v4
-
-        with:
-
-          name: MENTEX-${{ github.run_number }}
-
-          path: |
-            ${{ env.PROJECT_DIR }}/app/build/outputs/apk/**/*.apk
-
-          if-no-files-found: error
+          grad
