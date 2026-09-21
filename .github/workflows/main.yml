@@ -14,28 +14,53 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Baixar código
         uses: actions/checkout@v4
 
-      - name: Preparar projeto
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Instalar Android SDK 35
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Preparar projeto MENTEX
         shell: bash
         run: |
           set -e
 
-          ZIP="MENTEX_300_FASES_FINAL_CORRIGIDO.zip"
+          ZIP="MENTEX_300_FASES_BUILD_ESTAVEL.zip"
 
           if [ ! -f "$ZIP" ]; then
-            echo "ERRO: $ZIP não encontrado na raiz do repositório."
+            echo "ERRO: ZIP não encontrado:"
+            echo "$ZIP"
+            echo ""
+            echo "Arquivos disponíveis:"
             ls -la
             exit 1
           fi
 
           rm -rf projeto_mentex
+
           mkdir projeto_mentex
 
           unzip -q "$ZIP" -d projeto_mentex
 
-          echo "Arquivos do projeto:"
+          echo "Arquivos encontrados:"
           find projeto_mentex -maxdepth 3 -type f | head -100
 
           if [ ! -f "projeto_mentex/settings.gradle" ]; then
@@ -45,32 +70,39 @@ jobs:
 
           echo "PROJECT_DIR=projeto_mentex" >> "$GITHUB_ENV"
 
-      - name: Configurar Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
+      - name: Verificar Gradle
+        shell: bash
+        run: |
+          cd "$PROJECT_DIR"
 
-      - name: Configurar Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.7"
+          gradle --version
 
-      - name: Compilar MENTEX
+      - name: Compilar APK
         shell: bash
         run: |
           set -e
 
           cd "$PROJECT_DIR"
 
-          echo "Iniciando compilação..."
+          echo "================================"
+          echo "COMPILANDO MENTEX"
+          echo "================================"
 
-          gradle assembleDebug --stacktrace --no-daemon
+          gradle assembleDebug \
+            --no-daemon \
+            --stacktrace
 
-      - name: Procurar APK
+      - name: Verificar APK
         shell: bash
         run: |
           set -e
+
+          echo "Procurando APK..."
+
+          find "$PROJECT_DIR" \
+            -type f \
+            -name "*.apk" \
+            -print
 
           APK=$(find "$PROJECT_DIR" \
             -type f \
@@ -86,9 +118,10 @@ jobs:
           echo "$APK"
 
           mkdir -p apk_final
+
           cp "$APK" apk_final/MENTEX-debug.apk
 
-      - name: Disponibilizar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-${{ github.run_id }}
