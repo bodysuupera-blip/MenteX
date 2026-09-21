@@ -25,16 +25,15 @@ jobs:
           java-version: '17'
 
       - name: Configurar Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
 
-      - name: Instalar Android SDK 35
+      - name: Instalar Android SDK necessário
         shell: bash
         run: |
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
 
       - name: Dar permissão ao Gradle
         shell: bash
@@ -52,6 +51,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-APK
-          path: |
-            **/build/outputs/apk/debug/*.apk
+          path: '**/build/outputs/apk/debug/*.apk'
           if-no-files-found: error
