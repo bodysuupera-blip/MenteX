@@ -30,7 +30,7 @@ jobs:
             exit 0
           fi
 
-          ZIP=$(find . -type f -name "*.zip" | head -1)
+          ZIP="./MENTEX_FINAL_250_FASES_10_CORACOES_INICIO.zip"
 
           if [ -z "$ZIP" ]; then
             echo "ERRO: ZIP do MENTEX não encontrado."
