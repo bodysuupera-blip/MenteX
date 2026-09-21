@@ -15,527 +15,96 @@ jobs:
 
     steps:
 
-      # ============================================================
-      # BAIXAR O REPOSITÓRIO
-      # ============================================================
       - name: Baixar código
         uses: actions/checkout@v4
 
 
-      # ============================================================
-      # PROCURAR E EXTRAIR O PROJETO ANDROID
-      # ============================================================
       - name: Preparar projeto MENTEX
         shell: bash
         run: |
           set -e
 
-          echo "=========================================="
-          echo "       PREPARANDO PROJETO MENTEX"
-          echo "=========================================="
+          echo "======================================"
+          echo "        PROCURANDO ZIP DO MENTEX"
+          echo "======================================"
 
-          echo ""
-          echo "Arquivos ZIP encontrados:"
-          find . -maxdepth 2 -type f -name "*.zip" -not -path "./.git/*" -print
-
-
-          # --------------------------------------------------------
-          # ZIP PRINCIPAL DO PROJETO
-          # --------------------------------------------------------
-          BASE_ZIP=""
+          ZIP_FILE=""
 
           if [ -f "./MENTEX_Android_3_9_2_5_CORACOES_SEM_CRASH.zip" ]; then
-            BASE_ZIP="./MENTEX_Android_3_9_2_5_CORACOES_SEM_CRASH.zip"
-
-          elif [ -f "./MENTEX_Android_3_1_Nova_Tela_Inicial_CORRIGIDO.zip" ]; then
-            BASE_ZIP="./MENTEX_Android_3_1_Nova_Tela_Inicial_CORRIGIDO.zip"
-
+            ZIP_FILE="./MENTEX_Android_3_9_2_5_CORACOES_SEM_CRASH.zip"
           else
-            BASE_ZIP=$(find . \
-              -maxdepth 2 \
-              -type f \
-              -name "*.zip" \
-              ! -name "MENTEX_ATUALIZACAO_LOJA_10_CORACOES.zip" \
-              ! -name "MENTEX_CORRIGIDO_ABERTURA_COMECAR_LOJA_10_CORACOES.zip" \
-              ! -path "./.git/*" \
-              -print \
-              -quit)
+            ZIP_FILE=$(find . -maxdepth 2 -type f -name "*.zip" -not -path "./.git/*" | head -1)
           fi
 
-          if [ -z "$BASE_ZIP" ]; then
-            echo ""
-            echo "ERRO: ZIP principal do projeto Android não encontrado."
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERRO: ZIP do MENTEX não encontrado."
             exit 1
           fi
 
-          echo ""
-          echo "ZIP PRINCIPAL:"
-          echo "$BASE_ZIP"
+          echo "ZIP encontrado:"
+          echo "$ZIP_FILE"
+
+          rm -rf mentex
+          mkdir -p mentex
+
+          echo "Extraindo projeto..."
+
+          unzip -o "$ZIP_FILE" -d mentex
 
 
-          # --------------------------------------------------------
-          # ZIP DA ATUALIZAÇÃO
-          # --------------------------------------------------------
-          UPDATE_ZIP=""
+          echo "======================================"
+          echo "       PROCURANDO PROJETO ANDROID"
+          echo "======================================"
 
-          if [ -f "./MENTEX_CORRIGIDO_ABERTURA_COMECAR_LOJA_10_CORACOES.zip" ]; then
-            UPDATE_ZIP="./MENTEX_CORRIGIDO_ABERTURA_COMECAR_LOJA_10_CORACOES.zip"
-
-          elif [ -f "./MENTEX_ATUALIZACAO_LOJA_10_CORACOES.zip" ]; then
-            UPDATE_ZIP="./MENTEX_ATUALIZACAO_LOJA_10_CORACOES.zip"
-
-          else
-            echo ""
-            echo "ERRO: ZIP de atualização não encontrado."
-            echo ""
-            echo "É necessário colocar no repositório um destes arquivos:"
-            echo "MENTEX_CORRIGIDO_ABERTURA_COMECAR_LOJA_10_CORACOES.zip"
-            echo "ou"
-            echo "MENTEX_ATUALIZACAO_LOJA_10_CORACOES.zip"
-            exit 1
-          fi
-
-          echo ""
-          echo "ZIP DE ATUALIZAÇÃO:"
-          echo "$UPDATE_ZIP"
-
-
-          # --------------------------------------------------------
-          # EXTRAIR PROJETO BASE
-          # --------------------------------------------------------
-          echo ""
-          echo "=========================================="
-          echo "       EXTRAINDO PROJETO BASE"
-          echo "=========================================="
-
-          rm -rf extracted_mentex
-          mkdir -p extracted_mentex
-
-          unzip -o "$BASE_ZIP" -d extracted_mentex
-
-
-          # --------------------------------------------------------
-          # DESCOBRIR A PASTA REAL DO PROJETO
-          # --------------------------------------------------------
-          echo ""
-          echo "=========================================="
-          echo "       LOCALIZANDO PROJETO ANDROID"
-          echo "=========================================="
-
-          PROJECT_DIR=$(find extracted_mentex \
+          PROJECT_DIR=$(find mentex \
             -type f \
-            \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+            -name "settings.gradle" -o -name "settings.gradle.kts" \
             -not -path "*/.git/*" \
             -print \
             -quit | xargs -r dirname)
 
           if [ -z "$PROJECT_DIR" ]; then
+            echo "ERRO: projeto Android não encontrado."
             echo ""
-            echo "ERRO: settings.gradle não encontrado."
-
-            echo ""
-            echo "Estrutura encontrada:"
-            find extracted_mentex -maxdepth 4 -type f | head -150
-
+            echo "Arquivos encontrados:"
+            find mentex -maxdepth 4 -type f | head -100
             exit 1
           fi
 
-          echo ""
-          echo "PROJETO ANDROID:"
+          echo "Projeto encontrado:"
           echo "$PROJECT_DIR"
 
-
-          # --------------------------------------------------------
-          # EXTRAIR ATUALIZAÇÃO
-          # --------------------------------------------------------
-          echo ""
-          echo "=========================================="
-          echo "       EXTRAINDO ATUALIZAÇÃO"
-          echo "=========================================="
-
-          rm -rf update_mentex
-          mkdir -p update_mentex
-
-          unzip -o "$UPDATE_ZIP" -d update_mentex
-
-
-          echo ""
-          echo "Arquivos da atualização:"
-          find update_mentex -maxdepth 4 -type f -print
-
-
-          # --------------------------------------------------------
-          # LOCALIZAR INDEX.HTML ATUALIZADO
-          # --------------------------------------------------------
-          echo ""
-          echo "=========================================="
-          echo "       LOCALIZANDO HTML ATUALIZADO"
-          echo "=========================================="
-
-          UPDATED_HTML=$(find update_mentex \
-            -type f \
-            \( -name "index.html" -o -name "*.html" \) \
-            -print \
-            -quit)
-
-          if [ -z "$UPDATED_HTML" ]; then
-            echo ""
-            echo "ERRO: HTML atualizado não encontrado."
-            exit 1
-          fi
-
-          echo ""
-          echo "HTML ATUALIZADO:"
-          echo "$UPDATED_HTML"
-
-
-          # --------------------------------------------------------
-          # LOCALIZAR PASTA ASSETS
-          # --------------------------------------------------------
-          echo ""
-          echo "=========================================="
-          echo "       LOCALIZANDO ASSETS"
-          echo "=========================================="
-
-          ASSETS_DIR="$PROJECT_DIR/app/src/main/assets"
-
-          if [ ! -d "$ASSETS_DIR" ]; then
-            echo ""
-            echo "ERRO: pasta assets não encontrada:"
-            echo "$ASSETS_DIR"
-            exit 1
-          fi
-
-          echo ""
-          echo "ASSETS:"
-          echo "$ASSETS_DIR"
-
-
-          # --------------------------------------------------------
-          # SUBSTITUIR HTML
-          # --------------------------------------------------------
-          echo ""
-          echo "=========================================="
-          echo "       ATUALIZANDO INDEX.HTML"
-          echo "=========================================="
-
-          cp "$UPDATED_HTML" "$ASSETS_DIR/index.html"
-
-          echo ""
-          echo "index.html atualizado."
-
-
-          # --------------------------------------------------------
-          # COPIAR IMAGENS E MÚSICA
-          # --------------------------------------------------------
-          echo ""
-          echo "=========================================="
-          echo "       ATUALIZANDO IMAGENS"
-          echo "=========================================="
-
-
-          INTRO_IMAGE=$(find update_mentex \
-            -type f \
-            -name "intro_screen.png" \
-            -print \
-            -quit)
-
-          RULES_IMAGE=$(find update_mentex \
-            -type f \
-            -name "opening_screen.png" \
-            -print \
-            -quit)
-
-          MUSIC_FILE=$(find update_mentex \
-            -type f \
-            -name "mentex_musica_inicio.wav" \
-            -print \
-            -quit)
-
-
-          if [ -n "$INTRO_IMAGE" ]; then
-            echo "Copiando primeira tela:"
-            echo "$INTRO_IMAGE"
-            cp "$INTRO_IMAGE" "$ASSETS_DIR/intro_screen.png"
-          else
-            echo "AVISO: intro_screen.png não encontrado."
-          fi
-
-
-          if [ -n "$RULES_IMAGE" ]; then
-            echo "Copiando tela de regras:"
-            echo "$RULES_IMAGE"
-            cp "$RULES_IMAGE" "$ASSETS_DIR/opening_screen.png"
-          else
-            echo "AVISO: opening_screen.png não encontrado."
-          fi
-
-
-          if [ -n "$MUSIC_FILE" ]; then
-            echo "Copiando música:"
-            echo "$MUSIC_FILE"
-            cp "$MUSIC_FILE" "$ASSETS_DIR/mentex_musica_inicio.wav"
-          else
-            echo "AVISO: mentex_musica_inicio.wav não encontrado."
-          fi
-
-
-          # --------------------------------------------------------
-          # REMOVER POSSÍVEIS ARQUIVOS DE MÚSICA DUPLICADOS
-          # --------------------------------------------------------
-          echo ""
-          echo "=========================================="
-          echo "       VERIFICANDO MÚSICA"
-          echo "=========================================="
-
-          find "$ASSETS_DIR" \
-            -type f \
-            \( -iname "*.mp3" -o -iname "*.wav" -o -iname "*.ogg" \) \
-            -print
-
-
-          # --------------------------------------------------------
-          # MOSTRAR ASSETS FINAIS
-          # --------------------------------------------------------
-          echo ""
-          echo "=========================================="
-          echo "       ASSETS FINAIS"
-          echo "=========================================="
-
-          ls -lah "$ASSETS_DIR"
-
-
-          # --------------------------------------------------------
-          # EXPORTAR PROJECT_DIR
-          # --------------------------------------------------------
-          echo ""
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-          echo ""
-          echo "=========================================="
-          echo "       PROJETO PREPARADO"
-          echo "=========================================="
 
-
-      # ============================================================
-      # VERIFICAR PROJETO
-      # ============================================================
-      - name: Verificar projeto
+      - name: Aplicar atualização MENTEX
         shell: bash
         run: |
           set -e
 
-          cd "$PROJECT_DIR"
+          echo "======================================"
+          echo "        PROCURANDO ATUALIZAÇÃO"
+          echo "======================================"
 
-          echo "=========================================="
-          echo "       VERIFICANDO PROJETO"
-          echo "=========================================="
+          UPDATE_ZIP=""
 
-          echo ""
-          echo "Diretório:"
-          pwd
+          if [ -f "./MENTEX_CORRECAO_SIMPLES_SEM_DUPLICAR_TELA_E_MUSICA.zip" ]; then
+            UPDATE_ZIP="./MENTEX_CORRECAO_SIMPLES_SEM_DUPLICAR_TELA_E_MUSICA.zip"
 
-          echo ""
-          echo "Arquivos principais:"
-          ls -la
+          elif [ -f "./MENTEX_CORRIGIDO_ABERTURA_COMECAR_LOJA_10_CORACOES.zip" ]; then
+            UPDATE_ZIP="./MENTEX_CORRIGIDO_ABERTURA_COMECAR_LOJA_10_CORACOES.zip"
 
-          echo ""
-
-          if [ ! -d "app" ]; then
-            echo "ERRO: pasta app não encontrada."
-            exit 1
-          fi
-
-          if [ ! -f "app/build.gradle" ] && \
-             [ ! -f "app/build.gradle.kts" ]; then
-            echo "ERRO: Gradle do app não encontrado."
-            exit 1
-          fi
-
-          if [ ! -f "settings.gradle" ] && \
-             [ ! -f "settings.gradle.kts" ]; then
-            echo "ERRO: settings.gradle não encontrado."
-            exit 1
-          fi
-
-          echo ""
-          echo "PROJETO ANDROID OK"
-
-
-      # ============================================================
-      # CONFIRMAR HTML
-      # ============================================================
-      - name: Confirmar atualização MENTEX
-        shell: bash
-        run: |
-          set -e
-
-          cd "$PROJECT_DIR"
-
-          HTML="app/src/main/assets/index.html"
-
-          echo "=========================================="
-          echo "       CONFIRMANDO ATUALIZAÇÃO"
-          echo "=========================================="
-
-          if [ ! -f "$HTML" ]; then
-            echo "ERRO: index.html não encontrado."
-            exit 1
-          fi
-
-          echo ""
-          echo "HTML:"
-          echo "$HTML"
-
-          echo ""
-          echo "Tamanho:"
-          ls -lh "$HTML"
-
-          echo ""
-          echo "Verificando telas de abertura..."
-
-          if grep -q "intro_screen.png" "$HTML"; then
-            echo "OK: primeira tela encontrada."
           else
-            echo "AVISO: referência intro_screen.png não encontrada."
-          fi
-
-          if grep -q "opening_screen.png" "$HTML"; then
-            echo "OK: tela de regras encontrada."
-          else
-            echo "AVISO: referência opening_screen.png não encontrada."
-          fi
-
-          echo ""
-          echo "Verificando loja..."
-
-          if grep -qi "LOJA" "$HTML"; then
-            echo "OK: loja encontrada."
-          else
-            echo "AVISO: loja não encontrada no HTML."
-          fi
-
-          echo ""
-          echo "Verificando corações..."
-
-          if grep -qi "10" "$HTML"; then
-            echo "OK: referência de 10 encontrada."
-          else
-            echo "AVISO: referência simples de 10 não encontrada."
-          fi
-
-          echo ""
-          echo "HTML CONFIRMADO"
-
-
-      # ============================================================
-      # JAVA
-      # ============================================================
-      - name: Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-
-
-      # ============================================================
-      # GRADLE
-      # ============================================================
-      - name: Gradle 8.7
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.7"
-
-
-      # ============================================================
-      # VERIFICAR GRADLE
-      # ============================================================
-      - name: Verificar Gradle
-        shell: bash
-        run: |
-          set -e
-
-          cd "$PROJECT_DIR"
-
-          echo "=========================================="
-          echo "       VERSÃO DO GRADLE"
-          echo "=========================================="
-
-          gradle --version
-
-
-      # ============================================================
-      # GERAR APK
-      # ============================================================
-      - name: Gerar APK
-        shell: bash
-        run: |
-          set -e
-
-          cd "$PROJECT_DIR"
-
-          echo ""
-          echo "=========================================="
-          echo "          GERANDO APK MENTEX"
-          echo "=========================================="
-
-          gradle assembleDebug --stacktrace
-
-          echo ""
-          echo "=========================================="
-          echo "             APK PRONTO"
-          echo "=========================================="
-
-          find app/build/outputs/apk \
-            -type f \
-            -name "*.apk" \
-            -print
-
-
-      # ============================================================
-      # VERIFICAR APK
-      # ============================================================
-      - name: Verificar APK
-        shell: bash
-        run: |
-          set -e
-
-          cd "$PROJECT_DIR"
-
-          APK=$(find app/build/outputs/apk \
-            -type f \
-            -name "*.apk" \
-            -print \
-            -quit)
-
-          if [ -z "$APK" ]; then
+            echo "ERRO: ZIP de atualização não encontrado."
             echo ""
-            echo "ERRO: APK não encontrado."
+            echo "Coloque o ZIP de atualização na raiz do repositório."
             exit 1
           fi
 
-          echo ""
-          echo "=========================================="
-          echo "          APK ENCONTRADO"
-          echo "=========================================="
+          echo "ZIP de atualização:"
+          echo "$UPDATE_ZIP"
 
-          echo "$APK"
+          rm -rf atualizacao
+          mkdir -p atualizacao
 
-          echo ""
-          ls -lh "$APK"
-
-          echo ""
-          echo "APK OK"
-
-
-      # ============================================================
-      # PUBLICAR APK
-      # ============================================================
-      - name: Disponibilizar APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: MENTEX-APK-${{ github.run_number }}
-          path: |
-            ${{ env.PROJECT_DIR }}/app/build/outputs/apk/**/*.apk
-          if-no-files-found: error
-          overwrite: true
+         
