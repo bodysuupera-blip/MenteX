@@ -39,57 +39,25 @@ jobs:
         with:
           gradle-version: '8.13'
 
-      - name: Encontrar projeto MENTEX
-        shell: bash
-        run: |
-          set -e
-
-          PROJECT_DIR=""
-
-          if [ -f "settings.gradle" ]; then
-            PROJECT_DIR="$PWD"
-          elif [ -f "settings.gradle.kts" ]; then
-            PROJECT_DIR="$PWD"
-          else
-            PROJECT_DIR=$(find . \
-              -type f \
-              \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
-              -not -path "./.git/*" \
-              -print -quit | xargs -r dirname || true)
-          fi
-
-          if [ -z "$PROJECT_DIR" ]; then
-            echo "ERRO: settings.gradle não encontrado."
-            echo "O projeto MENTEX precisa estar enviado para o GitHub."
-            exit 1
-          fi
-
-          echo "Projeto encontrado em: $PROJECT_DIR"
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-
       - name: Verificar projeto
         run: |
-          cd "$PROJECT_DIR"
-          ls -la
+          echo "Procurando projeto MENTEX..."
 
-          if [ ! -f "settings.gradle" ] && [ ! -f "settings.gradle.kts" ]; then
-            echo "ERRO: settings.gradle não encontrado."
-            exit 1
-          fi
+          test -f settings.gradle
+          test -f build.gradle
+          test -f app/build.gradle
 
-          if [ ! -d "app" ]; then
-            echo "ERRO: pasta app não encontrada."
-            exit 1
-          fi
+          echo "Projeto encontrado!"
+          echo "settings.gradle OK"
+          echo "build.gradle OK"
+          echo "app/build.gradle OK"
 
       - name: Limpar projeto
         run: |
-          cd "$PROJECT_DIR"
           gradle clean
 
       - name: Gerar APK
         run: |
-          cd "$PROJECT_DIR"
           gradle assembleDebug --stacktrace
 
       - name: Enviar APK
