@@ -1,4 +1,4 @@
-name: Construir APK MENTEX Atualizado
+name: Construir APK MENTEX Final
 
 on:
   push:
@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   construir:
-    name: Construir APK MENTEX Atualizado
+    name: Construir APK MENTEX Final
     runs-on: ubuntu-latest
 
     steps:
@@ -30,20 +30,20 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Procurar ZIP atualizado
+      - name: Procurar ZIP MENTEX
         shell: bash
         run: |
           echo "======================================"
-          echo "PROCURANDO ZIP MENTEX"
+          echo "PROCURANDO PROJETO MENTEX"
           echo "======================================"
 
-          ZIP="MENTEX_ANDROID_ABERTURA_NOVA_IMAGEM_REGRA_MUSICA_SEM_VOZ_10_MOEDAS_MUSICA_CORRIGIDA.zip"
+          ZIP="MENTEX_ANDROID_FINAL_SEM_VOZ_MUSICA_INTRO_CORRIGIDA.zip"
 
           if [ ! -f "$ZIP" ]; then
-            echo "ERRO: ZIP não encontrado:"
+            echo "ERRO: arquivo não encontrado:"
             echo "$ZIP"
             echo ""
-            echo "Arquivos disponíveis:"
+            echo "Arquivos encontrados:"
             find . -maxdepth 2 -type f | sort
             exit 1
           fi
@@ -56,9 +56,9 @@ jobs:
 
           unzip -q "$ZIP" -d android_project
 
-          echo "Projeto extraído com sucesso."
+          echo "Projeto extraído."
 
-      - name: Encontrar projeto Gradle
+      - name: Encontrar projeto Android
         id: projeto
         shell: bash
         run: |
@@ -74,26 +74,27 @@ jobs:
 
           PROJECT_DIR=$(dirname "$SETTINGS")
 
-          echo "Projeto encontrado:"
+          echo "Projeto Android:"
           echo "$PROJECT_DIR"
 
           echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
 
-      - name: Verificar atualização
+      - name: Conferir versão final
         shell: bash
         run: |
           echo "======================================"
-          echo "MENTEX ATUALIZADO"
+          echo "MENTEX - VERSÃO FINAL"
           echo "======================================"
           echo "🖼️ Nova imagem de abertura"
-          echo "📖 Tela de regras"
-          echo "🎵 Música na introdução"
-          echo "🔇 Sem voz"
+          echo "📖 Regras depois da abertura"
+          echo "🎵 Música instrumental na introdução"
+          echo "🔇 SEM VOZ"
+          echo "🔇 SEM NARRAÇÃO"
           echo "❤️ 10 corações"
           echo "🪙 +10 moedas por acerto"
           echo "⭐ +10 pontos por acerto"
           echo "🛡️ Escudo na fase"
-          echo "🛒 Loja"
+          echo "🛒 Comprar moedas"
           echo "💳 Google Play"
           echo "======================================"
 
@@ -103,6 +104,7 @@ jobs:
           cd "${{ steps.projeto.outputs.project_dir }}"
 
           gradle clean --no-daemon
+
           gradle assembleDebug --no-daemon
 
       - name: Procurar APK
@@ -117,17 +119,17 @@ jobs:
           APK=$(find android_project -type f -name "*.apk" | head -n 1)
 
           if [ -z "$APK" ]; then
-            echo "ERRO: nenhum APK foi gerado."
+            echo "ERRO: APK não foi gerado."
             exit 1
           fi
 
-          echo "APK encontrado:"
+          echo "APK pronto:"
           echo "$APK"
 
       - name: Enviar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-APK-FINAL
+          name: MENTEX-APK-FINAL-SEM-VOZ
           path: |
             android_project/**/build/outputs/apk/debug/*.apk
           if-no-files-found: error
