@@ -29,49 +29,61 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Encontrar projeto Android
-        id: encontrar
+      - name: Extrair projeto Android
         shell: bash
         run: |
           echo "Procurando projeto Android..."
 
-          SETTINGS=$(find . -type f \( \
-            -name "settings.gradle" -o \
-            -name "settings.gradle.kts" \
-          \) | head -n 1)
+          ZIP="MENTEX_Android_3_9_2_5_CORACOES_SEM_CRASH.zip"
+
+          if [ ! -f "$ZIP" ]; then
+            echo "ERRO: arquivo $ZIP não encontrado."
+            ls -la
+            exit 1
+          fi
+
+          mkdir -p android_project
+
+          unzip -q "$ZIP" -d android_project
+
+          echo "Arquivos extraídos:"
+          find android_project -maxdepth 4 -type f | head -200
+
+      - name: Encontrar projeto Gradle
+        id: projeto
+        shell: bash
+        run: |
+          SETTINGS=$(find android_project -type f \
+            \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+            | head -n 1)
 
           if [ -z "$SETTINGS" ]; then
-            echo "ERRO: settings.gradle não encontrado."
-            echo "Arquivos encontrados:"
-            find . -maxdepth 4 -type f | head -200
+            echo "ERRO: settings.gradle não encontrado depois de extrair o ZIP."
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$SETTINGS")
 
-          echo "Projeto encontrado em: $PROJECT_DIR"
+          echo "Projeto encontrado:"
+          echo "$PROJECT_DIR"
+
           echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
 
-      - name: Verificar projeto
-        run: |
-          echo "Diretório do projeto:"
-          echo "${{ steps.encontrar.outputs.project_dir }}"
-          echo ""
-          ls -la "${{ steps.encontrar.outputs.project_dir }}"
-
       - name: Construir APK
+        shell: bash
         run: |
-          cd "${{ steps.encontrar.outputs.project_dir }}"
+          cd "${{ steps.projeto.outputs.project_dir }}"
           gradle assembleDebug --no-daemon
 
       - name: Procurar APK
+        shell: bash
         run: |
           echo "APKs encontrados:"
-          find . -type f -name "*.apk"
+          find android_project -type f -name "*.apk"
 
       - name: Enviar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-APK
           path: |
-            **/build/outputs/apk/debug/*.apk
+            android_project/**/build/outputs/apk/debug/*.apk
