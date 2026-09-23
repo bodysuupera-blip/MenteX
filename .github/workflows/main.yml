@@ -30,14 +30,14 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Procurar ZIP corrigido
+      - name: Procurar ZIP atualizado
         shell: bash
         run: |
           echo "======================================"
-          echo "PROCURANDO ZIP MENTEX"
+          echo "PROCURANDO MENTEX ATUALIZADO"
           echo "======================================"
 
-          ZIP="MENTEX_ANDROID_FINAL_INICIO_2_IMAGENS_MUSICA_10_MOEDAS_CORRIGIDO.zip"
+          ZIP="MENTEX_ANDROID_FINAL_10_MOEDAS_SEM_VOZ_2_IMAGENS_TELA_INTEIRA.zip"
 
           if [ ! -f "$ZIP" ]; then
             echo "ERRO: ZIP não encontrado:"
@@ -62,13 +62,20 @@ jobs:
         id: projeto
         shell: bash
         run: |
+          echo "======================================"
+          echo "PROCURANDO PROJETO GRADLE"
+          echo "======================================"
+
           SETTINGS=$(find android_project -type f \
             \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
             | head -n 1)
 
           if [ -z "$SETTINGS" ]; then
             echo "ERRO: settings.gradle não encontrado."
+
+            echo "Arquivos encontrados:"
             find android_project -maxdepth 6 -type f | sort
+
             exit 1
           fi
 
@@ -79,41 +86,56 @@ jobs:
 
           echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
 
-      - name: Verificar atualizações
+      - name: Verificar atualização MENTEX
         shell: bash
         run: |
           echo "======================================"
-          echo "MENTEX ATUALIZADO"
+          echo "VERSÃO MENTEX"
           echo "======================================"
-          echo "🖼️ Primeira imagem"
-          echo "🖼️ Segunda imagem"
+          echo "🖼️ Primeira imagem em tela inteira"
+          echo "🖼️ Segunda imagem em tela inteira"
+          echo "🔇 Sem voz"
           echo "🎵 Música de abertura"
           echo "❤️ 10 corações"
-          echo "🪙 +10 moedas por acerto"
-          echo "⭐ +10 pontos por acerto"
-          echo "🛡️ Escudo na fase"
+          echo "🪙 +10 moedas por cada acerto"
+          echo "⭐ +10 pontos por cada acerto"
+          echo "🛡️ Escudo visível na fase"
           echo "🛒 Loja"
-          echo "💳 Google Play"
+          echo "💳 Compra de moedas Google Play"
           echo "======================================"
 
       - name: Construir APK
         shell: bash
         run: |
-          cd "${{ steps.projeto.outputs.project_dir }}"
+          PROJECT_DIR="${{ steps.projeto.outputs.project_dir }}"
 
+          cd "$PROJECT_DIR"
+
+          echo "Limpando projeto..."
           gradle clean --no-daemon
+
+          echo "Construindo APK..."
           gradle assembleDebug --no-daemon
 
       - name: Procurar APK
         shell: bash
         run: |
-          echo "APKs encontrados:"
-          find android_project -type f -name "*.apk"
+          echo "======================================"
+          echo "APKs ENCONTRADOS"
+          echo "======================================"
+
+          find android_project \
+            -type f \
+            -name "*.apk" \
+            -print
 
       - name: Verificar APK
         shell: bash
         run: |
-          APK=$(find android_project -type f -name "*.apk" | head -n 1)
+          APK=$(find android_project \
+            -type f \
+            -name "*.apk" \
+            | head -n 1)
 
           if [ -z "$APK" ]; then
             echo "ERRO: nenhum APK foi gerado."
