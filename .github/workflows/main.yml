@@ -28,31 +28,48 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Procurar APK
+        shell: bash
         run: |
-          echo "Procurando APK do MENTEX..."
-          find . -type f -name "*.apk" -print
+          echo "Procurando APK..."
 
-      - name: Verificar APK
-        run: |
-          if [ ! -f "MENTEX_Android_Projeto/app/build/outputs/apk/debug/app-debug.apk" ]; then
-            echo "ERRO: APK não encontrado!"
+          APK=$(find "$GITHUB_WORKSPACE" -type f -name "*.apk" | head -n 1)
+
+          if [ -z "$APK" ]; then
+            echo "ERRO: nenhum arquivo APK foi encontrado no repositório."
+            echo ""
+            echo "Coloque o arquivo app-debug.apk no repositório e execute novamente."
             exit 1
           fi
 
           echo "APK encontrado:"
-          ls -lh "MENTEX_Android_Projeto/app/build/outputs/apk/debug/app-debug.apk"
+          echo "$APK"
+
+          echo "APK_PATH=$APK" >> "$GITHUB_ENV"
+
+      - name: Verificar APK
+        shell: bash
+        run: |
+          echo "Verificando APK..."
+
+          if [ ! -f "$APK_PATH" ]; then
+            echo "ERRO: APK não encontrado."
+            exit 1
+          fi
+
+          ls -lh "$APK_PATH"
+
+          echo "APK encontrado corretamente."
 
       - name: Enviar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-APK-FINAL
-          path: MENTEX_Android_Projeto/app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ env.APK_PATH }}
           if-no-files-found: error
 
-      - name: Resumo
+      - name: Finalizado
         run: |
           echo "======================================"
-          echo " APK MENTEX GERADO/DISPONÍVEL"
+          echo "       MENTEX APK FINALIZADO"
           echo "======================================"
-          echo "Arquivo:"
-          ls -lh MENTEX_Android_Projeto/app/build/outputs/apk/debug/app-debug.apk
+          echo "O APK está disponível em Artifacts."
