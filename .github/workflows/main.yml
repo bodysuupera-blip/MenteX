@@ -3,19 +3,18 @@ name: Construir APK MENTEX Final
 on:
   push:
     branches:
-      - principal
+      - main
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  construir:
+  build:
     name: Construir APK MENTEX Final
     runs-on: ubuntu-latest
 
     steps:
-
       - name: Baixar código
         uses: actions/checkout@v4
 
@@ -27,109 +26,31 @@ jobs:
 
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.7'
 
-      - name: Procurar ZIP MENTEX
-        shell: bash
-        run: |
-          echo "======================================"
-          echo "PROCURANDO PROJETO MENTEX"
-          echo "======================================"
+      - name: Dar permissão ao Gradle
+        run: chmod +x gradlew
 
-          ZIP="MENTEX_ANDROID_FINAL_SEM_VOZ_MUSICA_INTRO_CORRIGIDA.zip"
+      - name: Limpar projeto
+        run: ./gradlew clean
 
-          if [ ! -f "$ZIP" ]; then
-            echo "ERRO: arquivo não encontrado:"
-            echo "$ZIP"
-            echo ""
-            echo "Arquivos encontrados:"
-            find . -maxdepth 2 -type f | sort
-            exit 1
-          fi
-
-          echo "ZIP encontrado:"
-          ls -lh "$ZIP"
-
-          rm -rf android_project
-          mkdir -p android_project
-
-          unzip -q "$ZIP" -d android_project
-
-          echo "Projeto extraído."
-
-      - name: Encontrar projeto Android
-        id: projeto
-        shell: bash
-        run: |
-          SETTINGS=$(find android_project -type f \
-            \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
-            | head -n 1)
-
-          if [ -z "$SETTINGS" ]; then
-            echo "ERRO: settings.gradle não encontrado."
-            find android_project -maxdepth 6 -type f | sort
-            exit 1
-          fi
-
-          PROJECT_DIR=$(dirname "$SETTINGS")
-
-          echo "Projeto Android:"
-          echo "$PROJECT_DIR"
-
-          echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
-
-      - name: Conferir versão final
-        shell: bash
-        run: |
-          echo "======================================"
-          echo "MENTEX - VERSÃO FINAL"
-          echo "======================================"
-          echo "🖼️ Nova imagem de abertura"
-          echo "📖 Regras depois da abertura"
-          echo "🎵 Música instrumental na introdução"
-          echo "🔇 SEM VOZ"
-          echo "🔇 SEM NARRAÇÃO"
-          echo "❤️ 10 corações"
-          echo "🪙 +10 moedas por acerto"
-          echo "⭐ +10 pontos por acerto"
-          echo "🛡️ Escudo na fase"
-          echo "🛒 Comprar moedas"
-          echo "💳 Google Play"
-          echo "======================================"
-
-      - name: Construir APK
-        shell: bash
-        run: |
-          cd "${{ steps.projeto.outputs.project_dir }}"
-
-          gradle clean --no-daemon
-
-          gradle assembleDebug --no-daemon
-
-      - name: Procurar APK
-        shell: bash
-        run: |
-          echo "APKs encontrados:"
-          find android_project -type f -name "*.apk"
+      - name: Construir APK Debug
+        run: ./gradlew assembleDebug
 
       - name: Verificar APK
-        shell: bash
         run: |
-          APK=$(find android_project -type f -name "*.apk" | head -n 1)
-
-          if [ -z "$APK" ]; then
-            echo "ERRO: APK não foi gerado."
-            exit 1
-          fi
-
-          echo "APK pronto:"
-          echo "$APK"
+          echo "APKs encontrados:"
+          find app/build/outputs/apk -type f -name "*.apk" -print
 
       - name: Enviar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-APK-FINAL-SEM-VOZ
-          path: |
-            android_project/**/build/outputs/apk/debug/*.apk
+          name: MENTEX-APK
+          path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+
+      - name: Resumo da compilação
+        run: |
+          echo "================================="
+          echo " APK MENTEX GERADO COM SUCESSO "
+          echo "================================="
+          ls -lh app/build/outputs/apk/debug/
