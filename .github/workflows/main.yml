@@ -37,7 +37,7 @@ jobs:
           echo "PROCURANDO ZIP MENTEX"
           echo "======================================"
 
-          ZIP="MENTEX_ANDROID_ABERTURA_NOVA_IMAGEM_REGRA_MUSICA_SEM_VOZ_10_MOEDAS.zip"
+          ZIP="MENTEX_ANDROID_ABERTURA_NOVA_IMAGEM_REGRA_MUSICA_SEM_VOZ_10_MOEDAS_MUSICA_CORRIGIDA.zip"
 
           if [ ! -f "$ZIP" ]; then
             echo "ERRO: ZIP não encontrado:"
@@ -87,7 +87,7 @@ jobs:
           echo "======================================"
           echo "🖼️ Nova imagem de abertura"
           echo "📖 Tela de regras"
-          echo "🎵 Música de abertura"
+          echo "🎵 Música na introdução"
           echo "🔇 Sem voz"
           echo "❤️ 10 corações"
           echo "🪙 +10 moedas por acerto"
