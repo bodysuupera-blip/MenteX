@@ -1,4 +1,4 @@
-name: Construir APK
+name: Construir APK MENTEX
 
 on:
   push:
@@ -13,10 +13,6 @@ jobs:
   construir:
     name: Construir APK MENTEX
     runs-on: ubuntu-latest
-
-    defaults:
-      run:
-        working-directory: MENTEX_Android_Projeto
 
     steps:
       - name: Baixar código
@@ -33,17 +29,49 @@ jobs:
         with:
           gradle-version: '8.7'
 
+      - name: Encontrar projeto Android
+        id: encontrar
+        shell: bash
+        run: |
+          echo "Procurando projeto Android..."
+
+          SETTINGS=$(find . -type f \( \
+            -name "settings.gradle" -o \
+            -name "settings.gradle.kts" \
+          \) | head -n 1)
+
+          if [ -z "$SETTINGS" ]; then
+            echo "ERRO: settings.gradle não encontrado."
+            echo "Arquivos encontrados:"
+            find . -maxdepth 4 -type f | head -200
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$SETTINGS")
+
+          echo "Projeto encontrado em: $PROJECT_DIR"
+          echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+
       - name: Verificar projeto
         run: |
-          echo "Projeto:"
-          pwd
-          ls -la
+          echo "Diretório do projeto:"
+          echo "${{ steps.encontrar.outputs.project_dir }}"
+          echo ""
+          ls -la "${{ steps.encontrar.outputs.project_dir }}"
 
       - name: Construir APK
-        run: gradle assembleDebug --no-daemon
+        run: |
+          cd "${{ steps.encontrar.outputs.project_dir }}"
+          gradle assembleDebug --no-daemon
+
+      - name: Procurar APK
+        run: |
+          echo "APKs encontrados:"
+          find . -type f -name "*.apk"
 
       - name: Enviar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-APK
-          path: MENTEX_Android_Projeto/app/build/outputs/apk/debug/*.apk
+          path: |
+            **/build/outputs/apk/debug/*.apk
