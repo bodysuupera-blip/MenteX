@@ -30,14 +30,14 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Procurar ZIP corrigido
+      - name: Procurar ZIP atualizado
         shell: bash
         run: |
           echo "======================================"
-          echo "PROCURANDO PROJETO MENTEX CORRIGIDO"
+          echo "PROCURANDO PROJETO MENTEX"
           echo "======================================"
 
-          ZIP="MENTEX_ANDROID_ATUALIZADO_10_CORACOES_10_MOEDAS_ESCUDO_LOJA_CORRIGIDO.zip"
+          ZIP="MENTEX_ANDROID_FINAL_INICIO_2_IMAGENS_MUSICA_10_MOEDAS.zip"
 
           if [ ! -f "$ZIP" ]; then
             echo "ERRO: ZIP não encontrado:"
@@ -56,8 +56,7 @@ jobs:
 
           unzip -q "$ZIP" -d android_project
 
-          echo ""
-          echo "Projeto extraído com sucesso."
+          echo "Projeto extraído."
 
       - name: Encontrar projeto Gradle
         id: projeto
@@ -73,54 +72,32 @@ jobs:
 
           if [ -z "$SETTINGS" ]; then
             echo "ERRO: settings.gradle não encontrado."
-            echo ""
-            echo "Arquivos encontrados:"
             find android_project -maxdepth 6 -type f | sort
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$SETTINGS")
 
-          echo "Projeto encontrado em:"
+          echo "Projeto encontrado:"
           echo "$PROJECT_DIR"
 
           echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
 
-      - name: Verificar projeto MENTEX
-        shell: bash
-        run: |
-          PROJECT_DIR="${{ steps.projeto.outputs.project_dir }}"
-
-          echo "======================================"
-          echo "VERIFICANDO PROJETO"
-          echo "======================================"
-
-          echo "Diretório:"
-          echo "$PROJECT_DIR"
-
-          echo ""
-          echo "Arquivos principais:"
-
-          find "$PROJECT_DIR" -maxdepth 3 -type f \
-            \( -name "build.gradle" \
-            -o -name "build.gradle.kts" \
-            -o -name "AndroidManifest.xml" \
-            -o -name "MainActivity.java" \
-            -o -name "index.html" \) \
-            -print
-
-      - name: Mostrar atualização MENTEX
+      - name: Verificar atualizações
         shell: bash
         run: |
           echo "======================================"
-          echo "ATUALIZAÇÃO MENTEX"
+          echo "MENTEX ATUALIZADO"
           echo "======================================"
+          echo "🖼️ Primeira imagem de abertura"
+          echo "🖼️ Segunda imagem de abertura"
+          echo "🎵 Música de abertura"
           echo "❤️ 10 corações"
-          echo "🪙 +10 moedas por resposta correta"
-          echo "⭐ +10 pontos por resposta correta"
+          echo "🪙 +10 moedas por pergunta correta"
+          echo "⭐ +10 pontos por pergunta correta"
           echo "🛡️ Escudo na tela da fase"
-          echo "🛒 Loja de moedas"
-          echo "💳 Compra de moedas pelo Google Play"
+          echo "🛒 Loja"
+          echo "💳 Google Play"
           echo "======================================"
 
       - name: Construir APK
@@ -130,11 +107,11 @@ jobs:
 
           cd "$PROJECT_DIR"
 
-          echo "======================================"
-          echo "INICIANDO COMPILAÇÃO"
-          echo "======================================"
+          echo "Limpando compilação anterior..."
+          gradle clean --no-daemon
 
-          gradle clean assembleDebug --no-daemon
+          echo "Construindo APK..."
+          gradle assembleDebug --no-daemon
 
       - name: Procurar APK
         shell: bash
@@ -148,7 +125,7 @@ jobs:
             -name "*.apk" \
             -print
 
-      - name: Verificar se APK existe
+      - name: Verificar APK
         shell: bash
         run: |
           APK=$(find android_project \
@@ -167,7 +144,7 @@ jobs:
       - name: Enviar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-APK-ATUALIZADO
+          name: MENTEX-APK-FINAL
           path: |
             android_project/**/build/outputs/apk/debug/*.apk
           if-no-files-found: error
