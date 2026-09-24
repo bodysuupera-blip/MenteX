@@ -1,4 +1,4 @@
-name: Compilar MENTEX V4.6
+name: Compilador MENTEX V4.6
 
 on:
   workflow_dispatch:
@@ -26,70 +26,108 @@ jobs:
         run: |
           set -e
 
-          echo "Arquivos encontrados:"
+          echo "Arquivos do repositório:"
           ls -la
 
           ZIP="MENTEX-V4.6-CEREBRO-PERGUNTA-ACERTO-ERRO.zip"
 
           if [ ! -f "$ZIP" ]; then
-            echo "ERRO: Arquivo ZIP não encontrado: $ZIP"
-            echo "Arquivos disponíveis:"
-            find . -maxdepth 2 -type f
+            echo "ERRO: ZIP não encontrado:"
+            echo "$ZIP"
+            find . -maxdepth 2 -type f | sort
             exit 1
           fi
 
-          echo "Extraindo: $ZIP"
+          rm -rf projeto
           mkdir -p projeto
+
+          echo "Extraindo projeto..."
           unzip -o "$ZIP" -d projeto
 
-          echo "Conteúdo extraído:"
-          find projeto -maxdepth 3 -type f | head -100
+          echo "Projeto extraído:"
+          find projeto -maxdepth 4 -type f | sort
 
       - name: Localizar projeto Android
         shell: bash
         run: |
           set -e
 
-          if [ -f "projeto/gradlew" ]; then
-            echo "Projeto encontrado na raiz."
-            echo "PROJECT_DIR=projeto" >> "$GITHUB_ENV"
-            exit 0
+          PROJECT_DIR=""
+
+          if [ -f "projeto/mentex/settings.gradle" ]; then
+            PROJECT_DIR="projeto/mentex"
+          elif [ -f "projeto/mentex/settings.gradle.kts" ]; then
+            PROJECT_DIR="projeto/mentex"
+          else
+            SETTINGS=$(find projeto -type f \( \
+              -name "settings.gradle" -o \
+              -name "settings.gradle.kts" \
+            \) | head -1)
+
+            if [ -n "$SETTINGS" ]; then
+              PROJECT_DIR=$(dirname "$SETTINGS")
+            fi
           fi
 
-          GRADLEW=$(find projeto -type f -name gradlew | head -1)
-
-          if [ -z "$GRADLEW" ]; then
-            echo "ERRO: gradlew não encontrado dentro do ZIP."
-            find projeto -maxdepth 5 -type f | sort
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERRO: Projeto Android não encontrado."
+            find projeto -maxdepth 6 -type f | sort
             exit 1
           fi
 
-          PROJECT_DIR=$(dirname "$GRADLEW")
+          echo "Projeto encontrado em:"
+          echo "$PROJECT_DIR"
 
-          echo "Projeto Android encontrado em: $PROJECT_DIR"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      - name: Dar permissão ao Gradle
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Verificar projeto
         shell: bash
+        working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          chmod +x "$PROJECT_DIR/gradlew"
+          echo "Diretório atual:"
+          pwd
+
+          echo "Arquivos:"
+          ls -la
+
+          echo "Build Gradle:"
+          if [ -f "build.gradle" ]; then
+            cat build.gradle
+          elif [ -f "build.gradle.kts" ]; then
+            cat build.gradle.kts
+          fi
 
       - name: Compilar APK
         shell: bash
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          ./gradlew assembleDebug --stacktrace
+          set -e
+
+          echo "Iniciando compilação..."
+
+          gradle assembleDebug --stacktrace
 
       - name: Procurar APK
         shell: bash
         run: |
-          echo "APKs gerados:"
-          find "$PROJECT_DIR" -type f -name "*.apk" -print
+          echo "================================"
+          echo "APKs encontrados:"
+          echo "================================"
+
+          find "$PROJECT_DIR" \
+            -type f \
+            -name "*.apk" \
+            -print
 
       - name: Enviar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-V4.6-APK
           path: |
-            ${{ env.PROJECT_DIR }}/**/build/outputs/apk/**/*.apk
+            ${{ env.PROJECT_DIR }}/app/build/outputs/apk/**/*.apk
           if-no-files-found: error
