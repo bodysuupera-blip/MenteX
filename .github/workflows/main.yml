@@ -22,58 +22,53 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Preparar projeto
+      - name: Encontrar e preparar projeto
         shell: bash
         run: |
           set -e
 
-          echo "Arquivos do repositorio:"
-          ls -la
+          echo "Procurando ZIP do MENTEX..."
 
-          ZIP="MENTEX-V4.6-CEREBRO-PERGUNTA-ACERTO-ERRO.zip"
+          ZIP=$(find . -maxdepth 1 -type f \
+            -name 'MENTEX-V4.6-PERGUNTAS-FINAL-TELA-CHEIA.zip' \
+            -print -quit)
 
-          if [ ! -f "$ZIP" ]; then
-            echo "ERRO: ZIP nao encontrado:"
-            echo "$ZIP"
-            find . -maxdepth 3 -type f | sort
+          if [ -z "$ZIP" ]; then
+            echo "ERRO: MENTEX-V4.6-PERGUNTAS-FINAL-TELA-CHEIA.zip nao encontrado."
+            echo "Arquivos encontrados:"
+            find . -maxdepth 2 -type f -print
             exit 1
           fi
+
+          echo "ZIP encontrado:"
+          echo "$ZIP"
 
           rm -rf projeto
           mkdir -p projeto
 
-          echo "Extraindo ZIP..."
           unzip -o "$ZIP" -d projeto
 
-          echo "Conteudo extraido:"
-          find projeto -maxdepth 5 -type f | sort
+          echo "Arquivos extraidos:"
+          find projeto -maxdepth 5 -type f -print
 
       - name: Localizar projeto Android
         shell: bash
         run: |
           set -e
 
-          if [ -f "projeto/mentex/settings.gradle" ]; then
-            PROJECT_DIR="projeto/mentex"
+          SETTINGS=$(find projeto -type f \
+            \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+            | head -1)
 
-          elif [ -f "projeto/mentex/settings.gradle.kts" ]; then
-            PROJECT_DIR="projeto/mentex"
-
-          else
-            SETTINGS=$(find projeto -type f \
-              \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
-              | head -1)
-
-            if [ -z "$SETTINGS" ]; then
-              echo "ERRO: settings.gradle nao encontrado."
-              find projeto -maxdepth 6 -type f | sort
-              exit 1
-            fi
-
-            PROJECT_DIR=$(dirname "$SETTINGS")
+          if [ -z "$SETTINGS" ]; then
+            echo "ERRO: settings.gradle nao encontrado."
+            find projeto -maxdepth 6 -type f -print
+            exit 1
           fi
 
-          echo "Projeto Android:"
+          PROJECT_DIR=$(dirname "$SETTINGS")
+
+          echo "Projeto Android encontrado:"
           echo "$PROJECT_DIR"
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
@@ -83,27 +78,21 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Verificar projeto
-        shell: bash
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: |
-          echo "Diretorio:"
-          pwd
-
-          echo "Arquivos:"
-          ls -la
-
       - name: Compilar APK
         shell: bash
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           set -e
 
-          echo "Compilando MENTEX V4.6..."
+          echo "================================"
+          echo "COMPILANDO MENTEX V4.6"
+          echo "TELA DE PERGUNTAS TELA CHEIA"
+          echo "SEM DESLIZAMENTO"
+          echo "================================"
 
-          gradle assembleDebug --stacktrace
+          gradle clean assembleDebug --stacktrace
 
-      - name: Procurar APK
+      - name: Verificar APK
         shell: bash
         run: |
           echo "APKs gerados:"
@@ -116,7 +105,7 @@ jobs:
       - name: Enviar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V4.6-APK
+          name: MENTEX-V4.6-TELA-CHEIA
           path: |
             ${{ env.PROJECT_DIR }}/app/build/outputs/apk/**/*.apk
           if-no-files-found: error
