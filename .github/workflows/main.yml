@@ -30,15 +30,15 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Procurar ZIP atualizado
+      - name: Procurar ZIP do MENTEX
         shell: bash
         run: |
-          echo "Procurando ZIP do MENTEX..."
+          echo "Procurando ZIP..."
 
           ZIP=$(find . -maxdepth 1 -type f -name "*.zip" | head -n 1)
 
           if [ -z "$ZIP" ]; then
-            echo "ERRO: nenhum ZIP encontrado."
+            echo "ERRO: nenhum arquivo ZIP encontrado."
             ls -la
             exit 1
           fi
@@ -50,15 +50,16 @@ jobs:
 
           unzip -q "$ZIP" -d android_project
 
-          echo "Projeto extraído."
+          echo "ZIP extraído."
 
-      - name: Encontrar projeto Gradle
+      - name: Encontrar projeto Android
         id: projeto
         shell: bash
         run: |
           echo "Procurando settings.gradle..."
 
-          SETTINGS=$(find android_project -type f \
+          SETTINGS=$(find android_project \
+            -type f \
             \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
             | head -n 1)
 
@@ -75,35 +76,39 @@ jobs:
 
           echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
 
-      - name: Corrigir dependências Kotlin
+      - name: Corrigir Kotlin
         shell: bash
         run: |
           PROJECT="${{ steps.projeto.outputs.project_dir }}"
 
-          echo "Aplicando correções Kotlin..."
+          echo "Corrigindo versões Kotlin..."
+
+          find "$PROJECT" -type f \
+            \( -name "*.gradle" -o -name "*.gradle.kts" \) \
+            -print0 | while IFS= read -r -d '' FILE
+          do
+            sed -i 's/1\.6\.21/1.8.22/g' "$FILE"
+          done
 
           if [ -f "$PROJECT/app/build.gradle" ]; then
-
             cat >> "$PROJECT/app/build.gradle" <<'EOF'
 
-configurations.all {
+configurations.configureEach {
     resolutionStrategy {
-        force 'org.jetbrains.kotlin:kotlin-stdlib:1.8.22'
-        force 'org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22'
-        force 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22'
+        force "org.jetbrains.kotlin:kotlin-stdlib:1.8.22"
+        force "org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22"
+        force "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22"
     }
 }
 EOF
-
           fi
 
-          echo "Correção aplicada."
+          echo "Kotlin corrigido."
 
       - name: Limpar projeto
         shell: bash
         run: |
           cd "${{ steps.projeto.outputs.project_dir }}"
-
           gradle clean --no-daemon
 
       - name: Construir APK
@@ -111,7 +116,7 @@ EOF
         run: |
           cd "${{ steps.projeto.outputs.project_dir }}"
 
-          echo "Iniciando construção do APK..."
+          echo "Construindo APK MENTEX..."
 
           gradle assembleDebug \
             --no-daemon \
@@ -140,78 +145,13 @@ EOF
             exit 1
           fi
 
-          echo "APK encontrado:"
+          echo "APK gerado com sucesso:"
           echo "$APK"
 
       - name: Enviar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-APK-Final
-          path: |
-            android_project/**/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
-      - name: Verificar projeto
-        shell: bash
-        run: |
-          cd "${{ steps.projeto.outputs.project_dir }}"
-
-          echo "===== settings.gradle ====="
-          cat settings.gradle
-
-          echo ""
-          echo "===== app/build.gradle ====="
-          cat app/build.gradle
-
-          echo ""
-          echo "===== Arquivos do projeto ====="
-          find app/src/main -type f
-
-      - name: Limpar projeto
-        shell: bash
-        run: |
-          cd "${{ steps.projeto.outputs.project_dir }}"
-
-          gradle clean --no-daemon
-
-      - name: Construir APK
-        shell: bash
-        run: |
-          cd "${{ steps.projeto.outputs.project_dir }}"
-
-          gradle assembleDebug \
-            --no-daemon \
-            --stacktrace
-
-      - name: Procurar APK
-        shell: bash
-        run: |
-          echo "===== APKs encontrados ====="
-
-          find android_project \
-            -type f \
-            -name "*.apk" \
-            -print
-
-      - name: Verificar APK
-        shell: bash
-        run: |
-          APK=$(find android_project \
-            -type f \
-            -path "*/build/outputs/apk/debug/*.apk" \
-            | head -n 1)
-
-          if [ -z "$APK" ]; then
-            echo "ERRO: APK não foi gerado."
-            exit 1
-          fi
-
-          echo "APK encontrado:"
-          ls -lh "$APK"
-
-      - name: Enviar APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: MENTEX-APK-FINAL
           path: |
             android_project/**/build/outputs/apk/debug/*.apk
           if-no-files-found: error
