@@ -8,11 +8,11 @@ permissions:
 
 jobs:
   build:
-    name: Compilar MENTEX V4.6
+    name: Build MENTEX V4.6
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Java 17
@@ -21,60 +21,52 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Preparar projeto MENTEX
+      - name: Prepare MENTEX project
         shell: bash
         run: |
           set -e
 
-          ZIP="MENTEX-V4.6-CEREBRO-PERGUNTA-ACERTO-ERRO.zip"
+          ZIP="MENTEX-V4.6-CEREBRO-REACTIONS-ATUALIZADO.zip"
 
-          echo "Procurando:"
-          echo "$ZIP"
+          echo "Looking for project ZIP..."
 
           if [ ! -f "$ZIP" ]; then
-            echo "ERRO: ZIP nao encontrado."
+            echo "Updated ZIP not found."
+            echo "Available ZIP files:"
+            find . -maxdepth 2 -type f -name "*.zip" -print
             exit 1
           fi
 
-          echo "ZIP encontrado!"
+          echo "ZIP found: $ZIP"
 
-          rm -rf mentex-projeto
-          mkdir -p mentex-projeto
+          rm -rf mentex-project
+          mkdir -p mentex-project
 
-          echo "Descompactando projeto..."
-          unzip -o "$ZIP" -d mentex-projeto
+          echo "Extracting project..."
+          unzip -o "$ZIP" -d mentex-project
 
-          echo "Procurando settings.gradle..."
-
-          SETTINGS=$(find mentex-projeto \
+          SETTINGS=$(find mentex-project \
             -type f \
-            \( \
-              -name "settings.gradle" \
-              -o \
-              -name "settings.gradle.kts" \
-            \) \
+            \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
             | head -n 1)
 
           if [ -z "$SETTINGS" ]; then
-            echo "ERRO: settings.gradle nao encontrado depois de descompactar o ZIP."
-            echo "Conteudo encontrado:"
-            find mentex-projeto -maxdepth 4 -type f | head -200
+            echo "ERROR: settings.gradle was not found."
+            find mentex-project -maxdepth 5 -type f | head -200
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$SETTINGS")
 
-          echo "======================================"
-          echo "PROJETO ENCONTRADO:"
+          echo "Project directory:"
           echo "$PROJECT_DIR"
-          echo "======================================"
 
           echo "$PROJECT_DIR" > project_dir.txt
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Compilar APK
+      - name: Build APK
         shell: bash
         run: |
           set -e
@@ -83,19 +75,17 @@ jobs:
 
           cd "$PROJECT_DIR"
 
-          echo "======================================"
-          echo "COMPILANDO MENTEX V4.6"
-          echo "======================================"
+          echo "Building MENTEX V4.6..."
 
           chmod +x gradlew 2>/dev/null || true
 
-          if [ -f "gradlew" ]; then
+          if [ -f "./gradlew" ]; then
             ./gradlew clean assembleDebug --stacktrace
           else
             gradle clean assembleDebug --stacktrace
           fi
 
-      - name: Encontrar APK
+      - name: Find APK
         shell: bash
         run: |
           set -e
@@ -108,21 +98,21 @@ jobs:
             | head -n 1)
 
           if [ -z "$APK" ]; then
-            echo "ERRO: nenhum APK foi gerado."
+            echo "ERROR: APK was not generated."
             exit 1
           fi
 
-          echo "APK encontrado:"
+          echo "APK found:"
           echo "$APK"
 
-          mkdir -p resultado
+          mkdir -p result
 
           cp "$APK" \
-            resultado/MENTEX-V4.6-CEREBRO-REACTIONS.apk
+            result/MENTEX-V4.6-CEREBRO-REACTIONS.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-V4.6-CEREBRO-REACTIONS
-          path: resultado/MENTEX-V4.6-CEREBRO-REACTIONS.apk
+          path: result/MENTEX-V4.6-CEREBRO-REACTIONS.apk
           if-no-files-found: error
