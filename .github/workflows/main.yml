@@ -26,104 +26,63 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Localizar projeto Android
+      - name: Encontrar projeto MENTEX
         shell: bash
         run: |
           set -e
 
-          echo "Procurando projeto Android..."
+          echo "Procurando settings.gradle..."
 
-          # Primeiro procura um Gradle Wrapper já existente
-          GRADLEW=$(find . \
+          SETTINGS=$(find . \
             -type f \
-            -name "gradlew" \
+            -name "settings.gradle" \
             -not -path "./.git/*" \
             | head -n 1)
 
-          # Se não encontrou, procura ZIP do MENTEX
-          if [ -z "$GRADLEW" ]; then
-            ZIP=$(find . \
-              -type f \
-              -iname "*MENTEX*V4.6*.zip" \
-              -not -path "./.git/*" \
-              | head -n 1)
-
-            if [ -n "$ZIP" ]; then
-              echo "ZIP encontrado: $ZIP"
-
-              rm -rf mentex-extra
-              mkdir -p mentex-extra
-
-              unzip -o "$ZIP" -d mentex-extra
-
-              GRADLEW=$(find mentex-extra \
-                -type f \
-                -name "gradlew" \
-                | head -n 1)
-            fi
-          fi
-
-          if [ -z "$GRADLEW" ]; then
-            echo ""
-            echo "ERRO: nenhum projeto Android foi encontrado."
-            echo ""
-            echo "Arquivos Gradle encontrados:"
+          if [ -z "$SETTINGS" ]; then
+            echo "ERRO: settings.gradle não encontrado."
             find . -type f \
-              \( -name "settings.gradle" \
-              -o -name "settings.gradle.kts" \
-              -o -name "build.gradle" \
-              -o -name "build.gradle.kts" \
-              -o -name "gradlew" \) \
-              -not -path "./.git/*" \
-              -print
+              \( -name "settings.gradle" -o -name "build.gradle" \) \
+              -not -path "./.git/*"
             exit 1
           fi
 
-          PROJECT_DIR=$(dirname "$GRADLEW")
+          PROJECT_DIR=$(dirname "$SETTINGS")
 
-          echo ""
-          echo "======================================"
-          echo "PROJETO ANDROID ENCONTRADO"
-          echo "======================================"
+          echo "Projeto encontrado:"
           echo "$PROJECT_DIR"
-          echo ""
+
+          if [ ! -f "$PROJECT_DIR/build.gradle" ]; then
+            echo "ERRO: build.gradle não encontrado."
+            exit 1
+          fi
+
+          if [ ! -f "$PROJECT_DIR/app/build.gradle" ]; then
+            echo "ERRO: app/build.gradle não encontrado."
+            exit 1
+          fi
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      - name: Verificar projeto
+      - name: Compilar MENTEX
         shell: bash
         run: |
           set -e
 
           cd "$PROJECT_DIR"
 
-          echo "Conteúdo do projeto:"
-          ls -la
+          echo "======================================"
+          echo "COMPILANDO MENTEX V4.6"
+          echo "======================================"
 
-          if [ ! -f "gradlew" ]; then
-            echo "ERRO: gradlew não encontrado."
-            exit 1
-          fi
+          gradle assembleDebug --stacktrace --no-daemon
 
-          chmod +x gradlew
-
-      - name: Compilar APK
+      - name: Procurar APK
         shell: bash
         run: |
           set -e
 
-          cd "$PROJECT_DIR"
-
-          echo "Iniciando compilação..."
-
-          ./gradlew assembleDebug --stacktrace --no-daemon
-
-      - name: Localizar APK gerado
-        shell: bash
-        run: |
-          set -e
-
-          echo "Procurando APK..."
+          echo "Procurando APK gerado..."
 
           APK=$(find "$PROJECT_DIR" \
             -type f \
@@ -131,25 +90,25 @@ jobs:
             | head -n 1)
 
           if [ -z "$APK" ]; then
-            echo ""
             echo "ERRO: nenhum APK foi gerado."
-            echo ""
-            echo "Arquivos de build encontrados:"
+
+            echo "Arquivos de build:"
             find "$PROJECT_DIR" \
               -type f \
               \( -name "*.apk" -o -name "*.aab" \) \
               -print || true
+
             exit 1
           fi
 
-          echo ""
           echo "APK encontrado:"
           echo "$APK"
-          echo ""
 
-          cp "$APK" "$GITHUB_WORKSPACE/MENTEX-V4.6-COMPACTO.apk"
+          cp "$APK" \
+            "$GITHUB_WORKSPACE/MENTEX-V4.6-COMPACTO.apk"
 
-          ls -lh "$GITHUB_WORKSPACE/MENTEX-V4.6-COMPACTO.apk"
+          ls -lh \
+            "$GITHUB_WORKSPACE/MENTEX-V4.6-COMPACTO.apk"
 
       - name: Enviar APK
         uses: actions/upload-artifact@v4
