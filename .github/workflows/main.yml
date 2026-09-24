@@ -1,4 +1,4 @@
-name: Compilador MENTEX V4.6
+name: MENTEX V4.6
 
 on:
   workflow_dispatch:
@@ -8,50 +8,46 @@ permissions:
 
 jobs:
   build:
-    name: Compilar MENTEX V4.6
+    name: Build MENTEX V4.6
     runs-on: ubuntu-latest
 
     steps:
-
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configurar Java
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Encontrar e preparar projeto
+      - name: Find MENTEX ZIP
         shell: bash
         run: |
           set -e
 
-          echo "Procurando ZIP do MENTEX..."
+          echo "Files in repository:"
+          ls -la
 
-          ZIP=$(find . -maxdepth 1 -type f \
-            -name 'MENTEX-V4.6-PERGUNTAS-FINAL-TELA-CHEIA.zip' \
-            -print -quit)
+          ZIP="MENTEX-V4.6-TELA-CHEIA-CORRIGIDA.zip"
 
-          if [ -z "$ZIP" ]; then
-            echo "ERRO: MENTEX-V4.6-PERGUNTAS-FINAL-TELA-CHEIA.zip nao encontrado."
-            echo "Arquivos encontrados:"
+          if [ ! -f "$ZIP" ]; then
+            echo "ERROR: ZIP not found:"
+            echo "$ZIP"
+            echo ""
+            echo "Available files:"
             find . -maxdepth 2 -type f -print
             exit 1
           fi
 
-          echo "ZIP encontrado:"
-          echo "$ZIP"
+          echo "ZIP found: $ZIP"
 
           rm -rf projeto
           mkdir -p projeto
 
           unzip -o "$ZIP" -d projeto
 
-          echo "Arquivos extraidos:"
-          find projeto -maxdepth 5 -type f -print
-
-      - name: Localizar projeto Android
+      - name: Find Android project
         shell: bash
         run: |
           set -e
@@ -61,48 +57,56 @@ jobs:
             | head -1)
 
           if [ -z "$SETTINGS" ]; then
-            echo "ERRO: settings.gradle nao encontrado."
+            echo "ERROR: settings.gradle not found."
+
             find projeto -maxdepth 6 -type f -print
+
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$SETTINGS")
 
-          echo "Projeto Android encontrado:"
+          echo "Android project:"
           echo "$PROJECT_DIR"
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      - name: Configurar Gradle
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
-      - name: Compilar APK
+      - name: Clean project
+        shell: bash
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          gradle clean
+
+      - name: Build APK
         shell: bash
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           set -e
 
-          echo "================================"
-          echo "COMPILANDO MENTEX V4.6"
-          echo "TELA DE PERGUNTAS TELA CHEIA"
-          echo "SEM DESLIZAMENTO"
-          echo "================================"
+          echo "======================================"
+          echo "BUILDING MENTEX V4.6"
+          echo "FULL SCREEN QUESTIONS"
+          echo "NO SCROLL"
+          echo "======================================"
 
-          gradle clean assembleDebug --stacktrace
+          gradle assembleDebug --stacktrace
 
-      - name: Verificar APK
+      - name: Find APK
         shell: bash
         run: |
-          echo "APKs gerados:"
+          echo "Generated APK files:"
 
           find "$PROJECT_DIR" \
             -type f \
             -name "*.apk" \
             -print
 
-      - name: Enviar APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-V4.6-TELA-CHEIA
