@@ -1,4 +1,4 @@
-name: Compilar MENTEX V4.6 - Reações
+name: Compilar MENTEX V4.6 - Cérebro Reações
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 jobs:
-  construir:
+  build:
     name: Compilar MENTEX V4.6
     runs-on: ubuntu-latest
 
@@ -21,37 +21,41 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Preparar projeto MENTEX V4.6
+      - name: Localizar projeto MENTEX
         shell: bash
         run: |
           set -e
 
-          ZIP="MENTEX-V4.6-CEREBRO-REACOES.zip"
+          echo "========================================"
+          echo " MENTEX V4.6 - CÉREBRO / REAÇÕES"
+          echo "========================================"
 
-          echo "=========================================="
-          echo "       MENTEX V4.6 - REAÇÕES"
-          echo "=========================================="
+          echo "Arquivos ZIP encontrados:"
+          find . -maxdepth 3 -type f -iname "*.zip" -print
 
-          if [ ! -f "$ZIP" ]; then
-            echo "ERRO: $ZIP não foi encontrado."
-            echo ""
-            echo "Arquivos ZIP encontrados:"
-            find . -maxdepth 2 -type f -iname "*.zip" -print
+          ZIP=$(find . -maxdepth 3 -type f \
+            -iname "MENTEX-V4.6-CEREBRO-PERGUNTA-ACERTO-ERRO.zip" \
+            | head -n 1)
+
+          if [ -z "$ZIP" ]; then
+            echo "ERRO: ZIP do MENTEX V4.6 não encontrado."
             exit 1
           fi
 
-          rm -rf projeto-mentex
-          mkdir -p projeto-mentex
+          echo "ZIP encontrado: $ZIP"
 
-          unzip -o "$ZIP" -d projeto-mentex
+          rm -rf mentex-projeto
+          mkdir -p mentex-projeto
 
-          SETTINGS=$(find projeto-mentex \
+          unzip -o "$ZIP" -d mentex-projeto
+
+          SETTINGS=$(find mentex-projeto \
             -type f \
             \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
             | head -n 1)
 
           if [ -z "$SETTINGS" ]; then
-            echo "ERRO: projeto Android não encontrado dentro do ZIP."
+            echo "ERRO: settings.gradle não encontrado."
             exit 1
           fi
 
@@ -59,27 +63,11 @@ jobs:
 
           echo "$PROJECT_DIR" > project_dir.txt
 
-          echo ""
-          echo "Projeto encontrado:"
+          echo "Projeto encontrado em:"
           echo "$PROJECT_DIR"
-
-          echo ""
-          echo "Arquivos do cérebro:"
-          find "$PROJECT_DIR/app/src/main" \
-            -type f \
-            \( \
-              -iname "*brain*" \
-              -o -iname "*cerebro*" \
-              -o -iname "*happy*" \
-              -o -iname "*sad*" \
-              -o -iname "*question*" \
-            \) \
-            -print || true
 
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.7'
 
       - name: Compilar APK
         shell: bash
@@ -88,10 +76,10 @@ jobs:
 
           PROJECT_DIR=$(cat project_dir.txt)
 
-          echo "Entrando no projeto:"
-          echo "$PROJECT_DIR"
-
           cd "$PROJECT_DIR"
+
+          echo "Compilando projeto..."
+          echo "Diretório: $PWD"
 
           chmod +x ./gradlew 2>/dev/null || true
 
@@ -101,7 +89,7 @@ jobs:
             gradle clean assembleDebug --stacktrace
           fi
 
-      - name: Procurar APK
+      - name: Encontrar APK
         shell: bash
         run: |
           set -e
@@ -114,7 +102,7 @@ jobs:
             | head -n 1)
 
           if [ -z "$APK" ]; then
-            echo "ERRO: nenhum APK foi gerado."
+            echo "ERRO: APK não foi gerado."
             exit 1
           fi
 
@@ -124,11 +112,11 @@ jobs:
           mkdir -p resultado
 
           cp "$APK" \
-            "resultado/MENTEX-V4.6-CEREBRO-REACOES.apk"
+            resultado/MENTEX-V4.6-CEREBRO-PERGUNTA-ACERTO-ERRO.apk
 
-      - name: Enviar APK
+      - name: Disponibilizar APK para download
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V4.6-CEREBRO-REACOES
-          path: resultado/MENTEX-V4.6-CEREBRO-REACOES.apk
+          name: MENTEX-V4.6-CEREBRO-PERGUNTA-ACERTO-ERRO
+          path: resultado/MENTEX-V4.6-CEREBRO-PERGUNTA-ACERTO-ERRO.apk
           if-no-files-found: error
