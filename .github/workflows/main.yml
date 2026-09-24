@@ -1,4 +1,4 @@
-name: Construir APK MENTEX Final
+name: Construir APK MENTEX V4.2
 
 on:
   workflow_dispatch:
@@ -8,150 +8,100 @@ permissions:
 
 jobs:
   build:
-    name: Construir APK MENTEX V4.0
+    name: Build MENTEX V4.2
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar código
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configurar Java 17
+      - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Preparar projeto
-        shell: bash
-        run: |
-          set -e
-
-          echo "======================================"
-          echo " PREPARANDO PROJETO MENTEX V4.0"
-          echo "======================================"
-
-          echo "Arquivos do repositório:"
-          find . -maxdepth 2 -type f -print
-
-          ZIP=$(find . -maxdepth 2 -type f -name "*.zip" | head -1)
-
-          if [ -n "$ZIP" ]; then
-            echo ""
-            echo "ZIP encontrado: $ZIP"
-            echo "Extraindo projeto..."
-
-            mkdir -p mentex
-            unzip -o "$ZIP" -d mentex
-          else
-            echo ""
-            echo "Nenhum ZIP encontrado."
-            echo "Usando os arquivos existentes no repositório."
-          fi
-
-          echo ""
-          echo "Procurando Gradle..."
-          find . -type f \( \
-            -name "gradlew" \
-            -o -name "settings.gradle" \
-            -o -name "settings.gradle.kts" \
-          \) -print
-
-      - name: Localizar projeto Android
-        shell: bash
-        run: |
-          set -e
-
-          GRADLEW=$(find . -type f -name "gradlew" | head -1)
-
-          if [ -n "$GRADLEW" ]; then
-            echo "======================================"
-            echo " PROJETO ANDROID ENCONTRADO"
-            echo "======================================"
-            echo "Gradle Wrapper:"
-            echo "$GRADLEW"
-
-            echo "$GRADLEW" > gradle_wrapper_path.txt
-          else
-            echo "======================================"
-            echo " GRADLE WRAPPER NÃO ENCONTRADO"
-            echo "======================================"
-
-            SETTINGS=$(find . -type f \( \
-              -name "settings.gradle" \
-              -o -name "settings.gradle.kts" \
-            \) | head -1)
-
-            if [ -z "$SETTINGS" ]; then
-              echo "ERRO: Projeto Android não encontrado."
-              echo ""
-              echo "Verifique se o ZIP contém:"
-              echo "gradlew"
-              echo "app/"
-              echo "settings.gradle"
-              echo "build.gradle"
-              exit 1
-            fi
-
-            echo "settings encontrado:"
-            echo "$SETTINGS"
-          fi
-
-      - name: Configurar Gradle 8.7
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
-      - name: Compilar APK
+      - name: Check project
+        shell: bash
+        run: |
+          echo "======================================"
+          echo " MENTEX V4.2"
+          echo "======================================"
+
+          echo "Repository files:"
+          find . -maxdepth 3 -type f | sort | head -200
+
+          echo ""
+          echo "Searching Android project..."
+
+          if [ ! -f "settings.gradle" ] && [ ! -f "settings.gradle.kts" ]; then
+            echo "ERROR: settings.gradle not found."
+            exit 1
+          fi
+
+          if [ ! -d "app" ]; then
+            echo "ERROR: app directory not found."
+            exit 1
+          fi
+
+          if [ ! -f "app/build.gradle" ] && [ ! -f "app/build.gradle.kts" ]; then
+            echo "ERROR: app/build.gradle not found."
+            exit 1
+          fi
+
+          echo "Android project found successfully."
+
+      - name: Configure Java 17
+        shell: bash
+        run: |
+          APP_GRADLE=""
+
+          if [ -f "app/build.gradle" ]; then
+            APP_GRADLE="app/build.gradle"
+          elif [ -f "app/build.gradle.kts" ]; then
+            APP_GRADLE="app/build.gradle.kts"
+          fi
+
+          if [ -n "$APP_GRADLE" ]; then
+            echo "Android build file: $APP_GRADLE"
+          fi
+
+      - name: Build Debug APK
         shell: bash
         run: |
           set -e
 
           echo "======================================"
-          echo " COMPILANDO MENTEX V4.0"
+          echo " BUILDING MENTEX V4.2"
           echo "======================================"
 
-          GRADLEW=$(find . -type f -name "gradlew" | head -1)
-
-          if [ -n "$GRADLEW" ]; then
-            PROJECT_DIR=$(dirname "$GRADLEW")
-
-            echo "Diretório do projeto:"
-            echo "$PROJECT_DIR"
-
-            cd "$PROJECT_DIR"
-
-            chmod +x gradlew
-
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
             ./gradlew assembleDebug --stacktrace
           else
-            SETTINGS=$(find . -type f \( \
-              -name "settings.gradle" \
-              -o -name "settings.gradle.kts" \
-            \) | head -1)
-
-            PROJECT_DIR=$(dirname "$SETTINGS")
-
-            echo "Diretório do projeto:"
-            echo "$PROJECT_DIR"
-
-            cd "$PROJECT_DIR"
-
+            echo "gradlew not found."
+            echo "Using installed Gradle 8.7."
             gradle assembleDebug --stacktrace
           fi
 
-      - name: Procurar APK
+      - name: Find APK
         shell: bash
         run: |
           echo "======================================"
-          echo " APK GERADO"
+          echo " GENERATED APK"
           echo "======================================"
 
           find . -type f -name "*.apk" -print
 
-      - name: Enviar APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-APK-V4.0
+          name: MENTEX-V4.2-APK
           path: |
-            **/build/outputs/apk/debug/*.apk
+            app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
