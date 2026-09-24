@@ -33,14 +33,12 @@ jobs:
       - name: Procurar ZIP MENTEX
         shell: bash
         run: |
-          echo "======================================"
-          echo "PROCURANDO ZIP DO MENTEX"
-          echo "======================================"
+          echo "PROCURANDO ZIP DO MENTEX..."
 
           ZIP=$(find . -maxdepth 1 -type f -name 'MENTEX_Android*.zip' | head -n 1)
 
           if [ -z "$ZIP" ]; then
-            echo "ERRO: nenhum ZIP MENTEX encontrado."
+            echo "ERRO: ZIP do MENTEX não encontrado."
             ls -lah
             exit 1
           fi
@@ -55,16 +53,12 @@ jobs:
         id: projeto
         shell: bash
         run: |
-          echo "======================================"
-          echo "PROCURANDO PROJETO ANDROID"
-          echo "======================================"
+          echo "PROCURANDO PROJETO ANDROID..."
 
-          SETTINGS=""
-
-          while IFS= read -r file; do
-            SETTINGS="$file"
-            break
-          done < <(find android_project -type f \( -name 'settings.gradle' -o -name 'settings.gradle.kts' \))
+          SETTINGS=$(find android_project \
+            -type f \
+            \( -name 'settings.gradle' -o -name 'settings.gradle.kts' \) \
+            | head -n 1)
 
           if [ -z "$SETTINGS" ]; then
             echo "ERRO: settings.gradle não encontrado."
@@ -79,19 +73,24 @@ jobs:
 
           echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
 
-      - name: Verificar projeto
+      - name: Corrigir Kotlin
         shell: bash
         run: |
           cd "${{ steps.projeto.outputs.project_dir }}"
 
-          echo "Arquivos do projeto:"
-          ls -la
+          echo "Verificando build.gradle..."
+
+          if [ -f "build.gradle" ]; then
+            echo "build.gradle encontrado."
+            cat build.gradle
+          fi
 
           echo ""
-          echo "Arquivos Java/Kotlin:"
-          find app/src/main -type f \( -name '*.java' -o -name '*.kt' \) -print
+          echo "Verificando app/build.gradle..."
 
-      - name: Corrigir dependências Kotlin
+          cat app/build.gradle
+
+      - name: Corrigir bibliotecas Kotlin
         shell: bash
         run: |
           cd "${{ steps.projeto.outputs.project_dir }}"
@@ -107,12 +106,13 @@ jobs:
           }
           EOF
 
-          echo "Dependências Kotlin ajustadas."
+          echo "Bibliotecas Kotlin alinhadas em 1.8.22."
 
       - name: Limpar projeto
         shell: bash
         run: |
           cd "${{ steps.projeto.outputs.project_dir }}"
+
           gradle clean --no-daemon
 
       - name: Construir APK
@@ -127,16 +127,19 @@ jobs:
           gradle assembleDebug \
             --no-daemon \
             --stacktrace \
-            -x compileDebugKotlin
+            --info
 
       - name: Procurar APK
         shell: bash
         run: |
           echo "======================================"
-          echo "APKs ENCONTRADOS"
+          echo "PROCURANDO APK"
           echo "======================================"
 
-          find android_project -type f -name '*.apk' -print
+          find android_project \
+            -type f \
+            -name '*.apk' \
+            -print
 
       - name: Verificar APK
         shell: bash
@@ -148,9 +151,8 @@ jobs:
             exit 1
           fi
 
-          echo "APK encontrado:"
+          echo "APK GERADO COM SUCESSO:"
           echo "$APK"
-
           ls -lh "$APK"
 
       - name: Enviar APK
