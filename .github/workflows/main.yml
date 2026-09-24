@@ -26,29 +26,64 @@ jobs:
         run: |
           set -e
 
-          echo "Arquivos do repositório:"
+          echo "======================================"
+          echo " PREPARANDO PROJETO MENTEX V4.0"
+          echo "======================================"
+
           ls -la
 
           ZIP=$(find . -maxdepth 2 -type f -name "*.zip" | head -1)
 
           if [ -n "$ZIP" ]; then
             echo "ZIP encontrado: $ZIP"
+
             mkdir -p mentex
             unzip -o "$ZIP" -d mentex
           else
-            echo "Nenhum arquivo ZIP encontrado."
+            echo "Nenhum ZIP encontrado."
           fi
 
           echo ""
-          echo "Procurando projeto Gradle..."
-          find . -maxdepth 5 -type f \
-            -name "settings.gradle" -o \
-            -name "settings.gradle.kts" -o \
-            -name "build.gradle" -o \
-            -name "build.gradle.kts" \
-          -print
+          echo "Arquivos do projeto:"
+          find mentex -maxdepth 4 -type f | head -100
 
-      - name: Corrigir compatibilidade Java/Kotlin 17
+      - name: Localizar projeto Android
+        shell: bash
+        run: |
+          set -e
+
+          echo "Procurando projeto Android..."
+
+          GRADLEW=$(find . -type f -name "gradlew" | head -1)
+
+          if [ -z "$GRADLEW" ]; then
+            echo ""
+            echo "ERRO: gradlew não encontrado."
+            echo "O ZIP precisa conter um projeto Android Gradle."
+            exit 1
+          fi
+
+          echo "Gradle encontrado em:"
+          echo "$GRADLEW"
+
+      - name: Corrigir permissões do Gradle
+        shell: bash
+        run: |
+          set -e
+
+          GRADLEW=$(find . -type f -name "gradlew" | head -1)
+
+          chmod +x "$GRADLEW"
+
+          echo "Permissão aplicada:"
+          ls -l "$GRADLEW"
+
+      - name: Configurar Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Configurar Java 17 no Android
         shell: bash
         run: |
           set -e
@@ -56,42 +91,23 @@ jobs:
           APP_GRADLE=$(find . -path "*/app/build.gradle" -type f | head -1)
 
           if [ -n "$APP_GRADLE" ]; then
-            echo "Arquivo encontrado: $APP_GRADLE"
+
+            echo "Arquivo encontrado:"
+            echo "$APP_GRADLE"
 
             cat >> "$APP_GRADLE" <<'EOF'
 
-            // Compatibilidade Java 17
-            android {
-                compileOptions {
-                    sourceCompatibility JavaVersion.VERSION_17
-                    targetCompatibility JavaVersion.VERSION_17
-                }
-            }
-            EOF
+          // Compatibilidade Java 17
+          android {
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
+          EOF
+
           else
             echo "Aviso: app/build.gradle não encontrado."
-          fi
-
-      - name: Configurar Gradle 8.7
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.7'
-
-      - name: Verificar projeto Android
-        shell: bash
-        run: |
-          set -e
-
-          if [ ! -f "mentex/gradlew" ] && [ ! -f "gradlew" ]; then
-            echo "ERRO: Não foi encontrado gradlew."
-            echo ""
-            echo "O arquivo ZIP precisa conter um projeto Android/Gradle."
-            echo "Estrutura esperada:"
-            echo "  gradlew"
-            echo "  settings.gradle"
-            echo "  build.gradle"
-            echo "  app/"
-            exit 1
           fi
 
       - name: Compilar APK
@@ -99,20 +115,31 @@ jobs:
         run: |
           set -e
 
-          if [ -f "mentex/gradlew" ]; then
-            cd mentex
-            chmod +x gradlew
-            ./gradlew assembleDebug --stacktrace
-          else
-            chmod +x gradlew
-            ./gradlew assembleDebug --stacktrace
-          fi
+          GRADLEW=$(find . -type f -name "gradlew" | head -1)
+          PROJECT_DIR=$(dirname "$GRADLEW")
+
+          echo "Projeto:"
+          echo "$PROJECT_DIR"
+
+          cd "$PROJECT_DIR"
+
+          chmod +x gradlew
+
+          ./gradlew assembleDebug --stacktrace
+
+      - name: Procurar APK
+        shell: bash
+        run: |
+          echo "======================================"
+          echo " APK GERADO"
+          echo "======================================"
+
+          find . -type f -name "*.apk" -print
 
       - name: Enviar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-APK-V4
+          name: MENTEX-APK-V4.0
           path: |
-            mentex/app/build/outputs/apk/debug/*.apk
-            app/build/outputs/apk/debug/*.apk
-          if
+            **/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
