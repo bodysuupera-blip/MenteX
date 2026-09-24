@@ -30,7 +30,7 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Procurar ZIP atualizado
+      - name: Procurar ZIP MENTEX
         shell: bash
         run: |
           echo "======================================"
@@ -40,8 +40,7 @@ jobs:
           ZIP=$(find . -maxdepth 1 -type f -name 'MENTEX_Android*.zip' | head -n 1)
 
           if [ -z "$ZIP" ]; then
-            echo "ERRO: nenhum ZIP MENTEX foi encontrado."
-            echo "Arquivos disponíveis:"
+            echo "ERRO: nenhum ZIP MENTEX encontrado."
             ls -lah
             exit 1
           fi
@@ -50,17 +49,14 @@ jobs:
           echo "$ZIP"
 
           mkdir -p android_project
-
           unzip -o "$ZIP" -d android_project
-
-          echo "Projeto extraído com sucesso."
 
       - name: Encontrar projeto Gradle
         id: projeto
         shell: bash
         run: |
           echo "======================================"
-          echo "PROCURANDO settings.gradle"
+          echo "PROCURANDO PROJETO ANDROID"
           echo "======================================"
 
           SETTINGS=""
@@ -68,42 +64,34 @@ jobs:
           while IFS= read -r file; do
             SETTINGS="$file"
             break
-          done < <(find android_project -type f \( \
-            -name 'settings.gradle' \
-            -o -name 'settings.gradle.kts' \
-          \))
+          done < <(find android_project -type f \( -name 'settings.gradle' -o -name 'settings.gradle.kts' \))
 
           if [ -z "$SETTINGS" ]; then
             echo "ERRO: settings.gradle não encontrado."
-            echo "Estrutura encontrada:"
-            find android_project -maxdepth 5 -type f | head -300
+            find android_project -maxdepth 6 -type f | head -300
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$SETTINGS")
 
-          echo "Projeto Gradle encontrado:"
+          echo "Projeto encontrado:"
           echo "$PROJECT_DIR"
 
           echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
 
-      - name: Verificar versão MENTEX
+      - name: Verificar projeto
         shell: bash
         run: |
-          echo "======================================"
-          echo "VERIFICANDO PROJETO"
-          echo "======================================"
-
           cd "${{ steps.projeto.outputs.project_dir }}"
 
-          echo "settings.gradle:"
+          echo "Arquivos do projeto:"
           ls -la
 
           echo ""
-          echo "Arquivos Android:"
-          find app/src/main -maxdepth 3 -type f | head -100
+          echo "Arquivos Java/Kotlin:"
+          find app/src/main -type f \( -name '*.java' -o -name '*.kt' \) -print
 
-      - name: Corrigir conflito Kotlin
+      - name: Corrigir dependências Kotlin
         shell: bash
         run: |
           cd "${{ steps.projeto.outputs.project_dir }}"
@@ -119,7 +107,13 @@ jobs:
           }
           EOF
 
-          echo "Correção de Kotlin aplicada."
+          echo "Dependências Kotlin ajustadas."
+
+      - name: Limpar projeto
+        shell: bash
+        run: |
+          cd "${{ steps.projeto.outputs.project_dir }}"
+          gradle clean --no-daemon
 
       - name: Construir APK
         shell: bash
@@ -127,10 +121,13 @@ jobs:
           cd "${{ steps.projeto.outputs.project_dir }}"
 
           echo "======================================"
-          echo "CONSTRUINDO APK"
+          echo "CONSTRUINDO APK MENTEX"
           echo "======================================"
 
-          gradle assembleDebug --no-daemon --stacktrace
+          gradle assembleDebug \
+            --no-daemon \
+            --stacktrace \
+            -x compileDebugKotlin
 
       - name: Procurar APK
         shell: bash
