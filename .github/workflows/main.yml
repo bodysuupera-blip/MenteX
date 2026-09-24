@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   construir:
-    name: Construir APK MENTEX
+    name: Construir APK MENTEX V3.3
     runs-on: ubuntu-latest
 
     steps:
@@ -30,40 +30,36 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Localizar ZIP Android
-        id: localizar_zip
+      - name: Verificar ZIP V3.3
         shell: bash
         run: |
-          echo "Procurando ZIP do MENTEX..."
+          ZIP="MENTEX_ANDROID_PERFIL_RANKING_V3_3.zip"
 
-          ZIP=$(find . -maxdepth 2 -type f \
-            -iname "MENTEX_Android*.zip" \
-            | head -n 1)
+          echo "Procurando:"
+          echo "$ZIP"
 
-          if [ -z "$ZIP" ]; then
-            echo "ERRO: nenhum ZIP Android encontrado."
+          if [ ! -f "$ZIP" ]; then
+            echo "ERRO: ZIP V3.3 não encontrado!"
             echo "Arquivos disponíveis:"
-            find . -maxdepth 3 -type f | sort
+            find . -maxdepth 2 -type f | sort
             exit 1
           fi
 
-          echo "ZIP encontrado:"
-          echo "$ZIP"
+          echo "ZIP V3.3 encontrado com sucesso."
 
-          echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
-
-      - name: Extrair projeto Android
+      - name: Extrair MENTEX V3.3
         shell: bash
         run: |
           rm -rf android_project
           mkdir -p android_project
 
-          unzip -q "${{ steps.localizar_zip.outputs.zip }}" -d android_project
+          unzip -q "MENTEX_ANDROID_PERFIL_RANKING_V3_3.zip" \
+            -d android_project
 
           echo "Projeto extraído:"
           find android_project -maxdepth 4 -type f | sort | head -200
 
-      - name: Encontrar projeto Gradle
+      - name: Encontrar projeto Android
         id: projeto
         shell: bash
         run: |
@@ -72,18 +68,54 @@ jobs:
             | head -n 1)
 
           if [ -z "$SETTINGS" ]; then
-            echo "ERRO: settings.gradle não encontrado."
+            echo "ERRO: settings.gradle não encontrado!"
             find android_project -type f | sort
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$SETTINGS")
 
-          echo "Projeto Gradle encontrado:"
+          echo "Projeto encontrado:"
           echo "$PROJECT_DIR"
 
           echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
 
+      - name: Limpar projeto
+        shell: bash
+        run: |
+          cd "${{ steps.projeto.outputs.project_dir }}"
+          gradle clean --no-daemon --stacktrace
+
+      - name: Construir APK MENTEX V3.3
+        shell: bash
+        run: |
+          cd "${{ steps.projeto.outputs.project_dir }}"
+
+          echo "======================================"
+          echo "      CONSTRUINDO MENTEX V3.3"
+          echo "      PERFIL + AVATAR + RANKING"
+          echo "======================================"
+
+          gradle assembleDebug \
+            --no-daemon \
+            --stacktrace
+
+      - name: Procurar APK
+        shell: bash
+        run: |
+          echo "APKs gerados:"
+          find android_project \
+            -type f \
+            -name "*.apk" \
+            -print
+
+      - name: Enviar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MENTEX-V3.3-PERFIL-RANKING
+          path: |
+            android_project/**/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
       - name: Corrigir conflito Kotlin
         shell: bash
         run: |
