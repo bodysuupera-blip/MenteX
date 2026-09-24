@@ -1,4 +1,4 @@
-name: Compilar MENTEX V4.6
+name: Build MENTEX V4.6
 
 on:
   workflow_dispatch:
@@ -12,37 +12,36 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Java 17
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Prepare MENTEX project
+      - name: Prepare project
         shell: bash
         run: |
           set -e
 
-          ZIP="MENTEX-V4.6-CEREBRO-REACTIONS-ATUALIZADO.zip"
+          ZIP="MENTEX-V4.6-CEREBROS-AJUSTADOS.zip"
 
-          echo "Looking for project ZIP..."
+          echo "Checking for:"
+          echo "$ZIP"
 
           if [ ! -f "$ZIP" ]; then
-            echo "Updated ZIP not found."
-            echo "Available ZIP files:"
+            echo "ERROR: Updated ZIP not found."
+            echo "ZIP files available:"
             find . -maxdepth 2 -type f -name "*.zip" -print
             exit 1
           fi
 
-          echo "ZIP found: $ZIP"
-
           rm -rf mentex-project
           mkdir -p mentex-project
 
-          echo "Extracting project..."
+          echo "Extracting updated project..."
           unzip -o "$ZIP" -d mentex-project
 
           SETTINGS=$(find mentex-project \
@@ -51,14 +50,13 @@ jobs:
             | head -n 1)
 
           if [ -z "$SETTINGS" ]; then
-            echo "ERROR: settings.gradle was not found."
-            find mentex-project -maxdepth 5 -type f | head -200
+            echo "ERROR: settings.gradle not found."
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$SETTINGS")
 
-          echo "Project directory:"
+          echo "Project:"
           echo "$PROJECT_DIR"
 
           echo "$PROJECT_DIR" > project_dir.txt
@@ -74,8 +72,6 @@ jobs:
           PROJECT_DIR=$(cat project_dir.txt)
 
           cd "$PROJECT_DIR"
-
-          echo "Building MENTEX V4.6..."
 
           chmod +x gradlew 2>/dev/null || true
 
@@ -98,21 +94,18 @@ jobs:
             | head -n 1)
 
           if [ -z "$APK" ]; then
-            echo "ERROR: APK was not generated."
+            echo "ERROR: APK not generated."
             exit 1
           fi
-
-          echo "APK found:"
-          echo "$APK"
 
           mkdir -p result
 
           cp "$APK" \
-            result/MENTEX-V4.6-CEREBRO-REACTIONS.apk
+            result/MENTEX-V4.6-CEREBROS-AJUSTADOS.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V4.6-CEREBRO-REACTIONS
-          path: result/MENTEX-V4.6-CEREBRO-REACTIONS.apk
+          name: MENTEX-V4.6-CEREBROS-AJUSTADOS
+          path: result/MENTEX-V4.6-CEREBROS-AJUSTADOS.apk
           if-no-files-found: error
