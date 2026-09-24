@@ -1,4 +1,4 @@
-name: MENTEX V4.6
+name: Compilar MENTEX V4.6 Compacto
 
 on:
   workflow_dispatch:
@@ -7,114 +7,103 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    name: Build MENTEX V4.6
+  construir:
+    name: Compilar MENTEX V4.6 Compacto
     runs-on: ubuntu-latest
 
     steps:
-
-      - name: Checkout
+      - name: Baixar código
         uses: actions/checkout@v4
 
-      - name: Setup Java
+      - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Encontrar ZIP do MENTEX
+      - name: Preparar projeto MENTEX V4.6
         shell: bash
         run: |
           set -e
 
-          ZIP="MENTEX-V4.6-TELA-CHEIA-ESTAVEL.zip"
+          ZIP="MENTEX-V4.6-CEREBRO-PERGUNTA-ACERTO-ERRO-COMPACTO.zip"
 
-          echo "Procurando:"
-          echo "$ZIP"
+          echo "=========================================="
+          echo "MENTEX V4.6 - TELA COMPACTA"
+          echo "=========================================="
 
           if [ ! -f "$ZIP" ]; then
-            echo "ERRO: ZIP nao encontrado."
+            echo "ERRO: $ZIP não encontrado na raiz do repositório."
             echo ""
-            echo "Arquivos disponiveis:"
-            find . -maxdepth 2 -type f -print
+            echo "Arquivos ZIP encontrados:"
+            find . -maxdepth 1 -type f -iname '*.zip' -print
             exit 1
           fi
 
-          echo "ZIP encontrado."
+          rm -rf mentex
 
-          rm -rf projeto
-          mkdir -p projeto
+          unzip -o "$ZIP" -d mentex
 
-          unzip -o "$ZIP" -d projeto
-
-          echo "Conteudo extraido:"
-          find projeto -maxdepth 4 -type f -print
-
-      - name: Localizar projeto Android
-        shell: bash
-        run: |
-          set -e
-
-          SETTINGS=$(find projeto -type f \
+          SETTINGS=$(find mentex \
+            -type f \
             \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
-            | head -1)
+            | head -n 1)
 
           if [ -z "$SETTINGS" ]; then
-            echo "ERRO: settings.gradle nao encontrado."
-            find projeto -maxdepth 6 -type f -print
+            echo "ERRO: projeto Android não encontrado dentro do ZIP."
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$SETTINGS")
 
+          echo "$PROJECT_DIR" > project_dir.txt
+
           echo "Projeto encontrado:"
           echo "$PROJECT_DIR"
 
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-
-      - name: Setup Gradle
+      - name: Configurar Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
-      - name: Limpar projeto
-        shell: bash
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: |
-          set -e
-
-          echo "Limpando projeto..."
-          gradle clean
-
       - name: Compilar APK
         shell: bash
-        working-directory: ${{ env.PROJECT_DIR }}
         run: |
           set -e
 
-          echo "========================================"
-          echo "COMPILANDO MENTEX V4.6"
-          echo "VERSAO ESTAVEL"
-          echo "========================================"
+          cd "$(cat project_dir.txt)"
 
-          gradle assembleDebug --stacktrace
+          chmod +x ./gradlew 2>/dev/null || true
+
+          if [ -f "./gradlew" ]; then
+            ./gradlew assembleDebug --stacktrace
+          else
+            gradle assembleDebug --stacktrace
+          fi
 
       - name: Procurar APK
         shell: bash
         run: |
-          echo "========================================"
-          echo "APK GERADO"
-          echo "========================================"
+          set -e
 
-          find "$PROJECT_DIR" \
-            -type f \
-            -name "*.apk" \
-            -print
+          APK=$(find . -type f -name "*.apk" | head -n 1)
+
+          if [ -z "$APK" ]; then
+            echo "ERRO: APK não encontrado."
+            exit 1
+          fi
+
+          mkdir -p ../resultado
+
+          cp "$APK" \
+            ../resultado/MENTEX-V4.6-COMPACTO.apk
+
+          echo "APK gerado:"
+          echo "../resultado/MENTEX-V4.6-COMPACTO.apk"
 
       - name: Enviar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V4.6-TELA-CHEIA-ESTAVEL
-          path: |
-            ${{ env.PROJECT_DIR }}/app/build/outputs/apk/**/*.apk
+          name: MENTEX-V4.6-COMPACTO
+          path: resultado/MENTEX-V4.6-COMPACTO.apk
           if-no-files-found: error
