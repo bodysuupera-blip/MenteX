@@ -10,8 +10,8 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    name: Gerar APK MENTEX
+  construir:
+    name: Construir APK MENTEX
     runs-on: ubuntu-latest
 
     steps:
@@ -25,31 +25,45 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Gradle
+      - name: Configurar Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
-      - name: Localizar ZIP
-        id: zip
+      - name: Localizar ZIP Android
+        id: localizar_zip
         shell: bash
         run: |
           echo "Procurando ZIP do MENTEX..."
 
-          ZIP=$(find . -maxdepth 1 -type f -iname "*.zip" | head -n 1)
+          ZIP=$(find . -maxdepth 2 -type f \
+            -iname "MENTEX_Android*.zip" \
+            | head -n 1)
 
           if [ -z "$ZIP" ]; then
-            echo "ERRO: nenhum ZIP encontrado."
-            ls -la
+            echo "ERRO: nenhum ZIP Android encontrado."
+            echo "Arquivos disponíveis:"
+            find . -maxdepth 3 -type f | sort
             exit 1
           fi
 
-          echo "ZIP encontrado: $ZIP"
+          echo "ZIP encontrado:"
+          echo "$ZIP"
 
+          echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
+
+      - name: Extrair projeto Android
+        shell: bash
+        run: |
+          rm -rf android_project
           mkdir -p android_project
-          unzip -o "$ZIP" -d android_project
 
-      - name: Localizar projeto Android
+          unzip -q "${{ steps.localizar_zip.outputs.zip }}" -d android_project
+
+          echo "Projeto extraído:"
+          find android_project -maxdepth 4 -type f | sort | head -200
+
+      - name: Encontrar projeto Gradle
         id: projeto
         shell: bash
         run: |
@@ -58,79 +72,69 @@ jobs:
             | head -n 1)
 
           if [ -z "$SETTINGS" ]; then
-            echo "ERRO: projeto Android não encontrado."
-            find android_project -maxdepth 5 -type f
+            echo "ERRO: settings.gradle não encontrado."
+            find android_project -type f | sort
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$SETTINGS")
 
-          echo "Projeto:"
+          echo "Projeto Gradle encontrado:"
           echo "$PROJECT_DIR"
 
           echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
 
-      - name: Ajustar Kotlin
+      - name: Corrigir conflito Kotlin
         shell: bash
         run: |
           PROJECT="${{ steps.projeto.outputs.project_dir }}"
 
-          echo "Ajustando Kotlin..."
+          echo "Corrigindo dependências Kotlin..."
 
-          if [ -f "$PROJECT/app/build.gradle" ]; then
-            cat >> "$PROJECT/app/build.gradle" <<'EOF'
+          find "$PROJECT" -type f \
+            \( -name "build.gradle" -o -name "build.gradle.kts" \) \
+            -print
 
-configurations.configureEach {
-    resolutionStrategy {
-        force "org.jetbrains.kotlin:kotlin-stdlib:1.8.22"
-        force "org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22"
-        force "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22"
-    }
-}
-EOF
-          fi
+          # Remove dependências antigas que podem gerar classes duplicadas
+          find "$PROJECT" -type f \
+            \( -name "build.gradle" -o -name "build.gradle.kts" \) \
+            -exec sed -i \
+            -e '/kotlin-stdlib-jdk7/d' \
+            -e '/kotlin-stdlib-jdk8/d' \
+            {} \;
+
+          echo "Verificando referências Kotlin:"
+          grep -RIn "kotlin-stdlib-jdk7\|kotlin-stdlib-jdk8" \
+            "$PROJECT" --include="*.gradle" --include="*.gradle.kts" || true
 
       - name: Limpar projeto
         shell: bash
         run: |
           cd "${{ steps.projeto.outputs.project_dir }}"
-          gradle clean --no-daemon
+          gradle clean --no-daemon --stacktrace
 
-      - name: Gerar APK
+      - name: Construir APK
         shell: bash
         run: |
           cd "${{ steps.projeto.outputs.project_dir }}"
 
+          echo "Iniciando compilação do MENTEX..."
+
           gradle assembleDebug \
             --no-daemon \
-            --stacktrace
+            --stacktrace \
+            --info
 
-      - name: Verificar APK
+      - name: Procurar APK
         shell: bash
         run: |
-          echo "Procurando APK..."
+          echo "APKs encontrados:"
+          find android_project -type f -name "*.apk" -print
 
-          find android_project \
-            -type f \
-            -name "*.apk" \
-            -print
-
-          APK=$(find android_project \
-            -type f \
-            -name "*.apk" \
-            | head -n 1)
-
-          if [ -z "$APK" ]; then
-            echo "ERRO: APK não foi gerado."
-            exit 1
-          fi
-
-          echo "APK gerado:"
-          echo "$APK"
-
-      - name: Disponibilizar APK para download
+      - name: Enviar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-APK-Final
-          path: android_project/**/build/outputs/apk/debug/*.apk
+          path: |
+            android_project/**/build/outputs/apk/debug/*.apk
           if-no-files-found: error
