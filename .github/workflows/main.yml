@@ -1,4 +1,4 @@
-name: Compilar MENTEX V4.5 - Nova Interface
+name: Compilar MENTEX V4.6 - Reações
 
 on:
   workflow_dispatch:
@@ -8,11 +8,10 @@ permissions:
 
 jobs:
   construir:
-    name: Compilar MENTEX V4.5
+    name: Compilar MENTEX V4.6
     runs-on: ubuntu-latest
 
     steps:
-
       - name: Baixar código
         uses: actions/checkout@v4
 
@@ -22,152 +21,84 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Verificar ZIP NOVO
+      - name: Preparar projeto MENTEX V4.6
         shell: bash
         run: |
           set -e
 
-          echo "========================================"
-          echo "VERIFICANDO PROJETO MENTEX V4.5"
-          echo "========================================"
+          ZIP="MENTEX-V4.6-CEREBRO-REACOES.zip"
 
-          ZIP="MENTEX-V4.5-NOVA-REAÇÃO.zip"
-
-          echo ""
-          echo "Procurando:"
-          echo "$ZIP"
+          echo "=========================================="
+          echo "       MENTEX V4.6 - REAÇÕES"
+          echo "=========================================="
 
           if [ ! -f "$ZIP" ]; then
+            echo "ERRO: $ZIP não foi encontrado."
             echo ""
-            echo "ERRO: O ZIP NOVO NÃO FOI ENCONTRADO."
-            echo ""
-            echo "Coloque exatamente este arquivo na raiz do GitHub:"
-            echo "$ZIP"
-            echo ""
-            echo "Nenhum outro ZIP será utilizado."
+            echo "Arquivos ZIP encontrados:"
+            find . -maxdepth 2 -type f -iname "*.zip" -print
             exit 1
           fi
 
-          echo ""
-          echo "ZIP NOVO ENCONTRADO:"
-          echo "$ZIP"
+          rm -rf projeto-mentex
+          mkdir -p projeto-mentex
 
-          echo ""
-          echo "Tamanho do arquivo:"
-          ls -lh "$ZIP"
+          unzip -o "$ZIP" -d projeto-mentex
 
-      - name: Extrair projeto NOVO
-        shell: bash
-        run: |
-          set -e
-
-          rm -rf mentex
-
-          mkdir -p mentex
-
-          unzip -o "MENTEX-V4.5-NOVA-REAÇÃO.zip" -d mentex
-
-          echo ""
-          echo "========================================"
-          echo "PROJETO EXTRAÍDO"
-          echo "========================================"
-
-          find mentex -maxdepth 4 -type f | head -150
-
-      - name: Encontrar projeto Android
-        shell: bash
-        run: |
-          set -e
-
-          echo ""
-          echo "========================================"
-          echo "PROCURANDO PROJETO ANDROID NOVO"
-          echo "========================================"
-
-          SETTINGS=$(find mentex -type f \
+          SETTINGS=$(find projeto-mentex \
+            -type f \
             \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
             | head -n 1)
 
           if [ -z "$SETTINGS" ]; then
-            echo ""
-            echo "ERRO: settings.gradle NÃO encontrado."
-            echo ""
-            echo "O ZIP NOVO não contém um projeto Android Gradle válido."
+            echo "ERRO: projeto Android não encontrado dentro do ZIP."
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$SETTINGS")
 
-          echo ""
-          echo "Projeto Android encontrado em:"
-          echo "$PROJECT_DIR"
-
           echo "$PROJECT_DIR" > project_dir.txt
 
-      - name: Verificar nova interface
-        shell: bash
-        run: |
-          set -e
-
-          PROJECT_DIR=$(cat project_dir.txt)
+          echo ""
+          echo "Projeto encontrado:"
+          echo "$PROJECT_DIR"
 
           echo ""
-          echo "========================================"
-          echo "VERIFICANDO ARQUIVOS DA NOVA REAÇÃO"
-          echo "========================================"
-
-          echo ""
-          echo "Arquivos brain encontrados:"
-
-          find "$PROJECT_DIR" -type f \
-            \( -iname "*brain*" -o -iname "*cerebro*" \) \
+          echo "Arquivos do cérebro:"
+          find "$PROJECT_DIR/app/src/main" \
+            -type f \
+            \( \
+              -iname "*brain*" \
+              -o -iname "*cerebro*" \
+              -o -iname "*happy*" \
+              -o -iname "*sad*" \
+              -o -iname "*question*" \
+            \) \
             -print || true
 
-          echo ""
-          echo "Arquivos de imagens encontrados:"
-
-          find "$PROJECT_DIR" -type f \
-            \( -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.webp" \) \
-            | head -100
-
-      - name: Corrigir permissão do Gradle
-        shell: bash
-        run: |
-          set -e
-
-          PROJECT_DIR=$(cat project_dir.txt)
-
-          if [ -f "$PROJECT_DIR/gradlew" ]; then
-            chmod +x "$PROJECT_DIR/gradlew"
-            echo "gradlew configurado."
-          else
-            echo "gradlew não encontrado."
-          fi
-
-      - name: Configurar Gradle 8.7
+      - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
-      - name: Compilar APK V4.5
+      - name: Compilar APK
         shell: bash
         run: |
           set -e
 
           PROJECT_DIR=$(cat project_dir.txt)
 
-          echo ""
-          echo "========================================"
-          echo "COMPILANDO MENTEX V4.5"
-          echo "========================================"
+          echo "Entrando no projeto:"
+          echo "$PROJECT_DIR"
 
           cd "$PROJECT_DIR"
 
+          chmod +x ./gradlew 2>/dev/null || true
+
           if [ -f "./gradlew" ]; then
-            chmod +x ./gradlew
-            ./gradlew assembleDebug --stacktrace
+            ./gradlew clean assembleDebug --stacktrace
           else
-            gradle assembleDebug --stacktrace
+            gradle clean assembleDebug --stacktrace
           fi
 
       - name: Procurar APK
@@ -175,32 +106,29 @@ jobs:
         run: |
           set -e
 
-          echo ""
-          echo "========================================"
-          echo "PROCURANDO APK V4.5"
-          echo "========================================"
+          PROJECT_DIR=$(cat project_dir.txt)
 
-          APK=$(find mentex -type f \
-            \( -name "app-debug.apk" -o -name "*.apk" \) \
+          APK=$(find "$PROJECT_DIR" \
+            -type f \
+            -name "*.apk" \
             | head -n 1)
 
           if [ -z "$APK" ]; then
-            echo ""
-            echo "ERRO: APK não encontrado."
+            echo "ERRO: nenhum APK foi gerado."
             exit 1
           fi
 
-          echo ""
           echo "APK encontrado:"
           echo "$APK"
 
           mkdir -p resultado
 
-          cp "$APK" "resultado/MENTEX-V4.5-NOVA-INTERFACE.apk"
+          cp "$APK" \
+            "resultado/MENTEX-V4.6-CEREBRO-REACOES.apk"
 
       - name: Enviar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V4.5-NOVA-INTERFACE
-          path: resultado/MENTEX-V4.5-NOVA-INTERFACE.apk
+          name: MENTEX-V4.6-CEREBRO-REACOES
+          path: resultado/MENTEX-V4.6-CEREBRO-REACOES.apk
           if-no-files-found: error
