@@ -35,7 +35,7 @@ jobs:
         run: |
           echo "Procurando ZIP do MENTEX..."
 
-          ZIP="MENTEX_ANDROID_FINAL_MUSICA_USUARIO_SEM_VOZ_2_IMAGENS_BUILD_CORRIGIDO.zip"
+          ZIP="MENTEX_ANDROID_FINAL_MUSICA_USUARIO_SEM_VOZ_2_IMAGENS_BUILD_CORRIGIDO_V2.zip"
 
           if [ ! -f "$ZIP" ]; then
             echo "ERRO: ZIP não encontrado:"
@@ -49,6 +49,7 @@ jobs:
           echo "ZIP encontrado:"
           ls -lh "$ZIP"
 
+          rm -rf android_project
           mkdir -p android_project
 
           unzip -q "$ZIP" -d android_project
@@ -69,41 +70,41 @@ jobs:
 
           if [ -z "$SETTINGS" ]; then
             echo "ERRO: settings.gradle não encontrado."
+
+            echo "Conteúdo extraído:"
             find android_project -type f | head -200
+
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$SETTINGS")
 
-          echo "Projeto encontrado:"
+          echo "Projeto Gradle encontrado:"
           echo "$PROJECT_DIR"
 
           echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
 
-      - name: Verificar projeto Android
+      - name: Verificar projeto
         shell: bash
         run: |
           cd "${{ steps.projeto.outputs.project_dir }}"
 
-          echo "build.gradle:"
-          cat build.gradle || true
+          echo "===== settings.gradle ====="
+          cat settings.gradle
 
           echo ""
-          echo "app/build.gradle:"
-          cat app/build.gradle || true
+          echo "===== app/build.gradle ====="
+          cat app/build.gradle
 
           echo ""
-          echo "Arquivos Java:"
-          find app/src -type f -name "*.java" -print
-
-          echo ""
-          echo "Arquivos Kotlin:"
-          find app/src -type f \( -name "*.kt" -o -name "*.kts" \) -print
+          echo "===== Arquivos do projeto ====="
+          find app/src/main -type f
 
       - name: Limpar projeto
         shell: bash
         run: |
           cd "${{ steps.projeto.outputs.project_dir }}"
+
           gradle clean --no-daemon
 
       - name: Construir APK
@@ -118,7 +119,7 @@ jobs:
       - name: Procurar APK
         shell: bash
         run: |
-          echo "APKs encontrados:"
+          echo "===== APKs encontrados ====="
 
           find android_project \
             -type f \
