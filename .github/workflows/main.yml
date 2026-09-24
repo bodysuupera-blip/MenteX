@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 jobs:
-  construir:
+  build:
     name: Construir APK MENTEX V4.0
     runs-on: ubuntu-latest
 
@@ -30,102 +30,114 @@ jobs:
           echo " PREPARANDO PROJETO MENTEX V4.0"
           echo "======================================"
 
-          ls -la
+          echo "Arquivos do repositório:"
+          find . -maxdepth 2 -type f -print
 
           ZIP=$(find . -maxdepth 2 -type f -name "*.zip" | head -1)
 
           if [ -n "$ZIP" ]; then
+            echo ""
             echo "ZIP encontrado: $ZIP"
+            echo "Extraindo projeto..."
 
             mkdir -p mentex
             unzip -o "$ZIP" -d mentex
           else
+            echo ""
             echo "Nenhum ZIP encontrado."
+            echo "Usando os arquivos existentes no repositório."
           fi
 
           echo ""
-          echo "Arquivos do projeto:"
-          find mentex -maxdepth 4 -type f | head -100
+          echo "Procurando Gradle..."
+          find . -type f \( \
+            -name "gradlew" \
+            -o -name "settings.gradle" \
+            -o -name "settings.gradle.kts" \
+          \) -print
 
       - name: Localizar projeto Android
         shell: bash
         run: |
           set -e
 
-          echo "Procurando projeto Android..."
-
           GRADLEW=$(find . -type f -name "gradlew" | head -1)
 
-          if [ -z "$GRADLEW" ]; then
-            echo ""
-            echo "ERRO: gradlew não encontrado."
-            echo "O ZIP precisa conter um projeto Android Gradle."
-            exit 1
+          if [ -n "$GRADLEW" ]; then
+            echo "======================================"
+            echo " PROJETO ANDROID ENCONTRADO"
+            echo "======================================"
+            echo "Gradle Wrapper:"
+            echo "$GRADLEW"
+
+            echo "$GRADLEW" > gradle_wrapper_path.txt
+          else
+            echo "======================================"
+            echo " GRADLE WRAPPER NÃO ENCONTRADO"
+            echo "======================================"
+
+            SETTINGS=$(find . -type f \( \
+              -name "settings.gradle" \
+              -o -name "settings.gradle.kts" \
+            \) | head -1)
+
+            if [ -z "$SETTINGS" ]; then
+              echo "ERRO: Projeto Android não encontrado."
+              echo ""
+              echo "Verifique se o ZIP contém:"
+              echo "gradlew"
+              echo "app/"
+              echo "settings.gradle"
+              echo "build.gradle"
+              exit 1
+            fi
+
+            echo "settings encontrado:"
+            echo "$SETTINGS"
           fi
-
-          echo "Gradle encontrado em:"
-          echo "$GRADLEW"
-
-      - name: Corrigir permissões do Gradle
-        shell: bash
-        run: |
-          set -e
-
-          GRADLEW=$(find . -type f -name "gradlew" | head -1)
-
-          chmod +x "$GRADLEW"
-
-          echo "Permissão aplicada:"
-          ls -l "$GRADLEW"
 
       - name: Configurar Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
-      - name: Configurar Java 17 no Android
-        shell: bash
-        run: |
-          set -e
-
-          APP_GRADLE=$(find . -path "*/app/build.gradle" -type f | head -1)
-
-          if [ -n "$APP_GRADLE" ]; then
-
-            echo "Arquivo encontrado:"
-            echo "$APP_GRADLE"
-
-            cat >> "$APP_GRADLE" <<'EOF'
-
-          // Compatibilidade Java 17
-          android {
-              compileOptions {
-                  sourceCompatibility JavaVersion.VERSION_17
-                  targetCompatibility JavaVersion.VERSION_17
-              }
-          }
-          EOF
-
-          else
-            echo "Aviso: app/build.gradle não encontrado."
-          fi
-
       - name: Compilar APK
         shell: bash
         run: |
           set -e
 
+          echo "======================================"
+          echo " COMPILANDO MENTEX V4.0"
+          echo "======================================"
+
           GRADLEW=$(find . -type f -name "gradlew" | head -1)
-          PROJECT_DIR=$(dirname "$GRADLEW")
 
-          echo "Projeto:"
-          echo "$PROJECT_DIR"
+          if [ -n "$GRADLEW" ]; then
+            PROJECT_DIR=$(dirname "$GRADLEW")
 
-          cd "$PROJECT_DIR"
+            echo "Diretório do projeto:"
+            echo "$PROJECT_DIR"
 
-          chmod +x gradlew
+            cd "$PROJECT_DIR"
 
-          ./gradlew assembleDebug --stacktrace
+            chmod +x gradlew
+
+            ./gradlew assembleDebug --stacktrace
+          else
+            SETTINGS=$(find . -type f \( \
+              -name "settings.gradle" \
+              -o -name "settings.gradle.kts" \
+            \) | head -1)
+
+            PROJECT_DIR=$(dirname "$SETTINGS")
+
+            echo "Diretório do projeto:"
+            echo "$PROJECT_DIR"
+
+            cd "$PROJECT_DIR"
+
+            gradle assembleDebug --stacktrace
+          fi
 
       - name: Procurar APK
         shell: bash
