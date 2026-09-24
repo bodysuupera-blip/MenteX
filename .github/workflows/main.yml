@@ -35,27 +35,22 @@ jobs:
         run: |
           echo "Procurando ZIP do MENTEX..."
 
-          ZIP="MENTEX_ANDROID_FINAL_MUSICA_USUARIO_SEM_VOZ_2_IMAGENS_BUILD_CORRIGIDO_V2.zip"
+          ZIP=$(find . -maxdepth 1 -type f -name "*.zip" | head -n 1)
 
-          if [ ! -f "$ZIP" ]; then
-            echo "ERRO: ZIP não encontrado:"
-            echo "$ZIP"
-            echo ""
-            echo "Arquivos encontrados:"
-            ls -lah
+          if [ -z "$ZIP" ]; then
+            echo "ERRO: nenhum ZIP encontrado."
+            ls -la
             exit 1
           fi
 
           echo "ZIP encontrado:"
-          ls -lh "$ZIP"
+          echo "$ZIP"
 
-          rm -rf android_project
           mkdir -p android_project
 
           unzip -q "$ZIP" -d android_project
 
-          echo "Projeto extraído:"
-          find android_project -maxdepth 4 -type f | head -100
+          echo "Projeto extraído."
 
       - name: Encontrar projeto Gradle
         id: projeto
@@ -63,27 +58,98 @@ jobs:
         run: |
           echo "Procurando settings.gradle..."
 
-          SETTINGS=$(find android_project \
-            -type f \
+          SETTINGS=$(find android_project -type f \
             \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
             | head -n 1)
 
           if [ -z "$SETTINGS" ]; then
             echo "ERRO: settings.gradle não encontrado."
-
-            echo "Conteúdo extraído:"
-            find android_project -type f | head -200
-
+            find android_project -maxdepth 5 -type f
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$SETTINGS")
 
-          echo "Projeto Gradle encontrado:"
+          echo "Projeto encontrado:"
           echo "$PROJECT_DIR"
 
           echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
 
+      - name: Corrigir dependências Kotlin
+        shell: bash
+        run: |
+          PROJECT="${{ steps.projeto.outputs.project_dir }}"
+
+          echo "Aplicando correções Kotlin..."
+
+          if [ -f "$PROJECT/app/build.gradle" ]; then
+
+            cat >> "$PROJECT/app/build.gradle" <<'EOF'
+
+configurations.all {
+    resolutionStrategy {
+        force 'org.jetbrains.kotlin:kotlin-stdlib:1.8.22'
+        force 'org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22'
+        force 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22'
+    }
+}
+EOF
+
+          fi
+
+          echo "Correção aplicada."
+
+      - name: Limpar projeto
+        shell: bash
+        run: |
+          cd "${{ steps.projeto.outputs.project_dir }}"
+
+          gradle clean --no-daemon
+
+      - name: Construir APK
+        shell: bash
+        run: |
+          cd "${{ steps.projeto.outputs.project_dir }}"
+
+          echo "Iniciando construção do APK..."
+
+          gradle assembleDebug \
+            --no-daemon \
+            --stacktrace
+
+      - name: Procurar APK
+        shell: bash
+        run: |
+          echo "APKs encontrados:"
+
+          find android_project \
+            -type f \
+            -name "*.apk" \
+            -print
+
+      - name: Verificar APK
+        shell: bash
+        run: |
+          APK=$(find android_project \
+            -type f \
+            -name "*.apk" \
+            | head -n 1)
+
+          if [ -z "$APK" ]; then
+            echo "ERRO: APK não foi gerado."
+            exit 1
+          fi
+
+          echo "APK encontrado:"
+          echo "$APK"
+
+      - name: Enviar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MENTEX-APK-Final
+          path: |
+            android_project/**/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
       - name: Verificar projeto
         shell: bash
         run: |
