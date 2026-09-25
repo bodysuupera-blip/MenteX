@@ -27,21 +27,20 @@ jobs:
         run: |
           set -e
 
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          echo "Android SDK:"
+          echo "$ANDROID_HOME"
 
-          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f 2>/dev/null | head -n 1)
-
-          if [ -z "$SDKMANAGER" ]; then
-            SDKMANAGER=$(find "$ANDROID_SDK_ROOT/cmdline-tools" -name sdkmanager -type f 2>/dev/null | head -n 1)
-          fi
+          SDKMANAGER=$(find "$ANDROID_HOME" \
+            -type f \
+            -name sdkmanager \
+            2>/dev/null | head -n 1)
 
           if [ -z "$SDKMANAGER" ]; then
             echo "ERRO: sdkmanager não encontrado."
             exit 1
           fi
 
-          echo "SDKMANAGER encontrado:"
+          echo "SDK encontrado:"
           echo "$SDKMANAGER"
 
           yes | "$SDKMANAGER" --licenses || true
@@ -51,70 +50,106 @@ jobs:
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-      - name: Verificar projeto
+      - name: Procurar projeto Android
         shell: bash
         run: |
           set -e
 
-          echo "===================================="
-          echo "VERIFICANDO PROJETO MENTEX"
-          echo "===================================="
+          echo "======================================"
+          echo "PROCURANDO PROJETO ANDROID"
+          echo "======================================"
 
-          if [ ! -f "settings.gradle" ] && [ ! -f "settings.gradle.kts" ]; then
-            echo "ERRO: settings.gradle não encontrado."
+          SETTINGS=$(find . \
+            -type f \
+            \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+            -not -path "./.git/*" \
+            | head -n 1)
+
+          if [ -z "$SETTINGS" ]; then
+            echo ""
+            echo "ERRO: nenhum settings.gradle foi encontrado."
+            echo ""
+            echo "Arquivos encontrados no repositorio:"
+            find . -maxdepth 4 -type f | sort
+            echo ""
+            echo "O repositorio precisa conter o PROJETO-FONTE Android."
             exit 1
           fi
 
-          if [ ! -d "app" ]; then
-            echo "ERRO: pasta app não encontrada."
-            exit 1
-          fi
+          PROJECT_DIR=$(dirname "$SETTINGS")
 
           echo ""
-          echo "Arquivos principais:"
-          find . -maxdepth 3 -type f | sort | head -200
+          echo "Projeto encontrado em:"
+          echo "$PROJECT_DIR"
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Verificar modulo app
+        shell: bash
+        run: |
+          set -e
+
+          echo "======================================"
+          echo "VERIFICANDO MODULO APP"
+          echo "======================================"
+
+          if [ ! -d "$PROJECT_DIR/app" ]; then
+            echo "ERRO: pasta app não encontrada."
+            echo ""
+            echo "Conteudo do projeto:"
+            find "$PROJECT_DIR" -maxdepth 3 -type f | sort
+            exit 1
+          fi
+
+          echo "Modulo app encontrado."
 
       - name: Instalar Gradle
         shell: bash
         run: |
           set -e
 
-          wget -q \
-            https://services.gradle.org/distributions/gradle-8.7-bin.zip \
-            -O /tmp/gradle.zip
+          if [ -f "$PROJECT_DIR/gradlew" ]; then
+            echo "Gradle Wrapper encontrado."
+            chmod +x "$PROJECT_DIR/gradlew"
+          else
+            echo "Gradle Wrapper não encontrado."
 
-          unzip -q /tmp/gradle.zip -d /tmp
+            wget -q \
+              https://services.gradle.org/distributions/gradle-8.7-bin.zip \
+              -O /tmp/gradle.zip
 
-          echo "/tmp/gradle-8.7/bin" >> "$GITHUB_PATH"
+            unzip -q /tmp/gradle.zip -d /tmp
 
-          gradle --version
+            echo "/tmp/gradle-8.7/bin" >> "$GITHUB_PATH"
+          fi
 
       - name: Compilar MENTEX
         shell: bash
         run: |
           set -e
 
-          echo "===================================="
-          echo "COMPILANDO MENTEX"
-          echo "===================================="
+          cd "$PROJECT_DIR"
 
-          gradle --no-daemon clean assembleDebug
+          echo "======================================"
+          echo "COMPILANDO MENTEX"
+          echo "======================================"
+
+          if [ -f "./gradlew" ]; then
+            ./gradlew clean assembleDebug
+          else
+            gradle clean assembleDebug
+          fi
 
       - name: Procurar APK
         shell: bash
         run: |
           set -e
 
-          echo "===================================="
+          echo "======================================"
           echo "PROCURANDO APK GERADO"
-          echo "===================================="
+          echo "======================================"
 
-          find . \
-            -type f \
-            -name "*.apk" \
-            -print
-
-          APK=$(find . \
+          APK=$(find "$PROJECT_DIR" \
             -type f \
             -path "*/build/outputs/apk/debug/*.apk" \
             | head -n 1)
