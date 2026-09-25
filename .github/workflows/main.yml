@@ -12,20 +12,25 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
+      # ============================================================
+      # 1. BAIXAR O PROJETO
+      # ============================================================
       - name: Baixar código
         uses: actions/checkout@v4
 
+      # ============================================================
+      # 2. JAVA 17
+      # ============================================================
       - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.7'
-
+      # ============================================================
+      # 3. ENCONTRAR PROJETO ANDROID
+      # ============================================================
       - name: Encontrar projeto Android
         shell: bash
         run: |
@@ -44,8 +49,10 @@ jobs:
           if [ -z "$SETTINGS" ]; then
             echo "ERRO: settings.gradle não encontrado."
             echo ""
-            echo "Arquivos Gradle encontrados:"
-            find . -type f \
+            echo "Este repositório precisa conter o código-fonte Android."
+            echo ""
+            echo "Arquivos encontrados:"
+            find . -maxdepth 4 -type f \
               \( -name "settings.gradle" \
               -o -name "settings.gradle.kts" \
               -o -name "build.gradle" \
@@ -67,7 +74,10 @@ jobs:
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      - name: Ajustar tela cheia do MENTEX
+      # ============================================================
+      # 4. CONFIGURAR TELA CHEIA
+      # ============================================================
+      - name: Configurar tela cheia
         shell: bash
         run: |
           set -e
@@ -81,8 +91,6 @@ jobs:
             exit 1
           fi
 
-          echo "Aplicando configuração de tela cheia..."
-
           python3 <<'PY'
           from pathlib import Path
           import re
@@ -90,15 +98,15 @@ jobs:
           manifest = Path("app/src/main/AndroidManifest.xml")
           text = manifest.read_text(encoding="utf-8")
 
-          # Permite que o conteúdo ocupe a área completa da tela.
-          if "android:windowLayoutInDisplayCutoutMode=" not in text:
+          # Permite conteúdo de ponta a ponta em aparelhos modernos.
+          if "android:windowLayoutInDisplayCutoutMode" not in text:
               text = text.replace(
                   "<application",
                   '<application android:windowLayoutInDisplayCutoutMode="shortEdges"',
                   1
               )
 
-          # Remove barras de sistema da Activity principal quando possível.
+          # Garante que não exista orientação fixa.
           text = re.sub(
               r'\s+android:screenOrientation="[^"]*"',
               '',
@@ -107,41 +115,84 @@ jobs:
 
           manifest.write_text(text, encoding="utf-8")
 
-          print("Manifest ajustado.")
+          print("Manifest configurado.")
           PY
 
-      - name: Criar arquivo de configuração de tela
+      # ============================================================
+      # 5. TEMA FULLSCREEN
+      # ============================================================
+      - name: Criar configuração fullscreen
         shell: bash
         run: |
           set -e
 
-          mkdir -p app/src/main/res/values
+          mkdir -p "$PROJECT_DIR/app/src/main/res/values"
 
-          cat > app/src/main/res/values/mentex_fullscreen.xml <<'EOF'
+          cat > "$PROJECT_DIR/app/src/main/res/values/mentex_fullscreen.xml" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
 
               <style name="MENTEX_Fullscreen">
                   <item name="android:windowFullscreen">true</item>
-                  <item name="android:windowActionModeOverlay">true</item>
                   <item name="android:windowNoTitle">true</item>
+                  <item name="android:windowActionModeOverlay">true</item>
+                  <item name="android:windowDisablePreview">true</item>
               </style>
 
           </resources>
           EOF
 
-          echo "Configuração criada."
+          echo "Tema fullscreen criado."
 
-      - name: Verificar Gradle
+      # ============================================================
+      # 6. PROCURAR GRADLE WRAPPER
+      # ============================================================
+      - name: Preparar Gradle
         shell: bash
         run: |
           set -e
 
           cd "$PROJECT_DIR"
 
-          echo "Gradle:"
-          gradle --version
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+            echo "Gradle Wrapper encontrado."
+          else
+            echo "Gradle Wrapper não encontrado."
+            echo "Instalando Gradle 8.7..."
 
+            curl -L \
+              https://services.gradle.org/distributions/gradle-8.7-bin.zip \
+              -o /tmp/gradle.zip
+
+            unzip -q /tmp/gradle.zip -d /tmp/
+
+            echo "Gradle instalado."
+          fi
+
+      # ============================================================
+      # 7. VERIFICAR PROJETO
+      # ============================================================
+      - name: Verificar projeto
+        shell: bash
+        run: |
+          set -e
+
+          cd "$PROJECT_DIR"
+
+          echo "======================================"
+          echo "ESTRUTURA DO PROJETO"
+          echo "======================================"
+
+          find app/src/main \
+            -maxdepth 3 \
+            -type f \
+            -print \
+            | sort
+
+      # ============================================================
+      # 8. COMPILAR
+      # ============================================================
       - name: Compilar MENTEX
         shell: bash
         run: |
@@ -153,10 +204,19 @@ jobs:
           echo "COMPILANDO MENTEX V4.6"
           echo "======================================"
 
-          gradle clean assembleDebug \
-            --stacktrace \
-            --no-daemon
+          if [ -f "./gradlew" ]; then
+            ./gradlew clean assembleDebug \
+              --stacktrace \
+              --no-daemon
+          else
+            gradle clean assembleDebug \
+              --stacktrace \
+              --no-daemon
+          fi
 
+      # ============================================================
+      # 9. LOCALIZAR APK
+      # ============================================================
       - name: Procurar APK
         shell: bash
         run: |
@@ -191,6 +251,9 @@ jobs:
           ls -lh \
             "$GITHUB_WORKSPACE/MENTEX-V4.6-COMPACTO.apk"
 
+      # ============================================================
+      # 10. ENVIAR APK
+      # ============================================================
       - name: Enviar APK
         uses: actions/upload-artifact@v4
         with:
