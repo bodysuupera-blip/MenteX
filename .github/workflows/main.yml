@@ -16,56 +16,119 @@ jobs:
       - name: Baixar arquivos
         uses: actions/checkout@v4
 
-      - name: Procurar APK
+      - name: Instalar ferramentas necessárias
+        shell: bash
+        run: |
+          set -e
+
+          sudo apt-get update
+          sudo apt-get install -y unzip
+
+      - name: Procurar APK dentro dos ZIPs
         shell: bash
         run: |
           set -e
 
           echo "======================================"
-          echo "PROCURANDO APK DO MENTEX"
+          echo "PROCURANDO APK DENTRO DOS ZIPs"
           echo "======================================"
 
-          APK=$(find . \
+          mkdir -p trabalho
+          mkdir -p saida
+
+          APK=""
+
+          for ZIP in $(find . \
             -type f \
-            -iname "*.apk" \
-            -not -path "./.git/*" \
-            | head -n 1)
+            -iname "*.zip" \
+            -not -path "./.git/*"); do
+
+            echo ""
+            echo "Analisando:"
+            echo "$ZIP"
+
+            rm -rf trabalho/*
+            mkdir -p trabalho
+
+            unzip -q "$ZIP" \
+              -d trabalho || true
+
+            ENCONTRADO=$(find trabalho \
+              -type f \
+              -iname "*.apk" \
+              | head -n 1)
+
+            if [ -n "$ENCONTRADO" ]; then
+              echo ""
+              echo "======================================"
+              echo "APK ENCONTRADO!"
+              echo "======================================"
+              echo "$ENCONTRADO"
+
+              APK="$ENCONTRADO"
+
+              break
+            fi
+
+          done
 
           if [ -z "$APK" ]; then
             echo ""
-            echo "ERRO: APK não encontrado."
+            echo "======================================"
+            echo "ERRO: NENHUM APK ENCONTRADO"
+            echo "======================================"
             echo ""
-            echo "Coloque o arquivo APK dentro do repositório."
+            echo "Os ZIPs encontrados foram:"
+
+            find . \
+              -type f \
+              -iname "*.zip" \
+              -not -path "./.git/*" \
+              -print
+
             echo ""
-            echo "Arquivos existentes:"
-            find . -maxdepth 3 -type f -print
+            echo "Conteúdo dos ZIPs:"
+
+            for ZIP in $(find . \
+              -type f \
+              -iname "*.zip" \
+              -not -path "./.git/*"); do
+
+              echo ""
+              echo "--------------------------------------"
+              echo "$ZIP"
+              echo "--------------------------------------"
+
+              unzip -l "$ZIP" | head -100 || true
+
+            done
+
             exit 1
           fi
-
-          echo ""
-          echo "APK encontrado:"
-          echo "$APK"
-          echo ""
-
-          mkdir -p saida
 
           cp "$APK" \
             "saida/MENTEX-V4.6-COMPACTO.apk"
 
-          echo "Arquivo preparado:"
-          ls -lh "saida/MENTEX-V4.6-COMPACTO.apk"
+          echo ""
+          echo "======================================"
+          echo "APK PREPARADO"
+          echo "======================================"
+
+          ls -lh \
+            "saida/MENTEX-V4.6-COMPACTO.apk"
 
       - name: Criar informações da versão
         shell: bash
         run: |
           cat > saida/INFO.txt <<'EOF'
-          MENTEX V4.6
+MENTEX V4.6
 
-          Arquivo:
-          MENTEX-V4.6-COMPACTO.apk
+Arquivo:
+MENTEX-V4.6-COMPACTO.apk
 
-          Esta versão foi preparada a partir do APK existente.
-          EOF
+O APK foi localizado dentro de um dos arquivos ZIP
+do repositório.
+EOF
 
       - name: Enviar APK
         uses: actions/upload-artifact@v4
