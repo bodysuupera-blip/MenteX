@@ -1,4 +1,4 @@
-name: MENTEX V4.6 - Gerar APK Instalavel
+name: MENTEX V4.6 - Compilar APK Atualizado
 
 on:
   workflow_dispatch:
@@ -8,91 +8,67 @@ permissions:
 
 jobs:
   build:
-    name: Preparar APK MENTEX
+    name: Compilar MENTEX V4.6
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar arquivos
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Instalar ferramentas Android
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Configurar Android
+        uses: android-actions/setup-android@v3
+
+      - name: Instalar SDK Android
         run: |
-          sudo apt-get update
-          sudo apt-get install -y unzip zipalign apksigner
+          yes | sdkmanager --licenses || true
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Encontrar APK
-        shell: bash
+      - name: Instalar Gradle
         run: |
-          set -e
+          curl -L \
+            -o /tmp/gradle.zip \
+            https://services.gradle.org/distributions/gradle-8.7-bin.zip
 
-          mkdir -p work
+          unzip -q /tmp/gradle.zip -d /tmp
 
-          APK=$(find . -type f -name "*.apk" | head -n 1)
+          echo "/tmp/gradle-8.7/bin" >> "$GITHUB_PATH"
 
-          if [ -z "$APK" ]; then
-            echo "APK nao encontrado diretamente."
+      - name: Verificar projeto
+        run: |
+          echo "Arquivos do projeto:"
+          find . -maxdepth 3 -type f | sort
 
-            for ZIP in $(find . -type f -name "*.zip"); do
-              echo "Abrindo: $ZIP"
+          test -f settings.gradle
+          test -f build.gradle
+          test -f app/build.gradle
+          test -f app/src/main/AndroidManifest.xml
 
-              mkdir -p work/extract
-              unzip -o "$ZIP" -d work/extract
+      - name: Compilar APK
+        run: |
+          gradle --no-daemon clean assembleDebug
 
-              APK=$(find work/extract -type f -name "*.apk" | head -n 1)
+      - name: Verificar APK
+        run: |
+          APK="app/build/outputs/apk/debug/app-debug.apk"
 
-              if [ -n "$APK" ]; then
-                break
-              fi
-
-              rm -rf work/extract
-            done
-          fi
-
-          if [ -z "$APK" ]; then
-            echo "ERRO: nenhum APK encontrado."
+          if [ ! -f "$APK" ]; then
+            echo "ERRO: APK não foi gerado."
             exit 1
           fi
 
-          echo "APK encontrado:"
-          echo "$APK"
-
-          cp "$APK" work/original.apk
-
-      - name: Criar chave de assinatura
-        run: |
-          keytool -genkeypair \
-            -keystore work/mentex.keystore \
-            -storepass mentex123 \
-            -keypass mentex123 \
-            -alias mentex \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -dname "CN=MENTEX,O=MENTEX,C=BR"
-
-      - name: Alinhar APK
-        run: |
-          zipalign -f -p 4 \
-            work/original.apk \
-            work/aligned.apk
-
-      - name: Assinar APK
-        run: |
-          apksigner sign \
-            --ks work/mentex.keystore \
-            --ks-pass pass:mentex123 \
-            --key-pass pass:mentex123 \
-            --out work/MENTEX-V4.6-ATUALIZADO.apk \
-            work/aligned.apk
-
-      - name: Verificar assinatura
-        run: |
-          apksigner verify --verbose \
-            work/MENTEX-V4.6-ATUALIZADO.apk
+          echo "APK gerado com sucesso:"
+          ls -lh "$APK"
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-V4.6-ATUALIZADO
-          path: work/MENTEX-V4.6-ATUALIZADO.apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
           retention-days: 30
