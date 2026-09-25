@@ -7,22 +7,21 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  preparar:
     name: Preparar MENTEX V4.6
     runs-on: ubuntu-latest
 
     steps:
-
-      - name: Baixar arquivos
+      - name: Baixar arquivos do repositório
         uses: actions/checkout@v4
 
-      - name: Instalar ferramentas necessárias
+      - name: Instalar ferramentas
         shell: bash
         run: |
           set -e
 
           sudo apt-get update
-          sudo apt-get install -y unzip
+          sudo apt-get install -y unzip findutils
 
       - name: Procurar APK dentro dos ZIPs
         shell: bash
@@ -30,113 +29,73 @@ jobs:
           set -e
 
           echo "======================================"
-          echo "PROCURANDO APK DENTRO DOS ZIPs"
+          echo "PROCURANDO APK DO MENTEX"
           echo "======================================"
 
-          mkdir -p trabalho
-          mkdir -p saida
+          mkdir -p /tmp/mentex-apk
 
-          APK=""
+          # Procurar APK diretamente no repositório
+          find . -type f -iname "*.apk" \
+            -not -path "./.git/*" \
+            -print \
+            -exec cp "{}" /tmp/mentex-apk/ \;
 
-          for ZIP in $(find . \
-            -type f \
-            -iname "*.zip" \
-            -not -path "./.git/*"); do
-
+          # Procurar APK dentro de todos os ZIPs
+          find . -type f -iname "*.zip" \
+            -not -path "./.git/*" \
+            -print0 |
+          while IFS= read -r -d '' ZIP; do
             echo ""
-            echo "Analisando:"
-            echo "$ZIP"
+            echo "Analisando: $ZIP"
 
-            rm -rf trabalho/*
-            mkdir -p trabalho
+            PASTA="/tmp/extrair-$(date +%s%N)"
+            mkdir -p "$PASTA"
 
-            unzip -q "$ZIP" \
-              -d trabalho || true
-
-            ENCONTRADO=$(find trabalho \
-              -type f \
-              -iname "*.apk" \
-              | head -n 1)
-
-            if [ -n "$ENCONTRADO" ]; then
-              echo ""
-              echo "======================================"
-              echo "APK ENCONTRADO!"
-              echo "======================================"
-              echo "$ENCONTRADO"
-
-              APK="$ENCONTRADO"
-
-              break
+            if unzip -q "$ZIP" -d "$PASTA"; then
+              find "$PASTA" -type f -iname "*.apk" \
+                -print \
+                -exec cp "{}" /tmp/mentex-apk/ \;
+            else
+              echo "Aviso: não foi possível extrair $ZIP"
             fi
-
           done
-
-          if [ -z "$APK" ]; then
-            echo ""
-            echo "======================================"
-            echo "ERRO: NENHUM APK ENCONTRADO"
-            echo "======================================"
-            echo ""
-            echo "Os ZIPs encontrados foram:"
-
-            find . \
-              -type f \
-              -iname "*.zip" \
-              -not -path "./.git/*" \
-              -print
-
-            echo ""
-            echo "Conteúdo dos ZIPs:"
-
-            for ZIP in $(find . \
-              -type f \
-              -iname "*.zip" \
-              -not -path "./.git/*"); do
-
-              echo ""
-              echo "--------------------------------------"
-              echo "$ZIP"
-              echo "--------------------------------------"
-
-              unzip -l "$ZIP" | head -100 || true
-
-            done
-
-            exit 1
-          fi
-
-          cp "$APK" \
-            "saida/MENTEX-V4.6-COMPACTO.apk"
 
           echo ""
           echo "======================================"
-          echo "APK PREPARADO"
+          echo "APKs ENCONTRADOS"
           echo "======================================"
 
-          ls -lh \
-            "saida/MENTEX-V4.6-COMPACTO.apk"
+          find /tmp/mentex-apk -type f -iname "*.apk" -print
 
-      - name: Criar informações da versão
+          if ! find /tmp/mentex-apk -type f -iname "*.apk" | grep -q .; then
+            echo ""
+            echo "ERRO: nenhum APK foi encontrado."
+            echo ""
+            echo "Arquivos ZIP existentes:"
+            find . -type f -iname "*.zip" -print
+            exit 1
+          fi
+
+      - name: Organizar APK final
         shell: bash
         run: |
-          cat > saida/INFO.txt <<'EOF'
-MENTEX V4.6
+          set -e
 
-Arquivo:
-MENTEX-V4.6-COMPACTO.apk
+          mkdir -p resultado
 
-O APK foi localizado dentro de um dos arquivos ZIP
-do repositório.
-EOF
+          APK="$(find /tmp/mentex-apk -type f -iname "*.apk" | head -n 1)"
 
-      - name: Enviar APK
+          echo "APK selecionado:"
+          echo "$APK"
+
+          cp "$APK" "resultado/MENTEX-V4.6-ATUALIZADO.apk"
+
+          ls -lh resultado/
+
+      - name: Enviar APK para os artefatos
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V4.6-COMPACTO
-          path: |
-            saida/MENTEX-V4.6-COMPACTO.apk
-            saida/INFO.txt
+          name: MENTEX-V4.6-ATUALIZADO
+          path: resultado/MENTEX-V4.6-ATUALIZADO.apk
           if-no-files-found: error
           retention-days: 30
-          
