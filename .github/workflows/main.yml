@@ -1,4 +1,4 @@
-name: MENTEX V4.6 - Preparar APK
+name: MENTEX V4.6 - Gerar APK Instalavel
 
 on:
   workflow_dispatch:
@@ -8,64 +8,91 @@ permissions:
 
 jobs:
   build:
+    name: Preparar APK MENTEX
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Baixar arquivos
         uses: actions/checkout@v4
 
-      - name: Install unzip
-        run: sudo apt-get update && sudo apt-get install -y unzip
+      - name: Instalar ferramentas Android
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unzip zipalign apksigner
 
-      - name: Find APK
+      - name: Encontrar APK
+        shell: bash
         run: |
           set -e
 
-          mkdir -p output
-          found=""
+          mkdir -p work
 
-          echo "Procurando APK no repositorio..."
+          APK=$(find . -type f -name "*.apk" | head -n 1)
 
-          for file in $(find . -type f -name "*.apk"); do
-            echo "APK encontrado: $file"
-            cp "$file" output/MENTEX-V4.6-ATUALIZADO.apk
-            found="yes"
-            break
-          done
+          if [ -z "$APK" ]; then
+            echo "APK nao encontrado diretamente."
 
-          if [ -z "$found" ]; then
-            echo "Procurando APK dentro dos ZIPs..."
+            for ZIP in $(find . -type f -name "*.zip"); do
+              echo "Abrindo: $ZIP"
 
-            for zipfile in $(find . -type f -name "*.zip"); do
-              echo "Analisando: $zipfile"
+              mkdir -p work/extract
+              unzip -o "$ZIP" -d work/extract
 
-              mkdir -p temp_extract
-              unzip -o "$zipfile" -d temp_extract >/dev/null 2>&1 || true
+              APK=$(find work/extract -type f -name "*.apk" | head -n 1)
 
-              apk=$(find temp_extract -type f -name "*.apk" | head -n 1)
-
-              if [ -n "$apk" ]; then
-                echo "APK encontrado: $apk"
-                cp "$apk" output/MENTEX-V4.6-ATUALIZADO.apk
-                found="yes"
+              if [ -n "$APK" ]; then
                 break
               fi
 
-              rm -rf temp_extract
+              rm -rf work/extract
             done
           fi
 
-          if [ -z "$found" ]; then
-            echo "ERRO: APK nao encontrado."
-            echo "Arquivos encontrados:"
-            find . -maxdepth 2 -type f
+          if [ -z "$APK" ]; then
+            echo "ERRO: nenhum APK encontrado."
             exit 1
           fi
 
-          ls -lh output/
+          echo "APK encontrado:"
+          echo "$APK"
 
-      - name: Upload APK
+          cp "$APK" work/original.apk
+
+      - name: Criar chave de assinatura
+        run: |
+          keytool -genkeypair \
+            -keystore work/mentex.keystore \
+            -storepass mentex123 \
+            -keypass mentex123 \
+            -alias mentex \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=MENTEX,O=MENTEX,C=BR"
+
+      - name: Alinhar APK
+        run: |
+          zipalign -f -p 4 \
+            work/original.apk \
+            work/aligned.apk
+
+      - name: Assinar APK
+        run: |
+          apksigner sign \
+            --ks work/mentex.keystore \
+            --ks-pass pass:mentex123 \
+            --key-pass pass:mentex123 \
+            --out work/MENTEX-V4.6-ATUALIZADO.apk \
+            work/aligned.apk
+
+      - name: Verificar assinatura
+        run: |
+          apksigner verify --verbose \
+            work/MENTEX-V4.6-ATUALIZADO.apk
+
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-V4.6-ATUALIZADO
-          path: output/MENTEX-V4.6-ATUALIZADO.apk
+          path: work/MENTEX-V4.6-ATUALIZADO.apk
+          retention-days: 30
