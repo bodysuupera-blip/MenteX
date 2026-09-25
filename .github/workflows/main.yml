@@ -26,24 +26,32 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Encontrar projeto MENTEX
+      - name: Encontrar projeto Android
         shell: bash
         run: |
           set -e
 
-          echo "Procurando settings.gradle..."
+          echo "======================================"
+          echo "PROCURANDO PROJETO ANDROID"
+          echo "======================================"
 
           SETTINGS=$(find . \
             -type f \
-            -name "settings.gradle" \
+            \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
             -not -path "./.git/*" \
             | head -n 1)
 
           if [ -z "$SETTINGS" ]; then
             echo "ERRO: settings.gradle não encontrado."
+            echo ""
+            echo "Arquivos Gradle encontrados:"
             find . -type f \
-              \( -name "settings.gradle" -o -name "build.gradle" \) \
-              -not -path "./.git/*"
+              \( -name "settings.gradle" \
+              -o -name "settings.gradle.kts" \
+              -o -name "build.gradle" \
+              -o -name "build.gradle.kts" \) \
+              -not -path "./.git/*" \
+              -print
             exit 1
           fi
 
@@ -52,17 +60,87 @@ jobs:
           echo "Projeto encontrado:"
           echo "$PROJECT_DIR"
 
-          if [ ! -f "$PROJECT_DIR/build.gradle" ]; then
-            echo "ERRO: build.gradle não encontrado."
-            exit 1
-          fi
-
-          if [ ! -f "$PROJECT_DIR/app/build.gradle" ]; then
-            echo "ERRO: app/build.gradle não encontrado."
+          if [ ! -d "$PROJECT_DIR/app" ]; then
+            echo "ERRO: pasta app não encontrada."
             exit 1
           fi
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Ajustar tela cheia do MENTEX
+        shell: bash
+        run: |
+          set -e
+
+          cd "$PROJECT_DIR"
+
+          MANIFEST="app/src/main/AndroidManifest.xml"
+
+          if [ ! -f "$MANIFEST" ]; then
+            echo "ERRO: AndroidManifest.xml não encontrado."
+            exit 1
+          fi
+
+          echo "Aplicando configuração de tela cheia..."
+
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          manifest = Path("app/src/main/AndroidManifest.xml")
+          text = manifest.read_text(encoding="utf-8")
+
+          # Permite que o conteúdo ocupe a área completa da tela.
+          if "android:windowLayoutInDisplayCutoutMode=" not in text:
+              text = text.replace(
+                  "<application",
+                  '<application android:windowLayoutInDisplayCutoutMode="shortEdges"',
+                  1
+              )
+
+          # Remove barras de sistema da Activity principal quando possível.
+          text = re.sub(
+              r'\s+android:screenOrientation="[^"]*"',
+              '',
+              text
+          )
+
+          manifest.write_text(text, encoding="utf-8")
+
+          print("Manifest ajustado.")
+          PY
+
+      - name: Criar arquivo de configuração de tela
+        shell: bash
+        run: |
+          set -e
+
+          mkdir -p app/src/main/res/values
+
+          cat > app/src/main/res/values/mentex_fullscreen.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+
+              <style name="MENTEX_Fullscreen">
+                  <item name="android:windowFullscreen">true</item>
+                  <item name="android:windowActionModeOverlay">true</item>
+                  <item name="android:windowNoTitle">true</item>
+              </style>
+
+          </resources>
+          EOF
+
+          echo "Configuração criada."
+
+      - name: Verificar Gradle
+        shell: bash
+        run: |
+          set -e
+
+          cd "$PROJECT_DIR"
+
+          echo "Gradle:"
+          gradle --version
 
       - name: Compilar MENTEX
         shell: bash
@@ -75,27 +153,30 @@ jobs:
           echo "COMPILANDO MENTEX V4.6"
           echo "======================================"
 
-          gradle assembleDebug --stacktrace --no-daemon
+          gradle clean assembleDebug \
+            --stacktrace \
+            --no-daemon
 
       - name: Procurar APK
         shell: bash
         run: |
           set -e
 
-          echo "Procurando APK gerado..."
+          echo "======================================"
+          echo "PROCURANDO APK"
+          echo "======================================"
 
-          APK=$(find "$PROJECT_DIR" \
+          APK=$(find "$PROJECT_DIR/app/build/outputs/apk" \
             -type f \
             -name "*.apk" \
+            | grep -v "androidTest" \
             | head -n 1)
 
           if [ -z "$APK" ]; then
-            echo "ERRO: nenhum APK foi gerado."
+            echo "ERRO: APK não foi gerado."
 
-            echo "Arquivos de build:"
-            find "$PROJECT_DIR" \
+            find "$PROJECT_DIR/app/build/outputs" \
               -type f \
-              \( -name "*.apk" -o -name "*.aab" \) \
               -print || true
 
             exit 1
