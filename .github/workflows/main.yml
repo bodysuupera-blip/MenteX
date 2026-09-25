@@ -7,95 +7,65 @@ permissions:
   contents: read
 
 jobs:
-  preparar:
-    name: Preparar MENTEX V4.6
+  build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar arquivos do repositório
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Instalar ferramentas
-        shell: bash
+      - name: Install unzip
+        run: sudo apt-get update && sudo apt-get install -y unzip
+
+      - name: Find APK
         run: |
           set -e
 
-          sudo apt-get update
-          sudo apt-get install -y unzip findutils
+          mkdir -p output
+          found=""
 
-      - name: Procurar APK dentro dos ZIPs
-        shell: bash
-        run: |
-          set -e
+          echo "Procurando APK no repositorio..."
 
-          echo "======================================"
-          echo "PROCURANDO APK DO MENTEX"
-          echo "======================================"
-
-          mkdir -p /tmp/mentex-apk
-
-          # Procurar APK diretamente no repositório
-          find . -type f -iname "*.apk" \
-            -not -path "./.git/*" \
-            -print \
-            -exec cp "{}" /tmp/mentex-apk/ \;
-
-          # Procurar APK dentro de todos os ZIPs
-          find . -type f -iname "*.zip" \
-            -not -path "./.git/*" \
-            -print0 |
-          while IFS= read -r -d '' ZIP; do
-            echo ""
-            echo "Analisando: $ZIP"
-
-            PASTA="/tmp/extrair-$(date +%s%N)"
-            mkdir -p "$PASTA"
-
-            if unzip -q "$ZIP" -d "$PASTA"; then
-              find "$PASTA" -type f -iname "*.apk" \
-                -print \
-                -exec cp "{}" /tmp/mentex-apk/ \;
-            else
-              echo "Aviso: não foi possível extrair $ZIP"
-            fi
+          for file in $(find . -type f -name "*.apk"); do
+            echo "APK encontrado: $file"
+            cp "$file" output/MENTEX-V4.6-ATUALIZADO.apk
+            found="yes"
+            break
           done
 
-          echo ""
-          echo "======================================"
-          echo "APKs ENCONTRADOS"
-          echo "======================================"
+          if [ -z "$found" ]; then
+            echo "Procurando APK dentro dos ZIPs..."
 
-          find /tmp/mentex-apk -type f -iname "*.apk" -print
+            for zipfile in $(find . -type f -name "*.zip"); do
+              echo "Analisando: $zipfile"
 
-          if ! find /tmp/mentex-apk -type f -iname "*.apk" | grep -q .; then
-            echo ""
-            echo "ERRO: nenhum APK foi encontrado."
-            echo ""
-            echo "Arquivos ZIP existentes:"
-            find . -type f -iname "*.zip" -print
+              mkdir -p temp_extract
+              unzip -o "$zipfile" -d temp_extract >/dev/null 2>&1 || true
+
+              apk=$(find temp_extract -type f -name "*.apk" | head -n 1)
+
+              if [ -n "$apk" ]; then
+                echo "APK encontrado: $apk"
+                cp "$apk" output/MENTEX-V4.6-ATUALIZADO.apk
+                found="yes"
+                break
+              fi
+
+              rm -rf temp_extract
+            done
+          fi
+
+          if [ -z "$found" ]; then
+            echo "ERRO: APK nao encontrado."
+            echo "Arquivos encontrados:"
+            find . -maxdepth 2 -type f
             exit 1
           fi
 
-      - name: Organizar APK final
-        shell: bash
-        run: |
-          set -e
+          ls -lh output/
 
-          mkdir -p resultado
-
-          APK="$(find /tmp/mentex-apk -type f -iname "*.apk" | head -n 1)"
-
-          echo "APK selecionado:"
-          echo "$APK"
-
-          cp "$APK" "resultado/MENTEX-V4.6-ATUALIZADO.apk"
-
-          ls -lh resultado/
-
-      - name: Enviar APK para os artefatos
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-V4.6-ATUALIZADO
-          path: resultado/MENTEX-V4.6-ATUALIZADO.apk
-          if-no-files-found: error
-          retention-days: 30
+          path: output/MENTEX-V4.6-ATUALIZADO.apk
