@@ -1,4 +1,4 @@
-name: MENTEX V4.7 - Compilador APK
+name: MENTEX V4.8 - Compilar APK
 
 on:
   workflow_dispatch:
@@ -7,84 +7,109 @@ permissions:
   contents: read
 
 jobs:
-  construir:
-    name: Compilador MENTEX V4.7
+  build:
+    name: Build MENTEX V4.8
     runs-on: ubuntu-latest
 
     steps:
-
-      - name: Baixar projeto
+      - name: Checkout project
         uses: actions/checkout@v4
 
-      - name: Configurar Java 17
+      - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Localizar ZIP do MENTEX
+      - name: Find MENTEX ZIP
         shell: bash
         run: |
-          echo "Procurando ZIP do MENTEX..."
+          echo "Searching for MENTEX ZIP..."
 
-          ZIP=$(find . -maxdepth 2 -type f -iname "*.zip" | head -n 1)
+          ZIP=$(find . -maxdepth 3 -type f -iname "*.zip" | head -n 1)
 
           if [ -z "$ZIP" ]; then
-            echo "ERRO: ZIP do MENTEX não encontrado."
+            echo "ERROR: MENTEX ZIP not found."
             exit 1
           fi
 
-          echo "ZIP encontrado: $ZIP"
-          echo "ZIP=$ZIP" >> "$GITHUB_ENV"
+          echo "ZIP found: $ZIP"
+          echo "ZIP_PATH=$ZIP" >> "$GITHUB_ENV"
 
-      - name: Extrair projeto
+      - name: Extract project
         shell: bash
         run: |
-          rm -rf /tmp/mentex
-          mkdir -p /tmp/mentex
+          rm -rf "$RUNNER_TEMP/mentex"
+          mkdir -p "$RUNNER_TEMP/mentex"
 
-          unzip -o "$ZIP" -d /tmp/mentex
+          unzip -o "$ZIP_PATH" -d "$RUNNER_TEMP/mentex"
 
-          echo "Projeto extraído."
+          echo "Extracted files:"
+          find "$RUNNER_TEMP/mentex" -maxdepth 3 -type f | head -100
 
-      - name: Localizar projeto Android
+      - name: Find Android project
         shell: bash
         run: |
-          PROJECT_DIR=$(find /tmp/mentex -type f \
+          PROJECT_DIR=""
+
+          SETTINGS=$(find "$RUNNER_TEMP/mentex" -type f \
             \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
-            -print -quit | xargs -r dirname)
+            -print -quit)
+
+          if [ -n "$SETTINGS" ]; then
+            PROJECT_DIR=$(dirname "$SETTINGS")
+          fi
 
           if [ -z "$PROJECT_DIR" ]; then
-            echo "ERRO: Projeto Android não encontrado."
+            BUILD_FILE=$(find "$RUNNER_TEMP/mentex" -type f \
+              \( -name "build.gradle" -o -name "build.gradle.kts" \) \
+              -print -quit)
+
+            if [ -n "$BUILD_FILE" ]; then
+              PROJECT_DIR=$(dirname "$BUILD_FILE")
+            fi
+          fi
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERROR: Android project not found."
             exit 1
           fi
 
-          echo "Projeto: $PROJECT_DIR"
+          echo "Android project: $PROJECT_DIR"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      - name: Configurar Gradle 8.7
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
-      - name: Verificar Gradle
-        shell: bash
-        run: |
-          gradle --version
-
-      - name: Configurar Java 17 no projeto
+      - name: Check project
         shell: bash
         run: |
           cd "$PROJECT_DIR"
 
-          python3 - <<'PY'
-          from pathlib import Path
+          echo "Project files:"
+          ls -la
 
-          p = Path("app/build.gradle")
-          text = p.read_text()
+          echo "Gradle files:"
+          find . -maxdepth 2 -type f \
+            \( -name "build.gradle" -o -name "build.gradle.kts" \
+            -o -name "settings.gradle" -o -name "settings.gradle.kts" \)
 
-          if "compileOptions" not in text:
-              text += """
+      - name: Configure Java 17
+        shell: bash
+        run: |
+          cd "$PROJECT_DIR"
+
+          if [ -f "app/build.gradle" ]; then
+            python3 - <<'PY'
+from pathlib import Path
+
+p = Path("app/build.gradle")
+text = p.read_text()
+
+if "sourceCompatibility JavaVersion.VERSION_17" not in text:
+    text += """
 
 android {
     compileOptions {
@@ -94,19 +119,20 @@ android {
 }
 """
 
-          p.write_text(text)
-          PY
+p.write_text(text)
+PY
+          fi
 
-          echo "Configuração Java 17 concluída."
-
-      - name: Compilar APK
+      - name: Build APK
         shell: bash
         run: |
           cd "$PROJECT_DIR"
 
-          gradle clean assembleDebug --no-daemon --stacktrace
+          gradle clean assembleDebug \
+            --no-daemon \
+            --stacktrace
 
-      - name: Localizar APK
+      - name: Find APK
         shell: bash
         run: |
           APK=$(find "$PROJECT_DIR" \
@@ -115,23 +141,16 @@ android {
             -print -quit)
 
           if [ -z "$APK" ]; then
-            echo "ERRO: APK não foi gerado."
+            echo "ERROR: APK was not generated."
             exit 1
           fi
 
-          echo "APK encontrado:"
-          echo "$APK"
+          echo "APK found: $APK"
+          cp "$APK" "$GITHUB_WORKSPACE/MENTEX-V4.8.apk"
 
-          echo "APK=$APK" >> "$GITHUB_ENV"
-
-      - name: Copiar APK
-        shell: bash
-        run: |
-          cp "$APK" "$GITHUB_WORKSPACE/MENTEX-V4.7.apk"
-
-      - name: Enviar APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V4.7-APK
-          path: MENTEX-V4.7.apk
+          name: MENTEX-V4.8-APK
+          path: MENTEX-V4.8.apk
           if-no-files-found: error
