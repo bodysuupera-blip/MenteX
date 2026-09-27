@@ -1,4 +1,4 @@
-name: MENTEX V4.7 - Compilar APK
+name: MENTEX V4.7 - Compilador APK
 
 on:
   workflow_dispatch:
@@ -8,10 +8,11 @@ permissions:
 
 jobs:
   construir:
-    name: Compilar MENTEX V4.7
+    name: Compilador MENTEX V4.7
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Baixar projeto
         uses: actions/checkout@v4
 
@@ -24,12 +25,12 @@ jobs:
       - name: Localizar ZIP do MENTEX
         shell: bash
         run: |
-          echo "Procurando o projeto MENTEX..."
+          echo "Procurando ZIP do MENTEX..."
 
           ZIP=$(find . -maxdepth 2 -type f -iname "*.zip" | head -n 1)
 
           if [ -z "$ZIP" ]; then
-            echo "ERRO: Nenhum arquivo ZIP encontrado."
+            echo "ERRO: ZIP do MENTEX não encontrado."
             exit 1
           fi
 
@@ -44,96 +45,93 @@ jobs:
 
           unzip -o "$ZIP" -d /tmp/mentex
 
-          echo "Conteúdo extraído:"
-          find /tmp/mentex -maxdepth 3 -type f | head -100
+          echo "Projeto extraído."
 
       - name: Localizar projeto Android
         shell: bash
         run: |
-          PROJECT_DIR=$(find /tmp/mentex -type f \( \
-            -name "settings.gradle" -o \
-            -name "settings.gradle.kts" \
-          \) -print -quit | xargs -r dirname)
-
-          if [ -z "$PROJECT_DIR" ]; then
-            PROJECT_DIR=$(find /tmp/mentex -type f -name "gradlew" -print -quit | xargs -r dirname)
-          fi
+          PROJECT_DIR=$(find /tmp/mentex -type f \
+            \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+            -print -quit | xargs -r dirname)
 
           if [ -z "$PROJECT_DIR" ]; then
             echo "ERRO: Projeto Android não encontrado."
             exit 1
           fi
 
-          echo "Projeto encontrado em: $PROJECT_DIR"
+          echo "Projeto: $PROJECT_DIR"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      - name: Preparar Gradle
-        shell: bash
-        run: |
-          cd "$PROJECT_DIR"
-
-          if [ -f "./gradlew" ]; then
-            chmod +x ./gradlew
-          else
-            echo "ERRO: gradlew não encontrado."
-            exit 1
-          fi
-
-      - name: Configurar Gradle
+      - name: Configurar Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
 
-      - name: Corrigir compatibilidade Java 17
+      - name: Verificar Gradle
+        shell: bash
+        run: |
+          gradle --version
+
+      - name: Configurar Java 17 no projeto
         shell: bash
         run: |
           cd "$PROJECT_DIR"
 
-          echo "Verificando projeto..."
+          python3 - <<'PY'
+          from pathlib import Path
 
-          if [ -f "app/build.gradle" ]; then
-            cat >> app/build.gradle <<'EOF'
+          p = Path("app/build.gradle")
+          text = p.read_text()
 
-            // MENTEX V4.7 - Compatibilidade Java 17
-            android {
-                compileOptions {
-                    sourceCompatibility JavaVersion.VERSION_17
-                    targetCompatibility JavaVersion.VERSION_17
-                }
-            }
-            EOF
-          fi
+          if "compileOptions" not in text:
+              text += """
+
+android {
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+"""
+
+          p.write_text(text)
+          PY
+
+          echo "Configuração Java 17 concluída."
 
       - name: Compilar APK
         shell: bash
         run: |
           cd "$PROJECT_DIR"
 
-          chmod +x ./gradlew
-
-          ./gradlew clean assembleDebug --stacktrace
+          gradle clean assembleDebug --no-daemon --stacktrace
 
       - name: Localizar APK
         shell: bash
         run: |
-          echo "Procurando APK..."
-
-          APK=$(find "$PROJECT_DIR" -type f -name "*.apk" | head -n 1)
+          APK=$(find "$PROJECT_DIR" \
+            -type f \
+            -path "*/build/outputs/apk/debug/*.apk" \
+            -print -quit)
 
           if [ -z "$APK" ]; then
             echo "ERRO: APK não foi gerado."
             exit 1
           fi
 
-          echo "APK encontrado: $APK"
+          echo "APK encontrado:"
+          echo "$APK"
+
           echo "APK=$APK" >> "$GITHUB_ENV"
 
-      - name: Renomear APK
+      - name: Copiar APK
         shell: bash
         run: |
-          cp "$APK" "$PROJECT_DIR/MENTEX-V4.7.apk"
+          cp "$APK" "$GITHUB_WORKSPACE/MENTEX-V4.7.apk"
 
       - name: Enviar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-V4.7-APK
-          path: ${{ env.PROJECT_DIR }}/MENTEX-V4.7.apk
+          path: MENTEX-V4.7.apk
           if-no-files-found: error
