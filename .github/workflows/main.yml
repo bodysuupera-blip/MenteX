@@ -8,185 +8,203 @@ permissions:
 
 jobs:
   build:
-    name: Compilar MENTEX
+    name: Compilador MENTEX
     runs-on: ubuntu-latest
 
     steps:
+
+      # 1. Baixar o repositório
       - name: Checkout
         uses: actions/checkout@v4
 
+      # 2. Java 17
       - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
+      # 3. Android SDK
       - name: Configurar Android SDK
         uses: android-actions/setup-android@v3
 
+      # 4. Instalar componentes necessários
       - name: Instalar SDK Android
         shell: bash
         run: |
           set -e
 
-          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
 
-          sdkmanager \
+          if [ ! -f "$SDKMANAGER" ]; then
+            SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)
+          fi
+
+          echo "SDKMANAGER=$SDKMANAGER"
+
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+
+          "$SDKMANAGER" \
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-      - name: Procurar projeto Android
+      # 5. Encontrar e extrair o ZIP do MENTEX
+      - name: Preparar projeto MENTEX
         shell: bash
         run: |
           set -e
 
           echo "======================================"
-          echo "PROCURANDO PROJETO ANDROID"
+          echo "PROCURANDO ZIP DO MENTEX"
           echo "======================================"
 
-          SETTINGS=$(find . \
-            -type f \
-            \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
-            -not -path "./.git/*" \
-            | head -n 1)
+          mkdir -p "$GITHUB_WORKSPACE/projeto"
 
-          if [ -n "$SETTINGS" ]; then
-            ROOT=$(dirname "$SETTINGS")
-            echo "Projeto encontrado diretamente em:"
-            echo "$ROOT"
-            echo "MENTEX_ROOT=$ROOT" >> "$GITHUB_ENV"
-            exit 0
-          fi
+          ZIP=""
 
-          echo "Nenhum projeto encontrado na raiz."
-
-          ZIP=$(find . \
-            -maxdepth 2 \
-            -type f \
-            -iname "MENTEX*.zip" \
-            -not -path "./.git/*" \
-            | head -n 1)
+          # Procura ZIPs do MENTEX
+          while IFS= read -r arquivo; do
+            if unzip -l "$arquivo" 2>/dev/null | \
+              grep -Eq '(^|/)(settings\.gradle|settings\.gradle\.kts)$'; then
+              ZIP="$arquivo"
+              break
+            fi
+          done < <(find "$GITHUB_WORKSPACE" \
+                    -maxdepth 3 \
+                    -type f \
+                    -iname 'MENTEX*.zip' \
+                    -print)
 
           if [ -z "$ZIP" ]; then
-            echo "ERRO: nenhum ZIP MENTEX foi encontrado."
-            find . -maxdepth 2 -type f -not -path "./.git/*"
+            echo ""
+            echo "ERRO: nenhum ZIP do MENTEX contendo settings.gradle foi encontrado."
+            echo ""
+            echo "ZIPs encontrados:"
+            find "$GITHUB_WORKSPACE" \
+              -maxdepth 3 \
+              -type f \
+              -iname '*.zip' \
+              -print || true
             exit 1
           fi
 
-          echo "ZIP encontrado:"
+          echo "ZIP escolhido:"
           echo "$ZIP"
 
-          rm -rf projeto_android
-          mkdir -p projeto_android
+          echo ""
+          echo "Extraindo projeto..."
 
-          unzip -q "$ZIP" -d projeto_android
+          rm -rf "$GITHUB_WORKSPACE/projeto"
+          mkdir -p "$GITHUB_WORKSPACE/projeto"
 
-          SETTINGS=$(find projeto_android \
+          unzip -q "$ZIP" -d "$GITHUB_WORKSPACE/projeto"
+
+          echo ""
+          echo "Procurando settings.gradle..."
+
+          SETTINGS=$(find "$GITHUB_WORKSPACE/projeto" \
             -type f \
             \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
-            | head -n 1)
+            -print -quit)
 
           if [ -z "$SETTINGS" ]; then
-            echo "ERRO: o ZIP não contém settings.gradle."
-            echo "Conteúdo do ZIP:"
-            find projeto_android -maxdepth 5 -type f
+            echo "ERRO: settings.gradle não encontrado depois da extração."
+            find "$GITHUB_WORKSPACE/projeto" -maxdepth 5 -type f | head -100
             exit 1
           fi
 
-          ROOT=$(dirname "$SETTINGS")
+          PROJECT_DIR=$(dirname "$SETTINGS")
 
-          echo "Projeto Android encontrado:"
-          echo "$ROOT"
+          echo ""
+          echo "======================================"
+          echo "PROJETO ANDROID ENCONTRADO"
+          echo "======================================"
+          echo "$PROJECT_DIR"
 
-          echo "MENTEX_ROOT=$ROOT" >> "$GITHUB_ENV"
+          echo "$PROJECT_DIR" > "$GITHUB_WORKSPACE/project_dir.txt"
 
-      - name: Verificar projeto
+      # 6. Configurar Gradle
+      - name: Configurar Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      # 7. Dar permissão ao Gradle Wrapper, se existir
+      - name: Preparar Gradle
         shell: bash
         run: |
           set -e
 
-          echo "======================================"
-          echo "VERIFICANDO PROJETO MENTEX"
-          echo "======================================"
+          PROJECT_DIR=$(cat "$GITHUB_WORKSPACE/project_dir.txt")
 
-          echo "Pasta:"
-          echo "$MENTEX_ROOT"
+          echo "Projeto:"
+          echo "$PROJECT_DIR"
 
-          if [ ! -f "$MENTEX_ROOT/settings.gradle" ] &&
-             [ ! -f "$MENTEX_ROOT/settings.gradle.kts" ]; then
-            echo "ERRO: settings.gradle não encontrado."
-            exit 1
-          fi
-
-          if [ ! -f "$MENTEX_ROOT/build.gradle" ] &&
-             [ ! -f "$MENTEX_ROOT/build.gradle.kts" ]; then
-            echo "ERRO: build.gradle não encontrado."
-            exit 1
-          fi
-
-          echo "Projeto Android OK."
-
-      - name: Instalar Gradle
-        shell: bash
-        run: |
-          set -e
-
-          if [ -f "$MENTEX_ROOT/gradlew" ]; then
-            chmod +x "$MENTEX_ROOT/gradlew"
+          if [ -f "$PROJECT_DIR/gradlew" ]; then
+            chmod +x "$PROJECT_DIR/gradlew"
+            echo "Gradle Wrapper encontrado."
           else
-            cd "$RUNNER_TEMP"
-
-            curl -L \
-              -o gradle.zip \
-              https://services.gradle.org/distributions/gradle-8.7-bin.zip
-
-            unzip -q gradle.zip
-
-            echo "$RUNNER_TEMP/gradle-8.7/bin" >> "$GITHUB_PATH"
+            echo "Gradle Wrapper não encontrado."
+            echo "Será usado o Gradle 8.7 instalado pelo GitHub Actions."
           fi
 
-      - name: Compilar APK
+      # 8. Compilar APK
+      - name: Compilar MENTEX
         shell: bash
         run: |
           set -e
 
-          cd "$MENTEX_ROOT"
+          PROJECT_DIR=$(cat "$GITHUB_WORKSPACE/project_dir.txt")
+
+          cd "$PROJECT_DIR"
+
+          echo "======================================"
+          echo "COMPILANDO MENTEX"
+          echo "======================================"
 
           if [ -f "./gradlew" ]; then
             chmod +x ./gradlew
-            ./gradlew assembleDebug --no-daemon --stacktrace
+            ./gradlew clean assembleDebug --no-daemon
           else
-            gradle assembleDebug --no-daemon --stacktrace
+            gradle clean assembleDebug --no-daemon
           fi
 
+      # 9. Procurar APK
       - name: Procurar APK
         shell: bash
         run: |
           set -e
 
-          APK=$(find "$MENTEX_ROOT" \
+          PROJECT_DIR=$(cat "$GITHUB_WORKSPACE/project_dir.txt")
+
+          echo "======================================"
+          echo "PROCURANDO APK"
+          echo "======================================"
+
+          APK=$(find "$PROJECT_DIR" \
             -type f \
-            -path "*/build/outputs/apk/*.apk" \
-            | head -n 1)
+            -name "*.apk" \
+            -print | head -n 1)
 
           if [ -z "$APK" ]; then
             echo "ERRO: APK não encontrado."
-            find "$MENTEX_ROOT" -type f | grep -E '\.apk$' || true
+            find "$PROJECT_DIR" -type f | grep -E '\.(apk|aab)$' || true
             exit 1
           fi
 
           echo "APK encontrado:"
           echo "$APK"
 
-          mkdir -p release
+          mkdir -p "$GITHUB_WORKSPACE/apk"
 
           cp "$APK" \
-            "release/MENTEX-V4.8-ATUALIZADO.apk"
+            "$GITHUB_WORKSPACE/apk/MENTEX-V4.8.apk"
 
+      # 10. Publicar APK para baixar
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V4.8-ATUALIZADO
-          path: release/MENTEX-V4.8-ATUALIZADO.apk
+          name: MENTEX-V4.8-APK
+          path: apk/MENTEX-V4.8.apk
           if-no-files-found: error
