@@ -9,80 +9,42 @@ permissions:
 jobs:
   build:
     name: Compilar MENTEX
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     env:
       ANDROID_USER_HOME: ${{ runner.temp }}/android-user-home
 
     steps:
 
-      # =========================================================
-      # 1. CHECKOUT
-      # =========================================================
-
-      - name: Checkout
+      - name: Baixar projeto
         uses: actions/checkout@v4
-
-
-      # =========================================================
-      # 2. JAVA 17
-      # =========================================================
 
       - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-
-
-      # =========================================================
-      # 3. PREPARAR DIRETÓRIO ANDROID DO USUÁRIO
-      # =========================================================
+          cache: gradle
 
       - name: Preparar Android User Home
         shell: bash
         run: |
           set -e
-
-          echo "======================================"
-          echo "PREPARANDO ANDROID USER HOME"
-          echo "======================================"
-
-          mkdir -p "$ANDROID_USER_HOME"
           mkdir -p "$ANDROID_USER_HOME/.android"
-
-          chmod -R u+rwX "$ANDROID_USER_HOME"
-
-          echo "ANDROID_USER_HOME:"
+          echo "Android User Home:"
           echo "$ANDROID_USER_HOME"
-
-          echo "HOME:"
-          echo "$HOME"
-
-          echo ""
-          echo "Diretório gravável preparado."
-
-
-      # =========================================================
-      # 4. ANDROID SDK
-      # =========================================================
 
       - name: Preparar Android SDK
         shell: bash
         run: |
           set -e
 
-          echo "======================================"
-          echo "PREPARANDO ANDROID SDK"
-          echo "======================================"
+          SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
 
-          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
-
-          echo "ANDROID SDK:"
+          echo "Android SDK:"
           echo "$SDK"
 
           if [ ! -d "$SDK" ]; then
-            echo ""
             echo "ERRO: Android SDK não encontrado."
             exit 1
           fi
@@ -96,347 +58,123 @@ jobs:
             -print 2>/dev/null | head -n 1 || true)
 
           if [ -z "$SDKMANAGER" ]; then
-            echo ""
             echo "ERRO: sdkmanager não encontrado."
             exit 1
           fi
 
-          echo ""
-          echo "SDKMANAGER:"
+          echo "sdkmanager encontrado:"
           echo "$SDKMANAGER"
 
-          echo ""
-          echo "======================================"
-          echo "PLATFORMS EXISTENTES"
-          echo "======================================"
+          if [ ! -d "$SDK/platforms/android-35" ]; then
+            echo "Instalando Android Platform 35..."
+            sudo "$SDKMANAGER" "platforms;android-35"
+          fi
 
-          ls -la "$SDK/platforms" 2>/dev/null || true
+          if [ ! -d "$SDK/build-tools/35.0.0" ]; then
+            echo "Instalando Android Build Tools 35.0.0..."
+            sudo "$SDKMANAGER" "build-tools;35.0.0"
+          fi
 
-          echo ""
-          echo "======================================"
-          echo "BUILD TOOLS EXISTENTES"
-          echo "======================================"
+          if [ ! -d "$SDK/platform-tools" ]; then
+            echo "Instalando Android Platform Tools..."
+            sudo "$SDKMANAGER" "platform-tools"
+          fi
 
-          ls -la "$SDK/build-tools" 2>/dev/null || true
+          echo "Android SDK pronto."
 
-          echo ""
-          echo "======================================"
-          echo "ACEITANDO LICENÇAS"
-          echo "======================================"
-
-          yes | sudo "$SDKMANAGER" --licenses \
-            >/dev/null 2>&1 || true
-
-          echo ""
-          echo "======================================"
-          echo "INSTALANDO COMPONENTES"
-          echo "======================================"
-
-          sudo "$SDKMANAGER" "platform-tools" || true
-
-          sudo "$SDKMANAGER" "platforms;android-35" || true
-
-          sudo "$SDKMANAGER" "build-tools;35.0.0" || true
-
-          echo ""
-          echo "ANDROID SDK PREPARADO."
-
-
-      # =========================================================
-      # 5. LOCALIZAR ZIP DO MENTEX
-      # =========================================================
-
-      - name: Localizar ZIP do MENTEX
+      - name: Verificar estrutura do MENTEX
         shell: bash
         run: |
           set -e
 
-          echo "======================================"
-          echo "PROCURANDO PROJETO MENTEX"
-          echo "======================================"
+          echo "Verificando arquivos..."
 
-          mkdir -p "$GITHUB_WORKSPACE/projeto"
-
-          ZIP=""
-
-          while IFS= read -r arquivo; do
-
-            echo ""
-            echo "Verificando:"
-            echo "$arquivo"
-
-            if unzip -l "$arquivo" 2>/dev/null | \
-              grep -Eq '(^|/)(settings\.gradle|settings\.gradle\.kts)$'
-            then
-              ZIP="$arquivo"
-              break
-            fi
-
-          done < <(
-            find "$GITHUB_WORKSPACE" \
-              -type f \
-              -iname "*.zip" \
-              -print
-          )
-
-          if [ -z "$ZIP" ]; then
-
-            echo ""
-            echo "======================================"
-            echo "ERRO: PROJETO ANDROID NÃO ENCONTRADO"
-            echo "======================================"
-
-            echo ""
-            echo "ZIPs encontrados:"
-
-            find "$GITHUB_WORKSPACE" \
-              -type f \
-              -iname "*.zip" \
-              -print
-
-            exit 1
-          fi
+          test -f settings.gradle
+          test -f build.gradle
+          test -f app/build.gradle
+          test -f app/src/main/AndroidManifest.xml
+          test -f app/src/main/java/com/mentex/app/MainActivity.java
+          test -f app/src/main/assets/index.html
 
           echo ""
-          echo "======================================"
-          echo "ZIP DO MENTEX ENCONTRADO"
-          echo "======================================"
-
-          echo "$ZIP"
-
-          rm -rf "$GITHUB_WORKSPACE/projeto"
-
-          mkdir -p "$GITHUB_WORKSPACE/projeto"
-
-          unzip -q "$ZIP" \
-            -d "$GITHUB_WORKSPACE/projeto"
+          echo "========================================"
+          echo "PROJETO MENTEX ENCONTRADO"
+          echo "========================================"
 
           echo ""
-          echo "======================================"
-          echo "PROCURANDO SETTINGS.GRADLE"
-          echo "======================================"
-
-          SETTINGS=$(find "$GITHUB_WORKSPACE/projeto" \
-            -type f \
-            \( \
-              -name "settings.gradle" \
-              -o \
-              -name "settings.gradle.kts" \
-            \) \
-            -print \
-            -quit)
-
-          if [ -z "$SETTINGS" ]; then
-
-            echo ""
-            echo "ERRO: settings.gradle não encontrado."
-
-            echo ""
-            echo "Conteúdo extraído:"
-
-            find "$GITHUB_WORKSPACE/projeto" \
-              -maxdepth 8 \
-              -type f \
-              -print \
-              | head -300
-
-            exit 1
-          fi
-
-          PROJECT_DIR=$(dirname "$SETTINGS")
+          echo "settings.gradle:"
+          ls -lh settings.gradle
 
           echo ""
-          echo "======================================"
-          echo "PROJETO ANDROID ENCONTRADO"
-          echo "======================================"
+          echo "app:"
+          ls -la app
 
-          echo "$PROJECT_DIR"
-
-          echo "$PROJECT_DIR" \
-            > "$GITHUB_WORKSPACE/project_dir.txt"
-
-
-      # =========================================================
-      # 6. GRADLE
-      # =========================================================
-
-      - name: Configurar Gradle
+      - name: Configurar Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
-
-      # =========================================================
-      # 7. VERIFICAR PROJETO
-      # =========================================================
-
-      - name: Verificar projeto
+      - name: Verificar Java e Gradle
         shell: bash
         run: |
-          set -e
-
-          PROJECT_DIR=$(cat "$GITHUB_WORKSPACE/project_dir.txt")
-
-          echo "======================================"
-          echo "VERIFICANDO PROJETO"
-          echo "======================================"
+          echo "========================================"
+          echo "JAVA"
+          echo "========================================"
+          java -version
 
           echo ""
-          echo "Diretório:"
-          echo "$PROJECT_DIR"
-
-          echo ""
-          echo "Arquivos:"
-
-          ls -la "$PROJECT_DIR"
-
-          echo ""
-
-          if [ ! -f "$PROJECT_DIR/settings.gradle" ] && \
-             [ ! -f "$PROJECT_DIR/settings.gradle.kts" ]; then
-
-            echo "ERRO: settings.gradle não encontrado."
-
-            exit 1
-          fi
-
-          echo ""
-          echo "Projeto Android OK."
-
-
-      # =========================================================
-      # 8. PREPARAR KEYSTORE DEBUG
-      # =========================================================
-
-      - name: Preparar Debug Keystore
-        shell: bash
-        run: |
-          set -e
-
-          echo "======================================"
-          echo "PREPARANDO DEBUG KEYSTORE"
-          echo "======================================"
-
-          mkdir -p "$ANDROID_USER_HOME/.android"
-
-          chmod -R u+rwX "$ANDROID_USER_HOME"
-
-          echo ""
-          echo "ANDROID_USER_HOME:"
-          echo "$ANDROID_USER_HOME"
-
-          echo ""
-          echo "Diretório .android:"
-          ls -la "$ANDROID_USER_HOME/.android"
-
-          echo ""
-          echo "Keystore será criada automaticamente pelo Gradle."
-
-
-      # =========================================================
-      # 9. COMPILAR APK
-      # =========================================================
+          echo "========================================"
+          echo "GRADLE"
+          echo "========================================"
+          gradle --version
 
       - name: Compilar APK MENTEX
         shell: bash
         run: |
           set -e
 
-          PROJECT_DIR=$(cat "$GITHUB_WORKSPACE/project_dir.txt")
+          echo "========================================"
+          echo "COMPILANDO MENTEX V4.10"
+          echo "========================================"
 
-          cd "$PROJECT_DIR"
+          gradle clean assembleDebug \
+            --no-daemon \
+            --stacktrace
 
-          echo "======================================"
-          echo "COMPILANDO MENTEX"
-          echo "======================================"
-
-          echo ""
-          echo "Java:"
-          java -version
-
-          echo ""
-          echo "ANDROID_USER_HOME:"
-          echo "$ANDROID_USER_HOME"
-
-          echo ""
-          echo "Gradle:"
-
-          if [ -f "./gradlew" ]; then
-
-            chmod +x ./gradlew
-
-            ./gradlew \
-              clean \
-              assembleDebug \
-              --no-daemon \
-              --stacktrace
-
-          else
-
-            gradle \
-              clean \
-              assembleDebug \
-              --no-daemon \
-              --stacktrace
-
-          fi
-
-
-      # =========================================================
-      # 10. ENCONTRAR APK
-      # =========================================================
-
-      - name: Encontrar APK
+      - name: Verificar APK gerado
         shell: bash
         run: |
           set -e
 
-          PROJECT_DIR=$(cat "$GITHUB_WORKSPACE/project_dir.txt")
-
-          echo "======================================"
+          echo "========================================"
           echo "PROCURANDO APK"
-          echo "======================================"
+          echo "========================================"
 
-          APK=$(find "$PROJECT_DIR" \
+          APK=$(find app/build/outputs/apk/debug \
             -type f \
             -name "*.apk" \
-            -print \
-            | head -n 1)
+            -print -quit)
 
           if [ -z "$APK" ]; then
-
             echo ""
-            echo "======================================"
-            echo "ERRO: APK NÃO ENCONTRADO"
-            echo "======================================"
-
-            find "$PROJECT_DIR" \
-              -type f \
-              | grep -E '\.(apk|aab)$' \
-              || true
-
+            echo "ERRO: APK não foi gerado."
+            echo ""
+            echo "Arquivos encontrados:"
+            find app/build/outputs -type f -print 2>/dev/null || true
             exit 1
           fi
 
           echo ""
-          echo "======================================"
-          echo "APK ENCONTRADO"
-          echo "======================================"
-
+          echo "APK encontrado:"
           echo "$APK"
 
-          mkdir -p "$GITHUB_WORKSPACE/apk"
+          mkdir -p apk
 
-          cp "$APK" \
-            "$GITHUB_WORKSPACE/apk/MENTEX-V4.10.apk"
+          cp "$APK" apk/MENTEX-V4.10.apk
 
           echo ""
-          echo "APK COPIADO COM SUCESSO."
-
-
-      # =========================================================
-      # 11. PUBLICAR APK
-      # =========================================================
+          echo "APK preparado:"
+          ls -lh apk/MENTEX-V4.10.apk
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
