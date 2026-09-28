@@ -13,8 +13,17 @@ jobs:
 
     steps:
 
+      # =========================================================
+      # 1. BAIXAR O REPOSITÓRIO
+      # =========================================================
+
       - name: Checkout
         uses: actions/checkout@v4
+
+
+      # =========================================================
+      # 2. CONFIGURAR JAVA 17
+      # =========================================================
 
       - name: Configurar Java 17
         uses: actions/setup-java@v4
@@ -22,13 +31,19 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # O runner do GitHub já possui o Android SDK.
-      # Não usar setup-android@v3 aqui.
+
+      # =========================================================
+      # 3. PREPARAR ANDROID SDK
+      # =========================================================
 
       - name: Preparar Android SDK
         shell: bash
         run: |
           set -e
+
+          echo "======================================"
+          echo "PREPARANDO ANDROID SDK"
+          echo "======================================"
 
           SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
 
@@ -36,12 +51,10 @@ jobs:
           echo "$SDK"
 
           if [ ! -d "$SDK" ]; then
+            echo ""
             echo "ERRO: Android SDK não encontrado."
             exit 1
           fi
-
-          export ANDROID_HOME="$SDK"
-          export ANDROID_SDK_ROOT="$SDK"
 
           echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
@@ -52,34 +65,55 @@ jobs:
             -print 2>/dev/null | head -n 1 || true)
 
           if [ -z "$SDKMANAGER" ]; then
+            echo ""
             echo "ERRO: sdkmanager não encontrado."
             exit 1
           fi
 
-          echo "SDKMANAGER=$SDKMANAGER"
+          echo ""
+          echo "SDKMANAGER:"
+          echo "$SDKMANAGER"
 
-          chmod +x "$SDKMANAGER"
+          echo ""
+          echo "======================================"
+          echo "ANDROID PLATFORMS EXISTENTES"
+          echo "======================================"
 
-          echo "Aceitando licenças..."
+          ls -la "$SDK/platforms" 2>/dev/null || true
 
-          yes | "$SDKMANAGER" --licenses \
+          echo ""
+          echo "======================================"
+          echo "ANDROID BUILD TOOLS EXISTENTES"
+          echo "======================================"
+
+          ls -la "$SDK/build-tools" 2>/dev/null || true
+
+          echo ""
+          echo "======================================"
+          echo "ACEITANDO LICENÇAS"
+          echo "======================================"
+
+          yes | sudo "$SDKMANAGER" --licenses \
             >/dev/null 2>&1 || true
 
-          echo "Instalando componentes Android..."
+          echo ""
+          echo "======================================"
+          echo "INSTALANDO COMPONENTES"
+          echo "======================================"
 
-          "$SDKMANAGER" \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0" || {
+          sudo "$SDKMANAGER" "platform-tools" || true
 
-              echo "Tentativa alternativa..."
+          sudo "$SDKMANAGER" "platforms;android-35" || true
 
-              "$SDKMANAGER" "platform-tools"
+          sudo "$SDKMANAGER" "build-tools;35.0.0" || true
 
-              "$SDKMANAGER" "platforms;android-35"
+          echo ""
+          echo "ANDROID SDK PREPARADO."
 
-              "$SDKMANAGER" "build-tools;35.0.0"
-            }
+
+      # =========================================================
+      # 4. LOCALIZAR O ZIP DO MENTEX
+      # =========================================================
 
       - name: Localizar ZIP do MENTEX
         shell: bash
@@ -96,6 +130,7 @@ jobs:
 
           while IFS= read -r arquivo; do
 
+            echo ""
             echo "Verificando:"
             echo "$arquivo"
 
@@ -109,38 +144,55 @@ jobs:
           done < <(
             find "$GITHUB_WORKSPACE" \
               -type f \
-              -iname '*.zip' \
+              -iname "*.zip" \
               -print
           )
 
           if [ -z "$ZIP" ]; then
 
             echo ""
-            echo "ERRO: nenhum ZIP contendo projeto Android foi encontrado."
-            echo ""
+            echo "======================================"
+            echo "ERRO: PROJETO ANDROID NÃO ENCONTRADO"
+            echo "======================================"
 
-            echo "ZIPs existentes:"
+            echo ""
+            echo "ZIPs encontrados no repositório:"
 
             find "$GITHUB_WORKSPACE" \
               -type f \
-              -iname '*.zip' \
+              -iname "*.zip" \
               -print
+
+            echo ""
+            echo "Conteúdo do repositório:"
+
+            find "$GITHUB_WORKSPACE" \
+              -maxdepth 3 \
+              -type f \
+              -print \
+              | head -200
 
             exit 1
           fi
 
           echo ""
-          echo "ZIP DO MENTEX:"
+          echo "======================================"
+          echo "ZIP DO MENTEX ENCONTRADO"
+          echo "======================================"
+
           echo "$ZIP"
 
           rm -rf "$GITHUB_WORKSPACE/projeto"
+
           mkdir -p "$GITHUB_WORKSPACE/projeto"
 
           unzip -q "$ZIP" \
             -d "$GITHUB_WORKSPACE/projeto"
 
           echo ""
-          echo "Procurando settings.gradle..."
+          echo "======================================"
+          echo "PROCURANDO settings.gradle"
+          echo "======================================"
 
           SETTINGS=$(find "$GITHUB_WORKSPACE/projeto" \
             -type f \
@@ -149,19 +201,22 @@ jobs:
               -o \
               -name "settings.gradle.kts" \
             \) \
-            -print -quit)
+            -print \
+            -quit)
 
           if [ -z "$SETTINGS" ]; then
 
-            echo "ERRO: settings.gradle não encontrado."
+            echo ""
+            echo "ERRO: settings.gradle não encontrado dentro do ZIP."
 
             echo ""
             echo "Conteúdo extraído:"
 
             find "$GITHUB_WORKSPACE/projeto" \
-              -maxdepth 6 \
+              -maxdepth 8 \
               -type f \
-              | head -200
+              -print \
+              | head -300
 
             exit 1
           fi
@@ -178,10 +233,20 @@ jobs:
           echo "$PROJECT_DIR" \
             > "$GITHUB_WORKSPACE/project_dir.txt"
 
+
+      # =========================================================
+      # 5. CONFIGURAR GRADLE
+      # =========================================================
+
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
+
+
+      # =========================================================
+      # 6. VERIFICAR PROJETO
+      # =========================================================
 
       - name: Verificar projeto
         shell: bash
@@ -190,20 +255,35 @@ jobs:
 
           PROJECT_DIR=$(cat "$GITHUB_WORKSPACE/project_dir.txt")
 
-          echo "Projeto:"
+          echo "======================================"
+          echo "VERIFICANDO PROJETO"
+          echo "======================================"
+
+          echo ""
+          echo "Diretório:"
           echo "$PROJECT_DIR"
 
           echo ""
+          echo "Arquivos:"
 
           ls -la "$PROJECT_DIR"
 
           echo ""
 
-          if [ ! -f "$PROJECT_DIR/settings.gradle" ] &&
+          if [ ! -f "$PROJECT_DIR/settings.gradle" ] && \
              [ ! -f "$PROJECT_DIR/settings.gradle.kts" ]; then
+
             echo "ERRO: settings.gradle não encontrado."
+
             exit 1
           fi
+
+          echo "Projeto Android OK."
+
+
+      # =========================================================
+      # 7. COMPILAR APK
+      # =========================================================
 
       - name: Compilar APK MENTEX
         shell: bash
@@ -217,6 +297,14 @@ jobs:
           echo "======================================"
           echo "COMPILANDO MENTEX"
           echo "======================================"
+
+          echo ""
+          echo "Java:"
+          java -version
+
+          echo ""
+
+          echo "Gradle:"
 
           if [ -f "./gradlew" ]; then
 
@@ -238,6 +326,11 @@ jobs:
 
           fi
 
+
+      # =========================================================
+      # 8. PROCURAR APK GERADO
+      # =========================================================
+
       - name: Encontrar APK
         shell: bash
         run: |
@@ -257,24 +350,50 @@ jobs:
 
           if [ -z "$APK" ]; then
 
-            echo "ERRO: APK não encontrado."
+            echo ""
+            echo "======================================"
+            echo "ERRO: APK NÃO ENCONTRADO"
+            echo "======================================"
+
+            echo ""
+            echo "Arquivos encontrados:"
 
             find "$PROJECT_DIR" \
               -type f \
               | grep -E '\.(apk|aab)$' \
               || true
 
+            echo ""
+            echo "Diretórios de build:"
+
+            find "$PROJECT_DIR" \
+              -type d \
+              -name "build" \
+              -print \
+              || true
+
             exit 1
           fi
 
           echo ""
-          echo "APK ENCONTRADO:"
+          echo "======================================"
+          echo "APK ENCONTRADO"
+          echo "======================================"
+
           echo "$APK"
 
           mkdir -p "$GITHUB_WORKSPACE/apk"
 
           cp "$APK" \
             "$GITHUB_WORKSPACE/apk/MENTEX-V4.9.apk"
+
+          echo ""
+          echo "APK COPIADO COM SUCESSO."
+
+
+      # =========================================================
+      # 9. PUBLICAR APK
+      # =========================================================
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
