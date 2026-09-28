@@ -1,4 +1,4 @@
-name: MENTEX V4.9 - Gerar APK
+name: MENTEX V4.10 - Gerar APK
 
 on:
   workflow_dispatch:
@@ -11,10 +11,13 @@ jobs:
     name: Compilar MENTEX
     runs-on: ubuntu-latest
 
+    env:
+      ANDROID_USER_HOME: ${{ runner.temp }}/android-user-home
+
     steps:
 
       # =========================================================
-      # 1. BAIXAR O REPOSITÓRIO
+      # 1. CHECKOUT
       # =========================================================
 
       - name: Checkout
@@ -22,7 +25,7 @@ jobs:
 
 
       # =========================================================
-      # 2. CONFIGURAR JAVA 17
+      # 2. JAVA 17
       # =========================================================
 
       - name: Configurar Java 17
@@ -33,7 +36,35 @@ jobs:
 
 
       # =========================================================
-      # 3. PREPARAR ANDROID SDK
+      # 3. PREPARAR DIRETÓRIO ANDROID DO USUÁRIO
+      # =========================================================
+
+      - name: Preparar Android User Home
+        shell: bash
+        run: |
+          set -e
+
+          echo "======================================"
+          echo "PREPARANDO ANDROID USER HOME"
+          echo "======================================"
+
+          mkdir -p "$ANDROID_USER_HOME"
+          mkdir -p "$ANDROID_USER_HOME/.android"
+
+          chmod -R u+rwX "$ANDROID_USER_HOME"
+
+          echo "ANDROID_USER_HOME:"
+          echo "$ANDROID_USER_HOME"
+
+          echo "HOME:"
+          echo "$HOME"
+
+          echo ""
+          echo "Diretório gravável preparado."
+
+
+      # =========================================================
+      # 4. ANDROID SDK
       # =========================================================
 
       - name: Preparar Android SDK
@@ -76,14 +107,14 @@ jobs:
 
           echo ""
           echo "======================================"
-          echo "ANDROID PLATFORMS EXISTENTES"
+          echo "PLATFORMS EXISTENTES"
           echo "======================================"
 
           ls -la "$SDK/platforms" 2>/dev/null || true
 
           echo ""
           echo "======================================"
-          echo "ANDROID BUILD TOOLS EXISTENTES"
+          echo "BUILD TOOLS EXISTENTES"
           echo "======================================"
 
           ls -la "$SDK/build-tools" 2>/dev/null || true
@@ -112,7 +143,7 @@ jobs:
 
 
       # =========================================================
-      # 4. LOCALIZAR O ZIP DO MENTEX
+      # 5. LOCALIZAR ZIP DO MENTEX
       # =========================================================
 
       - name: Localizar ZIP do MENTEX
@@ -156,21 +187,12 @@ jobs:
             echo "======================================"
 
             echo ""
-            echo "ZIPs encontrados no repositório:"
+            echo "ZIPs encontrados:"
 
             find "$GITHUB_WORKSPACE" \
               -type f \
               -iname "*.zip" \
               -print
-
-            echo ""
-            echo "Conteúdo do repositório:"
-
-            find "$GITHUB_WORKSPACE" \
-              -maxdepth 3 \
-              -type f \
-              -print \
-              | head -200
 
             exit 1
           fi
@@ -191,7 +213,7 @@ jobs:
 
           echo ""
           echo "======================================"
-          echo "PROCURANDO settings.gradle"
+          echo "PROCURANDO SETTINGS.GRADLE"
           echo "======================================"
 
           SETTINGS=$(find "$GITHUB_WORKSPACE/projeto" \
@@ -207,7 +229,7 @@ jobs:
           if [ -z "$SETTINGS" ]; then
 
             echo ""
-            echo "ERRO: settings.gradle não encontrado dentro do ZIP."
+            echo "ERRO: settings.gradle não encontrado."
 
             echo ""
             echo "Conteúdo extraído:"
@@ -235,7 +257,7 @@ jobs:
 
 
       # =========================================================
-      # 5. CONFIGURAR GRADLE
+      # 6. GRADLE
       # =========================================================
 
       - name: Configurar Gradle
@@ -245,7 +267,7 @@ jobs:
 
 
       # =========================================================
-      # 6. VERIFICAR PROJETO
+      # 7. VERIFICAR PROJETO
       # =========================================================
 
       - name: Verificar projeto
@@ -278,11 +300,41 @@ jobs:
             exit 1
           fi
 
+          echo ""
           echo "Projeto Android OK."
 
 
       # =========================================================
-      # 7. COMPILAR APK
+      # 8. PREPARAR KEYSTORE DEBUG
+      # =========================================================
+
+      - name: Preparar Debug Keystore
+        shell: bash
+        run: |
+          set -e
+
+          echo "======================================"
+          echo "PREPARANDO DEBUG KEYSTORE"
+          echo "======================================"
+
+          mkdir -p "$ANDROID_USER_HOME/.android"
+
+          chmod -R u+rwX "$ANDROID_USER_HOME"
+
+          echo ""
+          echo "ANDROID_USER_HOME:"
+          echo "$ANDROID_USER_HOME"
+
+          echo ""
+          echo "Diretório .android:"
+          ls -la "$ANDROID_USER_HOME/.android"
+
+          echo ""
+          echo "Keystore será criada automaticamente pelo Gradle."
+
+
+      # =========================================================
+      # 9. COMPILAR APK
       # =========================================================
 
       - name: Compilar APK MENTEX
@@ -303,7 +355,10 @@ jobs:
           java -version
 
           echo ""
+          echo "ANDROID_USER_HOME:"
+          echo "$ANDROID_USER_HOME"
 
+          echo ""
           echo "Gradle:"
 
           if [ -f "./gradlew" ]; then
@@ -328,7 +383,7 @@ jobs:
 
 
       # =========================================================
-      # 8. PROCURAR APK GERADO
+      # 10. ENCONTRAR APK
       # =========================================================
 
       - name: Encontrar APK
@@ -355,21 +410,9 @@ jobs:
             echo "ERRO: APK NÃO ENCONTRADO"
             echo "======================================"
 
-            echo ""
-            echo "Arquivos encontrados:"
-
             find "$PROJECT_DIR" \
               -type f \
               | grep -E '\.(apk|aab)$' \
-              || true
-
-            echo ""
-            echo "Diretórios de build:"
-
-            find "$PROJECT_DIR" \
-              -type d \
-              -name "build" \
-              -print \
               || true
 
             exit 1
@@ -385,19 +428,19 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/apk"
 
           cp "$APK" \
-            "$GITHUB_WORKSPACE/apk/MENTEX-V4.9.apk"
+            "$GITHUB_WORKSPACE/apk/MENTEX-V4.10.apk"
 
           echo ""
           echo "APK COPIADO COM SUCESSO."
 
 
       # =========================================================
-      # 9. PUBLICAR APK
+      # 11. PUBLICAR APK
       # =========================================================
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V4.9-APK
-          path: apk/MENTEX-V4.9.apk
+          name: MENTEX-V4.10-APK
+          path: apk/MENTEX-V4.10.apk
           if-no-files-found: error
