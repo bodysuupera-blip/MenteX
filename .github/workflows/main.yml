@@ -16,8 +16,17 @@ jobs:
 
     steps:
 
+      # =========================================================
+      # 1. BAIXAR O PROJETO
+      # =========================================================
+
       - name: Baixar projeto
         uses: actions/checkout@v4
+
+
+      # =========================================================
+      # 2. JAVA 17
+      # =========================================================
 
       - name: Configurar Java 17
         uses: actions/setup-java@v4
@@ -26,13 +35,25 @@ jobs:
           java-version: '17'
           cache: gradle
 
+
+      # =========================================================
+      # 3. PREPARAR ANDROID USER HOME
+      # =========================================================
+
       - name: Preparar Android User Home
         shell: bash
         run: |
           set -e
+
           mkdir -p "$ANDROID_USER_HOME/.android"
-          echo "Android User Home:"
+
+          echo "ANDROID_USER_HOME:"
           echo "$ANDROID_USER_HOME"
+
+
+      # =========================================================
+      # 4. CONFIGURAR ANDROID SDK
+      # =========================================================
 
       - name: Preparar Android SDK
         shell: bash
@@ -41,7 +62,9 @@ jobs:
 
           SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
 
-          echo "Android SDK:"
+          echo "========================================"
+          echo "ANDROID SDK"
+          echo "========================================"
           echo "$SDK"
 
           if [ ! -d "$SDK" ]; then
@@ -52,6 +75,7 @@ jobs:
           echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
 
+          # Procurar sdkmanager
           SDKMANAGER=$(find "$SDK/cmdline-tools" \
             -type f \
             -name sdkmanager \
@@ -62,33 +86,78 @@ jobs:
             exit 1
           fi
 
+          echo ""
           echo "sdkmanager encontrado:"
           echo "$SDKMANAGER"
 
+          echo ""
+          echo "Versão do sdkmanager:"
+          "$SDKMANAGER" --version || true
+
+          # Aceitar licenças
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+
+          # Android Platform 35
           if [ ! -d "$SDK/platforms/android-35" ]; then
+            echo ""
             echo "Instalando Android Platform 35..."
-            sudo "$SDKMANAGER" "platforms;android-35"
+
+            "$SDKMANAGER" \
+              "platforms;android-35"
+          else
+            echo "Android Platform 35 já instalada."
           fi
 
+          # Build Tools 35.0.0
           if [ ! -d "$SDK/build-tools/35.0.0" ]; then
+            echo ""
             echo "Instalando Android Build Tools 35.0.0..."
-            sudo "$SDKMANAGER" "build-tools;35.0.0"
+
+            "$SDKMANAGER" \
+              "build-tools;35.0.0"
+          else
+            echo "Build Tools 35.0.0 já instalado."
           fi
 
+          # Platform Tools
           if [ ! -d "$SDK/platform-tools" ]; then
-            echo "Instalando Android Platform Tools..."
-            sudo "$SDKMANAGER" "platform-tools"
+            echo ""
+            echo "Instalando Platform Tools..."
+
+            "$SDKMANAGER" \
+              "platform-tools"
+          else
+            echo "Platform Tools já instalado."
           fi
 
-          echo "Android SDK pronto."
+          echo ""
+          echo "========================================"
+          echo "ANDROID SDK PRONTO"
+          echo "========================================"
+
+
+      # =========================================================
+      # 5. VERIFICAR PROJETO MENTEX
+      # =========================================================
 
       - name: Verificar estrutura do MENTEX
         shell: bash
         run: |
           set -e
 
-          echo "Verificando arquivos..."
+          echo "========================================"
+          echo "VERIFICANDO PROJETO MENTEX"
+          echo "========================================"
 
+          echo ""
+          echo "Diretório atual:"
+          pwd
+
+          echo ""
+          echo "Arquivos principais:"
+          ls -la
+
+          # Arquivos obrigatórios
           test -f settings.gradle
           test -f build.gradle
           test -f app/build.gradle
@@ -98,7 +167,7 @@ jobs:
 
           echo ""
           echo "========================================"
-          echo "PROJETO MENTEX ENCONTRADO"
+          echo "ESTRUTURA CONFIRMADA"
           echo "========================================"
 
           echo ""
@@ -106,29 +175,110 @@ jobs:
           ls -lh settings.gradle
 
           echo ""
-          echo "app:"
-          ls -la app
+          echo "build.gradle:"
+          ls -lh build.gradle
+
+          echo ""
+          echo "app/build.gradle:"
+          ls -lh app/build.gradle
+
+          echo ""
+          echo "MainActivity:"
+          ls -lh app/src/main/java/com/mentex/app/MainActivity.java
+
+          echo ""
+          echo "index.html:"
+          ls -lh app/src/main/assets/index.html
+
+          echo ""
+          echo "AndroidManifest:"
+          ls -lh app/src/main/AndroidManifest.xml
+
+
+      # =========================================================
+      # 6. CONFIGURAR GRADLE 8.7
+      # =========================================================
 
       - name: Configurar Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
-      - name: Verificar Java e Gradle
+
+      # =========================================================
+      # 7. VERIFICAR JAVA / GRADLE / ANDROID
+      # =========================================================
+
+      - name: Verificar ambiente
         shell: bash
         run: |
+          set -e
+
           echo "========================================"
           echo "JAVA"
           echo "========================================"
+
           java -version
 
           echo ""
           echo "========================================"
           echo "GRADLE"
           echo "========================================"
+
           gradle --version
 
-      - name: Compilar APK MENTEX
+          echo ""
+          echo "========================================"
+          echo "ANDROID HOME"
+          echo "========================================"
+
+          echo "$ANDROID_HOME"
+
+          echo ""
+          echo "========================================"
+          echo "ANDROID SDK"
+          echo "========================================"
+
+          ls -la "$ANDROID_HOME"
+
+          echo ""
+          echo "========================================"
+          echo "PLATFORM 35"
+          echo "========================================"
+
+          ls -la "$ANDROID_HOME/platforms/android-35"
+
+          echo ""
+          echo "========================================"
+          echo "BUILD TOOLS"
+          echo "========================================"
+
+          ls -la "$ANDROID_HOME/build-tools/35.0.0"
+
+
+      # =========================================================
+      # 8. LIMPAR PROJETO
+      # =========================================================
+
+      - name: Limpar projeto
+        shell: bash
+        run: |
+          set -e
+
+          echo "========================================"
+          echo "LIMPANDO PROJETO"
+          echo "========================================"
+
+          gradle clean \
+            --no-daemon \
+            --stacktrace
+
+
+      # =========================================================
+      # 9. COMPILAR APK
+      # =========================================================
+
+      - name: Compilar APK MENTEX V4.10
         shell: bash
         run: |
           set -e
@@ -137,9 +287,19 @@ jobs:
           echo "COMPILANDO MENTEX V4.10"
           echo "========================================"
 
-          gradle clean assembleDebug \
+          gradle assembleDebug \
             --no-daemon \
             --stacktrace
+
+          echo ""
+          echo "========================================"
+          echo "COMPILAÇÃO FINALIZADA"
+          echo "========================================"
+
+
+      # =========================================================
+      # 10. PROCURAR APK
+      # =========================================================
 
       - name: Verificar APK gerado
         shell: bash
@@ -150,7 +310,17 @@ jobs:
           echo "PROCURANDO APK"
           echo "========================================"
 
-          APK=$(find app/build/outputs/apk/debug \
+          if [ ! -d "app/build/outputs" ]; then
+            echo "ERRO: pasta app/build/outputs não existe."
+
+            echo ""
+            echo "Estrutura encontrada:"
+            find app -maxdepth 6 -type f -print || true
+
+            exit 1
+          fi
+
+          APK=$(find app/build/outputs \
             -type f \
             -name "*.apk" \
             -print -quit)
@@ -158,23 +328,57 @@ jobs:
           if [ -z "$APK" ]; then
             echo ""
             echo "ERRO: APK não foi gerado."
+
             echo ""
             echo "Arquivos encontrados:"
-            find app/build/outputs -type f -print 2>/dev/null || true
+            find app/build/outputs \
+              -type f \
+              -print 2>/dev/null || true
+
             exit 1
           fi
 
           echo ""
-          echo "APK encontrado:"
+          echo "========================================"
+          echo "APK ENCONTRADO"
+          echo "========================================"
+
           echo "$APK"
+
+          echo ""
+          echo "Tamanho:"
+          ls -lh "$APK"
+
+
+      # =========================================================
+      # 11. PREPARAR APK
+      # =========================================================
+
+      - name: Preparar APK final
+        shell: bash
+        run: |
+          set -e
 
           mkdir -p apk
 
-          cp "$APK" apk/MENTEX-V4.10.apk
+          APK=$(find app/build/outputs \
+            -type f \
+            -name "*.apk" \
+            -print -quit)
 
-          echo ""
-          echo "APK preparado:"
+          cp "$APK" \
+            "apk/MENTEX-V4.10.apk"
+
+          echo "========================================"
+          echo "APK FINAL"
+          echo "========================================"
+
           ls -lh apk/MENTEX-V4.10.apk
+
+
+      # =========================================================
+      # 12. PUBLICAR APK
+      # =========================================================
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
@@ -182,3 +386,4 @@ jobs:
           name: MENTEX-V4.10-APK
           path: apk/MENTEX-V4.10.apk
           if-no-files-found: error
+          retention-days: 30
