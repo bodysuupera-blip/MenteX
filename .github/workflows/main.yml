@@ -21,23 +21,28 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Instalar ferramentas
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update
+          sudo apt-get install -y unzip
+
       - name: Preparar projeto Android
         shell: bash
         run: |
           set -Eeuo pipefail
-
-          sudo apt-get update
-          sudo apt-get install -y unzip
 
           mkdir -p /tmp/mentex-zips
           shopt -s globstar nullglob
 
           for zip in ./**/*.zip ./*.zip; do
             [ -f "$zip" ] || continue
-            echo "Verificando ZIP: $zip"
 
+            echo "Verificando ZIP: $zip"
             destino="/tmp/mentex-zips/$(basename "${zip%.zip}")"
             mkdir -p "$destino"
+
             unzip -oq "$zip" -d "$destino" || {
               echo "::warning::Falha ao extrair $zip"
             }
@@ -63,6 +68,7 @@ jobs:
           if [ -z "$PROJETO" ]; then
             echo "::error::Projeto Android não encontrado."
             echo "Arquivos Gradle encontrados:"
+
             find "$GITHUB_WORKSPACE" /tmp/mentex-zips \
               -type f \
               \( -name build.gradle -o \
@@ -70,14 +76,20 @@ jobs:
                  -name settings.gradle -o \
                  -name settings.gradle.kts \) \
               -print
+
             exit 1
           fi
 
           echo "Projeto encontrado: $PROJETO"
           echo "PROJECT_DIR=$PROJETO" >> "$GITHUB_ENV"
 
+          echo "Arquivos da pasta do projeto:"
+          ls -la "$PROJETO"
+
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
 
       - name: Compilar APK
         shell: bash
@@ -89,9 +101,10 @@ jobs:
             chmod +x gradlew
             ./gradlew --no-daemon assembleDebug
           else
-            echo "::error::O projeto não contém gradlew."
-            echo "Não é seguro escolher uma versão do Gradle sem verificar o Android Gradle Plugin."
-            exit 1
+            echo "Arquivo gradlew ausente."
+            echo "Tentando compilar com Gradle 8.7."
+            gradle --version
+            gradle --no-daemon assembleDebug
           fi
 
       - name: Verificar APK gerado
@@ -113,6 +126,7 @@ jobs:
             exit 1
           fi
 
+          echo "APK gerado com sucesso:"
           ls -lh "$GITHUB_WORKSPACE/apk-gerado"
 
       - name: Disponibilizar APK para download
