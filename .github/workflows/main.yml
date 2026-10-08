@@ -21,82 +21,115 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Extrair e localizar projeto
+      - name: Extrair arquivos ZIP
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
           mkdir -p /tmp/mentex
 
-          while IFS= read -r ZIP; do
+          while IFS= read -r -d '' ZIP; do
             DEST="/tmp/mentex/$(basename "$ZIP" .zip)"
             mkdir -p "$DEST"
 
-            echo "Analisando $ZIP"
-            unzip -oq "$ZIP" -d "$DEST" || continue
+            echo "Extraindo: $ZIP"
+            unzip -oq "$ZIP" -d "$DEST"
+          done < <(
+            find . -maxdepth 3 -type f \
+              -name '*.zip' \
+              -not -path './.git/*' \
+              -print0
+          )
 
-          done < <(find . -maxdepth 2 -type f \
-            -name '*.zip' -not -path './.git/*' | sort)
+      - name: Localizar projeto Android
+        shell: bash
+        run: |
+          set -euo pipefail
 
           FOUND=""
 
-          while IFS= read -r SETTINGS; do
-            ROOT=$(dirname "$SETTINGS")
+          while IFS= read -r -d '' SETTINGS; do
+            ROOT="$(dirname "$SETTINGS")"
 
-            if [ -f "$ROOT/app/build.gradle" ] || \
-               [ -f "$ROOT/app/build.gradle.kts" ]; then
+            if [[ -f "$ROOT/app/build.gradle" ||
+                  -f "$ROOT/app/build.gradle.kts" ]]; then
               FOUND="$ROOT"
               break
             fi
-          done < <(find /tmp/mentex . -type f \
-            \( -name settings.gradle -o -name settings.gradle.kts \) \
-            -not -path '*/.git/*' \
-            -not -path '*/build/*' 2>/dev/null)
+          done < <(
+            find "$GITHUB_WORKSPACE" /tmp/mentex \
+              -type f \
+              \( -name settings.gradle \
+                 -o -name settings.gradle.kts \) \
+              -not -path '*/.git/*' \
+              -not -path '*/build/*' \
+              -print0 2>/dev/null
+          )
 
-          if [ -z "$FOUND" ]; then
-            echo "ERRO: projeto com módulo app não encontrado."
-            find /tmp/mentex . -type f \
-              \( -name settings.gradle -o -name build.gradle \
-              -o -name build.gradle.kts \) 2>/dev/null | head -200
+          if [[ -z "$FOUND" ]]; then
+            echo "::error::Projeto Android não encontrado."
+            echo "O ZIP precisa conter settings.gradle"
+            echo "e app/build.gradle ou app/build.gradle.kts."
+            echo ""
+            echo "Arquivos Gradle encontrados:"
+            find "$GITHUB_WORKSPACE" /tmp/mentex \
+              -type f \
+              \( -name settings.gradle \
+                 -o -name settings.gradle.kts \
+                 -o -name build.gradle \
+                 -o -name build.gradle.kts \) \
+              -not -path '*/.git/*' \
+              -print 2>/dev/null || true
             exit 1
           fi
 
           echo "Projeto encontrado: $FOUND"
           echo "PROJECT_DIR=$FOUND" >> "$GITHUB_ENV"
 
-      - name: Instalar Gradle para criar wrapper
+      - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Preparar Gradle
+      - name: Preparar Gradle Wrapper
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
+          cd "$PROJECT_DIR"
 
-          if [ ! -f "$PROJECT_DIR/gradlew" ]; then
-            echo "Wrapper ausente. Preparando Gradle 8.7..."
-
-            cd /tmp
-            wget -q https://services.gradle.org/distributions/gradle-8.7-bin.zip
-            unzip -oq gradle-8.7-bin.zip
-
-            cd "$PROJECT_DIR"
-            /tmp/gradle-8.7/bin/gradle wrapper \
-              --gradle-version 8.7
+          if [[ ! -f gradlew ]]; then
+            gradle wrapper --gradle-version 8.7
           fi
 
-          chmod +x "$PROJECT_DIR/gradlew"
+          chmod +x gradlew
 
       - name: Compilar APK
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
           cd "$PROJECT_DIR"
+
           ./gradlew assembleDebug --no-daemon
+
+      - name: Verificar APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APK="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
+
+          if [[ ! -f "$APK" ]]; then
+            echo "::error::APK não encontrado em $APK"
+            find "$PROJECT_DIR" -type f \
+              -name '*.apk' -print
+            exit 1
+          fi
+
+          mkdir -p "$GITHUB_WORKSPACE/apk-final"
+          cp "$APK" "$GITHUB_WORKSPACE/apk-final/MENTEX.apk"
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-APK
-          path: /tmp/mentex/**/build/outputs/apk/debug/*.apk
+          path: apk-final/MENTEX.apk
           if-no-files-found: error
           retention-days: 7
