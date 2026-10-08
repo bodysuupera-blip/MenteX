@@ -25,181 +25,74 @@ jobs:
         run: |
           set -Eeuo pipefail
           sudo apt-get update
-          sudo apt-get install -y unzip zip curl
+          sudo apt-get install -y unzip findutils
 
-      - name: Extrair ZIPs e localizar projeto
+      - name: Extrair ZIP e localizar projeto Android
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          ROOT="$GITHUB_WORKSPACE"
-          EXTRACT="/tmp/mentex-extracted"
-          mkdir -p "$EXTRACT"
+          mkdir -p /tmp/mentex-extraido
 
-          echo "Procurando projetos Android no repositório..."
-
-          # Extrai os ZIPs que podem conter o código-fonte.
-          while IFS= read -r -d '' z; do
-            echo "Verificando ZIP: $z"
-
-            if unzip -Z1 "$z" 2>/dev/null |
-              grep -Eq '(^|/)app/build\.gradle(\.kts)?$'; then
-              dest="$EXTRACT/$(basename "$z" .zip)"
-              mkdir -p "$dest"
-              unzip -oq "$z" -d "$dest"
-            else
-              echo "ZIP sem app/build.gradle: $z"
-            fi
-          done < <(
-            find "$ROOT" -type f -name '*.zip' \
-              -not -path '*/.git/*' -print0
-          )
-
-          # Procura tanto nos arquivos originais quanto nos ZIPs extraídos.
-          PROJECT=""
-
-          for base in "$ROOT" "$EXTRACT"; do
-            while IFS= read -r -d '' gradlefile; do
-              dir="$(dirname "$gradlefile")"
-
-              if [[ -f "$dir/app/build.gradle" ||
-                    -f "$dir/app/build.gradle.kts" ]]; then
-                PROJECT="$dir"
-                break
-              fi
-            done < <(
-              find "$base" -type f \
-                \( -name settings.gradle \
-                -o -name settings.gradle.kts \) \
-                -not -path '*/.git/*' -print0
-            )
-
-            [[ -n "$PROJECT" ]] && break
+          find "$GITHUB_WORKSPACE" \
+            -maxdepth 3 -type f -iname '*.zip' \
+            ! -path '*/.git/*' \
+            -print0 |
+          while IFS= read -r -d '' arquivo; do
+            echo "Extraindo: $arquivo"
+            destino="/tmp/mentex-extraido/$(basename "$arquivo" .zip)"
+            mkdir -p "$destino"
+            unzip -oq "$arquivo" -d "$destino" || true
           done
 
-          # Alguns projetos não têm settings.gradle, mas têm o módulo app.
-          if [[ -z "$PROJECT" ]]; then
-            for base in "$ROOT" "$EXTRACT"; do
-              while IFS= read -r -d '' appfile; do
-                dir="$(dirname "$(dirname "$appfile")")"
+          ROOT="$GITHUB_WORKSPACE"
 
-                if [[ -f "$dir/build.gradle" ||
-                      -f "$dir/build.gradle.kts" ]]; then
-                  PROJECT="$dir"
-                  break
-                fi
-              done < <(
-                find "$base" -type f \
-                  \( -path '*/app/build.gradle' \
-                  -o -path '*/app/build.gradle.kts' \) \
-                  -not -path '*/.git/*' -print0
-              )
+          GRADLEW="$(find "$ROOT" /tmp/mentex-extraido \
+            -type f -name gradlew -print -quit 2>/dev/null || true)"
 
-              [[ -n "$PROJECT" ]] && break
-            done
-          fi
+          if [ -n "$GRADLEW" ]; then
+            PROJETO="$(dirname "$GRADLEW")"
+          else
+            BUILD_FILE="$(find "$ROOT" /tmp/mentex-extraido \
+              -type f -path '*/app/build.gradle' \
+              -print -quit 2>/dev/null || true)"
 
-          if [[ -z "$PROJECT" ]]; then
-            echo "::error::Nenhum projeto Android foi encontrado."
-            echo "Arquivos Gradle disponíveis:"
-            find "$ROOT" "$EXTRACT" -type f \
-              \( -name build.gradle \
-              -o -name build.gradle.kts \
-              -o -name settings.gradle \
-              -o -name settings.gradle.kts \) \
-              2>/dev/null | head -100 || true
-            echo "Verifique se o ZIP contém o código-fonte Android."
-            exit 1
-          fi
-
-          echo "Projeto localizado em: $PROJECT"
-          echo "PROJECT_DIR=$PROJECT" >> "$GITHUB_ENV"
-
-      - name: Preparar Gradle
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          cd "$PROJECT_DIR"
-
-          if [[ -f gradlew ]]; then
-            chmod +x gradlew
-            echo "GRADLE_CMD=./gradlew" >> "$GITHUB_ENV"
-            exit 0
-          fi
-
-          echo "Wrapper ausente. Identificando o Android Gradle Plugin..."
-
-          VERSION="$(
-            grep -RhoE \
-              'com\.android\.(application|library).*version[ ="]+[0-9]+\.[0-9]+(\.[0-9]+)?' \
-              . \
-              --include='*.gradle' \
-              --include='*.gradle.kts' \
-              --exclude-dir=.gradle 2>/dev/null |
-            grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' |
-            head -1 || true
-          )"
-
-          if [[ -z "$VERSION" ]]; then
-            VERSION="$(
-              grep -RhoE \
-                'com\.android\.(application|library):[0-9]+\.[0-9]+(\.[0-9]+)?' \
-                . \
-                --include='*.gradle' \
-                --include='*.gradle.kts' \
-                --exclude-dir=.gradle 2>/dev/null |
-              grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' |
-              head -1 || true
-            )"
-          fi
-
-          if [[ -z "$VERSION" ]]; then
-            echo "::error::Não foi possível identificar a versão do Android Gradle Plugin."
-            echo "É necessário restaurar o Gradle Wrapper original."
-            exit 1
-          fi
-
-          case "$VERSION" in
-            8.0*) GV="8.0.2" ;;
-            8.1*) GV="8.0.2" ;;
-            8.2*) GV="8.2" ;;
-            8.3*) GV="8.4" ;;
-            8.4*) GV="8.6" ;;
-            8.5*) GV="8.7" ;;
-            8.6*) GV="8.7" ;;
-            8.7*) GV="8.9" ;;
-            8.8*) GV="8.10.2" ;;
-            8.9*) GV="8.11.1" ;;
-            7.0*) GV="7.0.2" ;;
-            7.1*) GV="7.2.2" ;;
-            7.2*) GV="7.3.3" ;;
-            7.3*) GV="7.4.2" ;;
-            7.4*) GV="7.5.1" ;;
-            *)
-              echo "::error::Versão AGP $VERSION não mapeada com segurança."
+            if [ -z "$BUILD_FILE" ]; then
+              echo "ERRO: não foi encontrado o código-fonte Android."
+              echo "O ZIP pode conter somente o APK."
+              echo "Arquivos Gradle encontrados:"
+              find "$ROOT" /tmp/mentex-extraido \
+                -type f \( -name build.gradle \
+                -o -name build.gradle.kts \
+                -o -name settings.gradle \
+                -o -name settings.gradle.kts \) \
+                -print 2>/dev/null || true
               exit 1
-              ;;
-          esac
+            fi
 
-          echo "AGP encontrado: $VERSION"
-          echo "Gradle escolhido: $GV"
+            PROJETO="$(dirname "$(dirname "$BUILD_FILE")")"
+          fi
 
-          curl -fL \
-            "https://services.gradle.org/distributions/gradle-${GV}-bin.zip" \
-            -o /tmp/gradle.zip
+          echo "Projeto localizado: $PROJETO"
+          echo "PROJETO_ANDROID=$PROJETO" >> "$GITHUB_ENV"
 
-          sudo mkdir -p /opt/gradle
-          sudo unzip -oq /tmp/gradle.zip -d /opt/gradle
-
-          echo "/opt/gradle/gradle-${GV}/bin" >> "$GITHUB_PATH"
-          echo "GRADLE_CMD=gradle" >> "$GITHUB_ENV"
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
 
       - name: Compilar APK
         shell: bash
         run: |
           set -Eeuo pipefail
-          cd "$PROJECT_DIR"
-          "$GRADLE_CMD" --no-daemon assembleDebug
+          cd "$PROJETO_ANDROID"
+
+          if [ -f ./gradlew ]; then
+            chmod +x ./gradlew
+            ./gradlew --no-daemon assembleDebug
+          else
+            gradle --no-daemon assembleDebug
+          fi
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
@@ -208,4 +101,3 @@ jobs:
           path: |
             **/build/outputs/apk/debug/*.apk
           if-no-files-found: error
-          retention-days: 14
