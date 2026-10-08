@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   build:
-    name: Compilar MENTEX
+    name: Compilar MENTEX V4.6
     runs-on: ubuntu-22.04
 
     steps:
@@ -22,36 +22,28 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Configurar Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
       - name: Verificar projeto
         run: |
-          echo "Diretório atual:"
-          pwd
-          echo "Arquivos:"
-          find . -maxdepth 3 -type f | sort | head -200
+          echo "Arquivos do projeto:"
+          find . -maxdepth 4 -type f | sort
 
-      - name: Encontrar Gradle
+      - name: Compilar APK
         run: |
-          if [ -f "./gradlew" ]; then
-            chmod +x ./gradlew
-            echo "GRADLE_CMD=./gradlew" >> "$GITHUB_ENV"
-          elif [ -f "./app/gradlew" ]; then
-            chmod +x ./app/gradlew
-            echo "GRADLE_CMD=./app/gradlew" >> "$GITHUB_ENV"
-          else
-            echo "ERRO: gradlew não encontrado."
-            exit 1
-          fi
+          cd mentex
+          gradle clean assembleDebug --stacktrace
 
-      - name: Limpar projeto
-        run: $GRADLE_CMD clean
-
-      - name: Gerar APK
-        run: $GRADLE_CMD assembleDebug --stacktrace
+      - name: Procurar APK
+        run: |
+          find mentex -type f -name "*.apk" -print
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-V4.6-APK
-          path: |
-            **/build/outputs/apk/debug/*.apk
+          path: mentex/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
