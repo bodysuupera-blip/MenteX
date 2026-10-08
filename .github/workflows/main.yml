@@ -1,4 +1,4 @@
-name: MENTEX V4.6.2 - Gerar APK
+name: MENTEX V4.6.3 - Gerar APK
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   build:
-    name: Compilar MENTEX V4.6.2
+    name: Compilar MENTEX V4.6.3
     runs-on: ubuntu-22.04
 
     steps:
@@ -37,7 +37,7 @@ jobs:
           gradle-version: '8.7'
 
       # ============================================================
-      # 4. PROCURAR ZIP DO MENTEX V4.6.2
+      # 4. PROCURAR ZIP DO MENTEX
       # ============================================================
       - name: Procurar ZIP do MENTEX
         shell: bash
@@ -45,20 +45,17 @@ jobs:
           set -e
 
           echo "=========================================="
-          echo " PROCURANDO ZIP DO MENTEX V4.6.2"
+          echo " PROCURANDO ZIP DO MENTEX V4.6.3"
           echo "=========================================="
 
-          ZIP="MENTEX-V4.6.2-PERGUNTAS-CEREBRO-TAMANHO-CERTO.zip"
+          ZIP="MENTEX-V4.6.3-CONTROLES-MAIORES.zip"
 
           if [ ! -f "$ZIP" ]; then
             echo ""
             echo "ERRO: arquivo não encontrado:"
             echo "$ZIP"
             echo ""
-            echo "Arquivos disponíveis na raiz:"
-            find . -maxdepth 1 -type f -printf '%f\n' | sort
-            echo ""
-            echo "Arquivos ZIP encontrados:"
+            echo "ZIPs encontrados:"
             find . -type f -name "*.zip" -print
             exit 1
           fi
@@ -83,14 +80,14 @@ jobs:
           mkdir -p android-project
 
           unzip -q \
-            "MENTEX-V4.6.2-PERGUNTAS-CEREBRO-TAMANHO-CERTO.zip" \
+            "MENTEX-V4.6.3-CONTROLES-MAIORES.zip" \
             -d android-project
 
           echo ""
           echo "Projeto extraído."
 
           echo ""
-          echo "Primeiros arquivos encontrados:"
+          echo "Estrutura encontrada:"
           find android-project \
             -maxdepth 5 \
             -type f \
@@ -121,18 +118,6 @@ jobs:
           if [ -z "$SETTINGS" ]; then
             echo ""
             echo "ERRO: settings.gradle não encontrado."
-            echo ""
-            echo "Arquivos Gradle encontrados:"
-
-            find android-project \
-              -type f \
-              \( \
-                -name "*.gradle" \
-                -o \
-                -name "*.gradle.kts" \
-              \) \
-              -print
-
             exit 1
           fi
 
@@ -146,14 +131,6 @@ jobs:
           if [ ! -d "$PROJECT_DIR/app" ]; then
             echo ""
             echo "ERRO: pasta app não encontrada."
-            echo ""
-            echo "Pastas disponíveis:"
-
-            find "$PROJECT_DIR" \
-              -maxdepth 2 \
-              -type d \
-              | sort
-
             exit 1
           fi
 
@@ -170,35 +147,35 @@ jobs:
         run: |
           set -e
 
+          cd "$PROJECT_DIR"
+
           echo "=========================================="
           echo " VERIFICANDO PROJETO"
           echo "=========================================="
-
-          cd "$PROJECT_DIR"
 
           echo ""
           echo "Diretório:"
           pwd
 
           echo ""
-          echo "Arquivos principais:"
+          echo "Arquivos:"
           ls -la
 
           echo ""
-          echo "Módulo APP:"
+          echo "Pasta APP:"
           ls -la app
 
           echo ""
-          echo "Arquivos Gradle:"
-          find . \
-            -maxdepth 3 \
-            -type f \
-            \( \
-              -name "*.gradle" \
-              -o \
-              -name "*.gradle.kts" \
-            \) \
-            -print
+          echo "Build Gradle:"
+          cat build.gradle
+
+          echo ""
+          echo "Build do APP:"
+          cat app/build.gradle
+
+          echo ""
+          echo "Settings:"
+          cat settings.gradle
 
       # ============================================================
       # 8. VERIFICAR JAVA E GRADLE
@@ -206,6 +183,8 @@ jobs:
       - name: Verificar Java e Gradle
         shell: bash
         run: |
+          set -e
+
           echo "=========================================="
           echo " JAVA"
           echo "=========================================="
@@ -238,7 +217,7 @@ jobs:
             --stacktrace
 
       # ============================================================
-      # 10. COMPILAR APK
+      # 10. COMPILAR APK DEBUG
       # ============================================================
       - name: Compilar APK Debug
         shell: bash
@@ -248,7 +227,7 @@ jobs:
           cd "$PROJECT_DIR"
 
           echo "=========================================="
-          echo " COMPILANDO MENTEX V4.6.2"
+          echo " COMPILANDO MENTEX V4.6.3"
           echo "=========================================="
 
           gradle assembleDebug \
@@ -283,6 +262,7 @@ jobs:
           if [ -z "$APK" ]; then
             echo ""
             echo "ERRO: APK não foi encontrado."
+
             echo ""
             echo "Conteúdo de build/outputs:"
 
@@ -303,7 +283,7 @@ jobs:
 
           # Copiar APK
           cp "$APK" \
-            "$GITHUB_WORKSPACE/apk-final/MENTEX-V4.6.2.apk"
+            "$GITHUB_WORKSPACE/apk-final/MENTEX-V4.6.3.apk"
 
           echo ""
           echo "=========================================="
@@ -311,15 +291,15 @@ jobs:
           echo "=========================================="
 
           ls -lh \
-            "$GITHUB_WORKSPACE/apk-final/MENTEX-V4.6.2.apk"
+            "$GITHUB_WORKSPACE/apk-final/MENTEX-V4.6.3.apk"
 
       # ============================================================
-      # 12. PUBLICAR APK
+      # 12. PUBLICAR APK COMO ARTIFACT
       # ============================================================
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V4.6.2-APK
-          path: apk-final/MENTEX-V4.6.2.apk
+          name: MENTEX-V4.6.3-APK
+          path: apk-final/MENTEX-V4.6.3.apk
           if-no-files-found: error
           retention-days: 7
