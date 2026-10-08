@@ -16,49 +16,83 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Localizar projeto Android
+      - name: Encontrar projeto Android
         shell: bash
         run: |
           set -e
 
-          if [ -f "settings.gradle" ] || [ -f "settings.gradle.kts" ]; then
-            PROJECT_DIR="."
-          elif [ -f "mentex/settings.gradle" ] || [ -f "mentex/settings.gradle.kts" ]; then
-            PROJECT_DIR="mentex"
-          elif [ -f "mentex-extra/mentex/settings.gradle" ] || [ -f "mentex-extra/mentex/settings.gradle.kts" ]; then
-            PROJECT_DIR="mentex-extra/mentex"
-          else
+          echo "Procurando arquivos Gradle..."
+
+          find . -type f \
+            \( -name settings.gradle -o -name settings.gradle.kts \) \
+            -not -path '*/.gradle/*' \
+            -not -path '*/build/*' \
+            -print
+
+          SETTINGS=$(find . -type f \
+            \( -name settings.gradle -o -name settings.gradle.kts \) \
+            -not -path '*/.gradle/*' \
+            -not -path '*/build/*' \
+            -print -quit)
+
+          if [ -z "$SETTINGS" ]; then
             echo "ERRO: projeto Android não encontrado."
-            find . -maxdepth 5 \( -name settings.gradle -o -name settings.gradle.kts \)
+            echo "Arquivos encontrados:"
+            find . -maxdepth 6 -type f | head -200
             exit 1
           fi
+
+          PROJECT_DIR=$(dirname "$SETTINGS")
+
+          echo "Projeto localizado: $PROJECT_DIR"
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Projeto localizado em: $PROJECT_DIR"
 
-      - name: Configurar Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Gerar APK
+      - name: Preparar Gradle Wrapper
         shell: bash
         run: |
           set -e
-          cd "$PROJECT_DIR"
 
-          if [ -f "gradlew" ]; then
-            chmod +x gradlew
-            ./gradlew assembleDebug
+          PROJECT_DIR="$PROJECT_DIR"
+
+          if [ -f "$PROJECT_DIR/gradlew" ]; then
+            chmod +x "$PROJECT_DIR/gradlew"
+            echo "Gradle Wrapper encontrado."
           else
-            echo "ERRO: arquivo gradlew não encontrado."
-            exit 1
+            WRAPPER=$(find "$PROJECT_DIR" -type f -name gradlew \
+              -not -path '*/build/*' -print -quit)
+
+            if [ -n "$WRAPPER" ]; then
+              PROJECT_DIR=$(dirname "$WRAPPER")
+              echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+              chmod +x "$WRAPPER"
+              echo "Gradle Wrapper encontrado em $PROJECT_DIR"
+            else
+              echo "ERRO: arquivo gradlew não encontrado."
+              echo "Arquivos Gradle disponíveis:"
+              find . -type f \
+                \( -name gradlew -o -name gradle-wrapper.properties \)
+              exit 1
+            fi
           fi
 
-      - name: Disponibilizar APK
+      - name: Compilar APK
+        shell: bash
+        run: |
+          set -e
+
+          cd "$PROJECT_DIR"
+
+          echo "Compilando em: $(pwd)"
+
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-V4.6.3-APK
