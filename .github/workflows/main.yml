@@ -1,4 +1,4 @@
-name: MENTEX V4.6.1 - Gerar APK
+name: MENTEX V4.6.2 - Gerar APK
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   build:
-    name: Compilar MENTEX V4.6.1
+    name: Compilar MENTEX V4.6.2
     runs-on: ubuntu-22.04
 
     steps:
@@ -20,7 +20,7 @@ jobs:
         uses: actions/checkout@v4
 
       # ============================================================
-      # 2. JAVA 17
+      # 2. CONFIGURAR JAVA 17
       # ============================================================
       - name: Configurar Java 17
         uses: actions/setup-java@v5
@@ -29,7 +29,7 @@ jobs:
           java-version: '17'
 
       # ============================================================
-      # 3. GRADLE 8.7
+      # 3. CONFIGURAR GRADLE 8.7
       # ============================================================
       - name: Configurar Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
@@ -37,7 +37,7 @@ jobs:
           gradle-version: '8.7'
 
       # ============================================================
-      # 4. PROCURAR ZIP
+      # 4. PROCURAR ZIP DO MENTEX V4.6.2
       # ============================================================
       - name: Procurar ZIP do MENTEX
         shell: bash
@@ -45,12 +45,13 @@ jobs:
           set -e
 
           echo "=========================================="
-          echo " PROCURANDO ZIP DO MENTEX"
+          echo " PROCURANDO ZIP DO MENTEX V4.6.2"
           echo "=========================================="
 
-          ZIP="MENTEX-V4.6.1-ICONE-REDONDO-PERGUNTAS-SEM-ROLAGEM.zip"
+          ZIP="MENTEX-V4.6.2-PERGUNTAS-CEREBRO-TAMANHO-CERTO.zip"
 
           if [ ! -f "$ZIP" ]; then
+            echo ""
             echo "ERRO: arquivo não encontrado:"
             echo "$ZIP"
             echo ""
@@ -62,11 +63,12 @@ jobs:
             exit 1
           fi
 
+          echo ""
           echo "ZIP encontrado:"
           ls -lh "$ZIP"
 
       # ============================================================
-      # 5. EXTRAIR ZIP
+      # 5. EXTRAIR PROJETO
       # ============================================================
       - name: Extrair projeto Android
         shell: bash
@@ -74,22 +76,29 @@ jobs:
           set -e
 
           echo "=========================================="
-          echo " EXTRAINDO PROJETO"
+          echo " EXTRAINDO PROJETO ANDROID"
           echo "=========================================="
 
           rm -rf android-project
           mkdir -p android-project
 
           unzip -q \
-            "MENTEX-V4.6.1-ICONE-REDONDO-PERGUNTAS-SEM-ROLAGEM.zip" \
+            "MENTEX-V4.6.2-PERGUNTAS-CEREBRO-TAMANHO-CERTO.zip" \
             -d android-project
 
           echo ""
-          echo "Conteúdo extraído:"
-          find android-project -maxdepth 4 -type f | sort | head -300
+          echo "Projeto extraído."
+
+          echo ""
+          echo "Primeiros arquivos encontrados:"
+          find android-project \
+            -maxdepth 5 \
+            -type f \
+            | sort \
+            | head -300
 
       # ============================================================
-      # 6. LOCALIZAR settings.gradle
+      # 6. LOCALIZAR PROJETO ANDROID
       # ============================================================
       - name: Localizar projeto Android
         shell: bash
@@ -114,6 +123,7 @@ jobs:
             echo "ERRO: settings.gradle não encontrado."
             echo ""
             echo "Arquivos Gradle encontrados:"
+
             find android-project \
               -type f \
               \( \
@@ -130,15 +140,20 @@ jobs:
           PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
 
           echo ""
-          echo "Projeto Android encontrado em:"
+          echo "Projeto encontrado:"
           echo "$PROJECT_DIR"
 
           if [ ! -d "$PROJECT_DIR/app" ]; then
             echo ""
             echo "ERRO: pasta app não encontrada."
             echo ""
-            echo "Conteúdo do projeto:"
-            find "$PROJECT_DIR" -maxdepth 2 -type d | sort
+            echo "Pastas disponíveis:"
+
+            find "$PROJECT_DIR" \
+              -maxdepth 2 \
+              -type d \
+              | sort
+
             exit 1
           fi
 
@@ -223,7 +238,7 @@ jobs:
             --stacktrace
 
       # ============================================================
-      # 10. COMPILAR APK DEBUG
+      # 10. COMPILAR APK
       # ============================================================
       - name: Compilar APK Debug
         shell: bash
@@ -233,7 +248,7 @@ jobs:
           cd "$PROJECT_DIR"
 
           echo "=========================================="
-          echo " COMPILANDO MENTEX V4.6.1"
+          echo " COMPILANDO MENTEX V4.6.2"
           echo "=========================================="
 
           gradle assembleDebug \
@@ -266,7 +281,6 @@ jobs:
             -print -quit)
 
           if [ -z "$APK" ]; then
-
             echo ""
             echo "ERRO: APK não foi encontrado."
             echo ""
@@ -284,14 +298,12 @@ jobs:
           echo "APK encontrado:"
           echo "$APK"
 
-          # ========================================================
-          # CRIAR PASTA FINAL
-          # ========================================================
-
+          # Criar pasta final
           mkdir -p "$GITHUB_WORKSPACE/apk-final"
 
+          # Copiar APK
           cp "$APK" \
-            "$GITHUB_WORKSPACE/apk-final/MENTEX-V4.6.1.apk"
+            "$GITHUB_WORKSPACE/apk-final/MENTEX-V4.6.2.apk"
 
           echo ""
           echo "=========================================="
@@ -299,15 +311,15 @@ jobs:
           echo "=========================================="
 
           ls -lh \
-            "$GITHUB_WORKSPACE/apk-final/MENTEX-V4.6.1.apk"
+            "$GITHUB_WORKSPACE/apk-final/MENTEX-V4.6.2.apk"
 
       # ============================================================
-      # 12. PUBLICAR APK COMO ARTEFATO
+      # 12. PUBLICAR APK
       # ============================================================
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V4.6.1-APK
-          path: apk-final/MENTEX-V4.6.1.apk
+          name: MENTEX-V4.6.2-APK
+          path: apk-final/MENTEX-V4.6.2.apk
           if-no-files-found: error
           retention-days: 7
