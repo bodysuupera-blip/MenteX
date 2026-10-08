@@ -22,117 +22,82 @@ jobs:
           java-version: '17'
 
       - name: Instalar ferramentas
-        shell: bash
         run: |
           set -Eeuo pipefail
           sudo apt-get update
-          sudo apt-get install -y unzip
+          sudo apt-get install -y unzip zip
 
-      - name: Preparar projeto Android
+      - name: Localizar e preparar projeto Android
         shell: bash
         run: |
           set -Eeuo pipefail
 
           mkdir -p /tmp/mentex-zips
+
           shopt -s globstar nullglob
+          found=""
 
-          for zip in ./**/*.zip ./*.zip; do
-            [ -f "$zip" ] || continue
+          for zipfile in ./**/*.zip ./*.zip; do
+            [ -f "$zipfile" ] || continue
 
-            echo "Verificando ZIP: $zip"
-            destino="/tmp/mentex-zips/$(basename "${zip%.zip}")"
-            mkdir -p "$destino"
-
-            unzip -oq "$zip" -d "$destino" || {
-              echo "::warning::Falha ao extrair $zip"
-            }
-          done
-
-          PROJETO=""
-
-          while IFS= read -r -d '' arquivo; do
-            pasta="$(dirname "$arquivo")"
-
-            if [ -f "$pasta/app/build.gradle" ] ||
-               [ -f "$pasta/app/build.gradle.kts" ]; then
-              PROJETO="$pasta"
+            if unzip -Z1 "$zipfile" 2>/dev/null | grep -Eq '(^|/)settings\.gradle(\.kts)?$'; then
+              found="$zipfile"
               break
             fi
-          done < <(
-            find "$GITHUB_WORKSPACE" /tmp/mentex-zips \
-              -type f \
-              \( -name settings.gradle -o -name settings.gradle.kts \) \
-              -print0
-          )
+          done
 
-          if [ -z "$PROJETO" ]; then
-            echo "::error::Projeto Android não encontrado."
-            echo "Arquivos Gradle encontrados:"
+          if [ -n "$found" ]; then
+            echo "Projeto Android encontrado no ZIP: $found"
+            unzip -q "$found" -d /tmp/mentex-zips
+          fi
 
-            find "$GITHUB_WORKSPACE" /tmp/mentex-zips \
-              -type f \
-              \( -name build.gradle -o \
-                 -name build.gradle.kts -o \
-                 -name settings.gradle -o \
-                 -name settings.gradle.kts \) \
-              -print
+          project=""
 
+          while IFS= read -r file; do
+            dir="$(dirname "$file")"
+
+            if [ -f "$dir/app/build.gradle" ] || [ -f "$dir/app/build.gradle.kts" ]; then
+              project="$dir"
+              break
+            fi
+          done < <(find . /tmp/mentex-zips -type f \( -name settings.gradle -o -name settings.gradle.kts \) 2>/dev/null)
+
+          if [ -z "$project" ]; then
+            echo "::error::Nenhum projeto Android Gradle válido encontrado."
+            echo "Arquivos encontrados:"
+            find . /tmp/mentex-zips -type f \( -name settings.gradle -o -name settings.gradle.kts -o -name build.gradle -o -name build.gradle.kts \) 2>/dev/null | head -100
             exit 1
           fi
 
-          echo "Projeto encontrado: $PROJETO"
-          echo "PROJECT_DIR=$PROJETO" >> "$GITHUB_ENV"
+          echo "Projeto selecionado: $project"
+          echo "PROJECT_DIR=$project" >> "$GITHUB_ENV"
 
-          echo "Arquivos da pasta do projeto:"
-          ls -la "$PROJETO"
+      - name: Preparar Gradle Wrapper
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cd "$PROJECT_DIR"
 
-      - name: Configurar Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.7'
+          if [ ! -f gradlew ]; then
+            echo "::error::O projeto não contém gradlew."
+            echo "Adicione o Gradle Wrapper original do projeto Android."
+            exit 1
+          fi
+
+          chmod +x gradlew
 
       - name: Compilar APK
         shell: bash
         run: |
           set -Eeuo pipefail
           cd "$PROJECT_DIR"
+          ./gradlew --no-daemon assembleDebug
 
-          if [ -f gradlew ]; then
-            chmod +x gradlew
-            ./gradlew --no-daemon assembleDebug
-          else
-            echo "Arquivo gradlew ausente."
-            echo "Tentando compilar com Gradle 8.7."
-            gradle --version
-            gradle --no-daemon assembleDebug
-          fi
-
-      - name: Verificar APK gerado
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          mkdir -p "$GITHUB_WORKSPACE/apk-gerado"
-
-          find "$PROJECT_DIR" \
-            -type f \
-            -path '*/build/outputs/apk/*' \
-            -name '*.apk' \
-            -exec cp {} "$GITHUB_WORKSPACE/apk-gerado/" \;
-
-          if ! find "$GITHUB_WORKSPACE/apk-gerado" \
-            -maxdepth 1 -type f -name '*.apk' | grep -q .; then
-            echo "::error::Nenhum APK foi gerado."
-            exit 1
-          fi
-
-          echo "APK gerado com sucesso:"
-          ls -lh "$GITHUB_WORKSPACE/apk-gerado"
-
-      - name: Disponibilizar APK para download
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-APK
-          path: apk-gerado/*.apk
+          path: |
+            **/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
