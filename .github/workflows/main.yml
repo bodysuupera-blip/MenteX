@@ -1,119 +1,124 @@
 name: MENTEX - Compilar APK
 
 on:
-workflow_dispatch:
+  workflow_dispatch:
 
 permissions:
-contents: read
+  contents: read
 
 jobs:
-build:
-name: Compilar MENTEX
-runs-on: ubuntu-22.04
+  build:
+    name: Compilar MENTEX
+    runs-on: ubuntu-22.04
 
-steps:
-  - name: Baixar repositório
-    uses: actions/checkout@v4
+    steps:
+      - name: Baixar repositório
+        uses: actions/checkout@v4
 
-  - name: Configurar Java 17
-    uses: actions/setup-java@v4
-    with:
-      distribution: temurin
-      java-version: '17'
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
 
-  - name: Preparar projeto Android
-    shell: bash
-    run: |
-      set -Eeuo pipefail
+      - name: Preparar projeto Android
+        shell: bash
+        run: |
+          set -Eeuo pipefail
 
-      mkdir -p /tmp/mentex-zips
-      shopt -s globstar nullglob
+          sudo apt-get update
+          sudo apt-get install -y unzip
 
-      for zip in ./**/*.zip ./*.zip; do
-        [ -f "$zip" ] || continue
-        echo "Verificando ZIP: $zip"
+          mkdir -p /tmp/mentex-zips
+          shopt -s globstar nullglob
 
-        destino="/tmp/mentex-zips/$(basename "${zip%.zip}")"
-        mkdir -p "$destino"
-        unzip -oq "$zip" -d "$destino" || {
-          echo "::warning::Falha ao extrair $zip"
-        }
-      done
+          for zip in ./**/*.zip ./*.zip; do
+            [ -f "$zip" ] || continue
+            echo "Verificando ZIP: $zip"
 
-      PROJETO=""
+            destino="/tmp/mentex-zips/$(basename "${zip%.zip}")"
+            mkdir -p "$destino"
+            unzip -oq "$zip" -d "$destino" || {
+              echo "::warning::Falha ao extrair $zip"
+            }
+          done
 
-      while IFS= read -r -d '' arquivo; do
-        pasta="$(dirname "$arquivo")"
+          PROJETO=""
 
-        if [ -f "$pasta/app/build.gradle" ] ||
-           [ -f "$pasta/app/build.gradle.kts" ]; then
-          PROJETO="$pasta"
-          break
-        fi
-      done < <(
-        find . /tmp/mentex-zips \
-          -type f \
-          \( -name settings.gradle -o -name settings.gradle.kts \) \
-          -print0
-      )
+          while IFS= read -r -d '' arquivo; do
+            pasta="$(dirname "$arquivo")"
 
-      if [ -z "$PROJETO" ]; then
-        echo "::error::Projeto Android não encontrado."
-        find . /tmp/mentex-zips -type f \
-          \( -name build.gradle -o \
-             -name build.gradle.kts -o \
-             -name settings.gradle -o \
-             -name settings.gradle.kts \) \
-          -print
-        exit 1
-      fi
+            if [ -f "$pasta/app/build.gradle" ] ||
+               [ -f "$pasta/app/build.gradle.kts" ]; then
+              PROJETO="$pasta"
+              break
+            fi
+          done < <(
+            find "$GITHUB_WORKSPACE" /tmp/mentex-zips \
+              -type f \
+              \( -name settings.gradle -o -name settings.gradle.kts \) \
+              -print0
+          )
 
-      echo "Projeto encontrado: $PROJETO"
-      echo "PROJECT_DIR=$PROJETO" >> "$GITHUB_ENV"
+          if [ -z "$PROJETO" ]; then
+            echo "::error::Projeto Android não encontrado."
+            echo "Arquivos Gradle encontrados:"
+            find "$GITHUB_WORKSPACE" /tmp/mentex-zips \
+              -type f \
+              \( -name build.gradle -o \
+                 -name build.gradle.kts -o \
+                 -name settings.gradle -o \
+                 -name settings.gradle.kts \) \
+              -print
+            exit 1
+          fi
 
-  - name: Configurar Gradle
-    uses: gradle/actions/setup-gradle@v4
-    with:
-      gradle-version: '8.7'
+          echo "Projeto encontrado: $PROJETO"
+          echo "PROJECT_DIR=$PROJETO" >> "$GITHUB_ENV"
 
-  - name: Compilar APK
-    shell: bash
-    run: |
-      set -Eeuo pipefail
-      cd "$PROJECT_DIR"
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
 
-      if [ -f gradlew ]; then
-        chmod +x gradlew
-        ./gradlew --no-daemon assembleDebug
-      else
-        gradle --no-daemon assembleDebug
-      fi
+      - name: Compilar APK
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cd "$PROJECT_DIR"
 
-  - name: Verificar APK gerado
-    shell: bash
-    run: |
-      set -Eeuo pipefail
+          if [ -f gradlew ]; then
+            chmod +x gradlew
+            ./gradlew --no-daemon assembleDebug
+          else
+            echo "::error::O projeto não contém gradlew."
+            echo "Não é seguro escolher uma versão do Gradle sem verificar o Android Gradle Plugin."
+            exit 1
+          fi
 
-      mkdir -p "$GITHUB_WORKSPACE/apk-gerado"
+      - name: Verificar APK gerado
+        shell: bash
+        run: |
+          set -Eeuo pipefail
 
-      find "$PROJECT_DIR" \
-        -type f \
-        -path '*/build/outputs/apk/*' \
-        -name '*.apk' \
-        -exec cp {} "$GITHUB_WORKSPACE/apk-gerado/" \;
+          mkdir -p "$GITHUB_WORKSPACE/apk-gerado"
 
-      if ! find "$GITHUB_WORKSPACE/apk-gerado" \
-        -maxdepth 1 -type f -name '*.apk' | grep -q .; then
-        echo "::error::Nenhum APK foi gerado."
-        exit 1
-      fi
+          find "$PROJECT_DIR" \
+            -type f \
+            -path '*/build/outputs/apk/*' \
+            -name '*.apk' \
+            -exec cp {} "$GITHUB_WORKSPACE/apk-gerado/" \;
 
-      ls -lh "$GITHUB_WORKSPACE/apk-gerado"
+          if ! find "$GITHUB_WORKSPACE/apk-gerado" \
+            -maxdepth 1 -type f -name '*.apk' | grep -q .; then
+            echo "::error::Nenhum APK foi gerado."
+            exit 1
+          fi
 
-  - name: Disponibilizar APK para download
-    uses: actions/upload-artifact@v4
-    with:
-      name: MENTEX-APK
-      path: apk-gerado/*.apk
-      if-no-files-found: error
-      retention-days: 14
+          ls -lh "$GITHUB_WORKSPACE/apk-gerado"
+
+      - name: Disponibilizar APK para download
+        uses: actions/upload-artifact@v4
+        with:
+          name: MENTEX-APK
+          path: apk-gerado/*.apk
+          if-no-files-found: error
+          retention-days: 14
