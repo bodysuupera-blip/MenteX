@@ -21,75 +21,63 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Encontrar projeto Android
+      - name: Localizar e extrair projeto Android
         shell: bash
         run: |
           set -e
 
-          echo "Procurando arquivos Gradle..."
+          mkdir -p /tmp/mentex-projects
+          FOUND=""
 
-          find . -type f \
-            \( -name settings.gradle -o -name settings.gradle.kts \) \
-            -not -path '*/.gradle/*' \
-            -not -path '*/build/*' \
-            -print
+          while IFS= read -r ZIP; do
+            echo "Verificando: $ZIP"
 
-          SETTINGS=$(find . -type f \
-            \( -name settings.gradle -o -name settings.gradle.kts \) \
-            -not -path '*/.gradle/*' \
-            -not -path '*/build/*' \
-            -print -quit)
+            if ! unzip -tq "$ZIP" >/dev/null 2>&1; then
+              continue
+            fi
 
-          if [ -z "$SETTINGS" ]; then
-            echo "ERRO: projeto Android não encontrado."
-            echo "Arquivos encontrados:"
-            find . -maxdepth 6 -type f | head -200
+            DEST="/tmp/mentex-projects/$(basename "$ZIP" .zip)"
+            mkdir -p "$DEST"
+            unzip -oq "$ZIP" -d "$DEST"
+
+            SETTINGS=$(find "$DEST" -type f \
+              \( -name settings.gradle -o -name settings.gradle.kts \) \
+              -not -path '*/.gradle/*' \
+              -not -path '*/build/*' \
+              -print -quit)
+
+            if [ -n "$SETTINGS" ]; then
+              ROOT=$(dirname "$SETTINGS")
+
+              if [ -f "$ROOT/gradlew" ]; then
+                FOUND="$ROOT"
+                echo "Projeto Android encontrado em: $ROOT"
+                break
+              fi
+
+              echo "Projeto encontrado, mas sem gradlew: $ROOT"
+            fi
+          done < <(find . -maxdepth 2 -type f -name '*.zip' \
+            -not -path './.git/*' | sort)
+
+          if [ -z "$FOUND" ]; then
+            echo "ERRO: nenhum ZIP continha projeto Android com gradlew."
+            echo "Arquivos Gradle encontrados no repositório:"
+            find . /tmp/mentex-projects -type f \
+              \( -name settings.gradle \
+              -o -name settings.gradle.kts \
+              -o -name gradlew \) 2>/dev/null | head -200
             exit 1
           fi
 
-          PROJECT_DIR=$(dirname "$SETTINGS")
-
-          echo "Projeto localizado: $PROJECT_DIR"
-
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-
-      - name: Preparar Gradle Wrapper
-        shell: bash
-        run: |
-          set -e
-
-          PROJECT_DIR="$PROJECT_DIR"
-
-          if [ -f "$PROJECT_DIR/gradlew" ]; then
-            chmod +x "$PROJECT_DIR/gradlew"
-            echo "Gradle Wrapper encontrado."
-          else
-            WRAPPER=$(find "$PROJECT_DIR" -type f -name gradlew \
-              -not -path '*/build/*' -print -quit)
-
-            if [ -n "$WRAPPER" ]; then
-              PROJECT_DIR=$(dirname "$WRAPPER")
-              echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-              chmod +x "$WRAPPER"
-              echo "Gradle Wrapper encontrado em $PROJECT_DIR"
-            else
-              echo "ERRO: arquivo gradlew não encontrado."
-              echo "Arquivos Gradle disponíveis:"
-              find . -type f \
-                \( -name gradlew -o -name gradle-wrapper.properties \)
-              exit 1
-            fi
-          fi
+          echo "PROJECT_DIR=$FOUND" >> "$GITHUB_ENV"
 
       - name: Compilar APK
         shell: bash
         run: |
           set -e
-
           cd "$PROJECT_DIR"
-
-          echo "Compilando em: $(pwd)"
-
+          chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
       - name: Publicar APK
@@ -97,6 +85,6 @@ jobs:
         with:
           name: MENTEX-V4.6.3-APK
           path: |
-            **/build/outputs/apk/debug/*.apk
+            /tmp/mentex-projects/**/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 7
