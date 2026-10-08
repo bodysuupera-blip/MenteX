@@ -27,23 +27,23 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Verificar projeto
+      - name: Verificar arquivos
         run: |
-          echo "Arquivos do projeto:"
-          find . -maxdepth 4 -type f | sort
+          pwd
+          echo "Arquivos encontrados:"
+          find . -maxdepth 3 -type f | sort
 
       - name: Compilar APK
         run: |
-          cd mentex
           gradle clean assembleDebug --stacktrace
 
       - name: Procurar APK
         run: |
-          find mentex -type f -name "*.apk" -print
+          find . -type f -name "*.apk" -print
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-V4.6-APK
-          path: mentex/app/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
