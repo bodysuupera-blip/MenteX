@@ -27,23 +27,60 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Verificar arquivos
+      - name: Localizar projeto Android
+        shell: bash
         run: |
-          pwd
-          echo "Arquivos encontrados:"
-          find . -maxdepth 3 -type f | sort
+          PROJECT_DIR=$(find . -type f \( -name "settings.gradle" -o -name "settings.gradle.kts" \) -print -quit)
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERRO: settings.gradle não encontrado."
+            echo "Estrutura do repositório:"
+            find . -maxdepth 4 -type f | sort
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$PROJECT_DIR")
+          PROJECT_DIR=$(cd "$PROJECT_DIR" && pwd)
+
+          echo "Projeto encontrado em:"
+          echo "$PROJECT_DIR"
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Verificar projeto
+        run: |
+          echo "Conteúdo do projeto:"
+          ls -la "$PROJECT_DIR"
 
       - name: Compilar APK
         run: |
+          cd "$PROJECT_DIR"
           gradle clean assembleDebug --stacktrace
 
-      - name: Procurar APK
+      - name: Encontrar APK
+        shell: bash
         run: |
-          find . -type f -name "*.apk" -print
+          echo "APKs encontrados:"
+          find "$PROJECT_DIR" -type f -name "*.apk" -print
+
+      - name: Preparar APK
+        shell: bash
+        run: |
+          APK=$(find "$PROJECT_DIR" -type f -path "*/build/outputs/apk/debug/*.apk" -print -quit)
+
+          if [ -z "$APK" ]; then
+            echo "ERRO: APK não foi gerado."
+            exit 1
+          fi
+
+          cp "$APK" "$GITHUB_WORKSPACE/MENTEX-V4.6.apk"
+
+          echo "APK preparado:"
+          ls -lh "$GITHUB_WORKSPACE/MENTEX-V4.6.apk"
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-V4.6-APK
-          path: app/build/outputs/apk/debug/*.apk
+          path: MENTEX-V4.6.apk
           if-no-files-found: error
