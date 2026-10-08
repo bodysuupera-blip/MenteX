@@ -37,7 +37,7 @@ jobs:
           gradle-version: '8.7'
 
       # ============================================================
-      # 4. PROCURAR ZIP DO MENTEX
+      # 4. PROCURAR ZIP DO MENTEX V4.6.3
       # ============================================================
       - name: Procurar ZIP do MENTEX
         shell: bash
@@ -45,7 +45,7 @@ jobs:
           set -e
 
           echo "=========================================="
-          echo " PROCURANDO ZIP DO MENTEX V4.6.3"
+          echo " PROCURANDO MENTEX V4.6.3"
           echo "=========================================="
 
           ZIP="MENTEX-V4.6.3-CONTROLES-MAIORES.zip"
@@ -73,7 +73,7 @@ jobs:
           set -e
 
           echo "=========================================="
-          echo " EXTRAINDO PROJETO ANDROID"
+          echo " EXTRAINDO PROJETO"
           echo "=========================================="
 
           rm -rf android-project
@@ -86,8 +86,6 @@ jobs:
           echo ""
           echo "Projeto extraído."
 
-          echo ""
-          echo "Estrutura encontrada:"
           find android-project \
             -maxdepth 5 \
             -type f \
@@ -140,7 +138,143 @@ jobs:
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
       # ============================================================
-      # 7. VERIFICAR PROJETO
+      # 7. AUMENTAR CÉREBRO DAS PERGUNTAS
+      # ============================================================
+      - name: Ajustar cérebro das perguntas
+        shell: bash
+        run: |
+          set -e
+
+          echo "=========================================="
+          echo " AJUSTANDO TAMANHO DO CÉREBRO"
+          echo "=========================================="
+
+          INDEX="$PROJECT_DIR/app/src/main/assets/index.html"
+
+          if [ ! -f "$INDEX" ]; then
+            echo ""
+            echo "ERRO: index.html não encontrado:"
+            echo "$INDEX"
+            exit 1
+          fi
+
+          echo ""
+          echo "Arquivo encontrado:"
+          echo "$INDEX"
+
+          python3 - "$INDEX" <<'PY'
+          import sys
+
+          arquivo = sys.argv[1]
+
+          with open(arquivo, "r", encoding="utf-8") as f:
+              html = f.read()
+
+          # Evita inserir o ajuste duas vezes
+          marcador = "MENTEX_V463_CEREBRO_MAIOR_FINAL"
+
+          if marcador not in html:
+
+              ajuste = r'''
+          <style>
+          /* ============================================================
+             MENTEX V4.6.3
+             CÉREBRO UM POUCO MAIOR NAS PERGUNTAS
+             ============================================================ */
+
+          /* Tela normal */
+          #game:not(.hidden) .brain-game {
+              height: 100px !important;
+              min-height: 100px !important;
+              flex-basis: 100px !important;
+              margin: 2px 0 5px !important;
+          }
+
+          #game:not(.hidden) .brain-game img,
+          #game:not(.hidden) .brain-game.correct img,
+          #game:not(.hidden) .brain-game.incorrect img {
+              width: 108px !important;
+              height: 90px !important;
+              object-fit: contain !important;
+          }
+
+          /* Ícone de pergunta */
+          #game:not(.hidden) .question-brain .brain-reaction span {
+              width: 34px !important;
+              height: 34px !important;
+              font-size: 20px !important;
+              right: -7px !important;
+              top: -4px !important;
+          }
+
+          /* ============================================================
+             CELULARES COM MENOS ALTURA
+             ============================================================ */
+          @media (max-height: 760px) {
+
+              #game:not(.hidden) .brain-game {
+                  height: 88px !important;
+                  min-height: 88px !important;
+                  flex-basis: 88px !important;
+              }
+
+              #game:not(.hidden) .brain-game img,
+              #game:not(.hidden) .brain-game.correct img,
+              #game:not(.hidden) .brain-game.incorrect img {
+                  width: 94px !important;
+                  height: 80px !important;
+              }
+          }
+
+          /* ============================================================
+             CELULARES MUITO BAIXOS
+             ============================================================ */
+          @media (max-height: 650px) {
+
+              #game:not(.hidden) .brain-game {
+                  height: 72px !important;
+                  min-height: 72px !important;
+                  flex-basis: 72px !important;
+              }
+
+              #game:not(.hidden) .brain-game img,
+              #game:not(.hidden) .brain-game.correct img,
+              #game:not(.hidden) .brain-game.incorrect img {
+                  width: 78px !important;
+                  height: 66px !important;
+              }
+          }
+
+          /* MENTEX_V463_CEREBRO_MAIOR_FINAL */
+          </style>
+          '''
+
+              if "</head>" not in html:
+                  raise SystemExit("ERRO: </head> não encontrado no index.html")
+
+              html = html.replace(
+                  "</head>",
+                  ajuste + "\n</head>",
+                  1
+              )
+
+              with open(arquivo, "w", encoding="utf-8") as f:
+                  f.write(html)
+
+              print("Cérebro aumentado com sucesso.")
+
+          else:
+              print("Ajuste do cérebro já existe. Nenhuma alteração duplicada.")
+
+          PY
+
+          echo ""
+          echo "=========================================="
+          echo " AJUSTE CONCLUÍDO"
+          echo "=========================================="
+
+      # ============================================================
+      # 8. VERIFICAR PROJETO
       # ============================================================
       - name: Verificar projeto
         shell: bash
@@ -158,7 +292,7 @@ jobs:
           pwd
 
           echo ""
-          echo "Arquivos:"
+          echo "Arquivos principais:"
           ls -la
 
           echo ""
@@ -166,19 +300,16 @@ jobs:
           ls -la app
 
           echo ""
-          echo "Build Gradle:"
-          cat build.gradle
+          echo "Arquivo HTML:"
+          ls -lh app/src/main/assets/index.html
 
           echo ""
-          echo "Build do APP:"
-          cat app/build.gradle
-
-          echo ""
-          echo "Settings:"
-          cat settings.gradle
+          echo "Verificando ajuste do cérebro:"
+          grep -n "MENTEX_V463_CEREBRO_MAIOR_FINAL" \
+            app/src/main/assets/index.html
 
       # ============================================================
-      # 8. VERIFICAR JAVA E GRADLE
+      # 9. VERIFICAR JAVA
       # ============================================================
       - name: Verificar Java e Gradle
         shell: bash
@@ -199,7 +330,7 @@ jobs:
           gradle --version
 
       # ============================================================
-      # 9. LIMPAR PROJETO
+      # 10. LIMPAR PROJETO
       # ============================================================
       - name: Limpar projeto
         shell: bash
@@ -217,7 +348,7 @@ jobs:
             --stacktrace
 
       # ============================================================
-      # 10. COMPILAR APK DEBUG
+      # 11. COMPILAR APK
       # ============================================================
       - name: Compilar APK Debug
         shell: bash
@@ -235,7 +366,7 @@ jobs:
             --stacktrace
 
       # ============================================================
-      # 11. LOCALIZAR APK
+      # 12. LOCALIZAR APK
       # ============================================================
       - name: Encontrar APK
         shell: bash
@@ -247,7 +378,7 @@ jobs:
           echo "=========================================="
 
           echo ""
-          echo "Todos os APKs encontrados:"
+          echo "APKs encontrados:"
 
           find "$PROJECT_DIR" \
             -type f \
@@ -260,8 +391,9 @@ jobs:
             -print -quit)
 
           if [ -z "$APK" ]; then
+
             echo ""
-            echo "ERRO: APK não foi encontrado."
+            echo "ERRO: APK não encontrado."
 
             echo ""
             echo "Conteúdo de build/outputs:"
@@ -294,7 +426,7 @@ jobs:
             "$GITHUB_WORKSPACE/apk-final/MENTEX-V4.6.3.apk"
 
       # ============================================================
-      # 12. PUBLICAR APK COMO ARTIFACT
+      # 13. PUBLICAR APK
       # ============================================================
       - name: Publicar APK
         uses: actions/upload-artifact@v4
