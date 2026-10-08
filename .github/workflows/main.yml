@@ -1,150 +1,119 @@
 name: MENTEX - Compilar APK
 
 on:
-  workflow_dispatch:
+workflow_dispatch:
 
 permissions:
-  contents: read
+contents: read
 
 jobs:
-  build:
-    name: Compilar MENTEX
-    runs-on: ubuntu-22.04
+build:
+name: Compilar MENTEX
+runs-on: ubuntu-22.04
 
-    steps:
-      - name: Baixar repositório
-        uses: actions/checkout@v4
+steps:
+  - name: Baixar repositório
+    uses: actions/checkout@v4
 
-      - name: Configurar Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
+  - name: Configurar Java 17
+    uses: actions/setup-java@v4
+    with:
+      distribution: temurin
+      java-version: '17'
 
-      - name: Extrair ZIPs
-        shell: bash
-        run: |
-          set -euo pipefail
+  - name: Preparar projeto Android
+    shell: bash
+    run: |
+      set -Eeuo pipefail
 
-          mkdir -p /tmp/mentex-zips
+      mkdir -p /tmp/mentex-zips
+      shopt -s globstar nullglob
 
-          while IFS= read -r -d '' ZIP; do
-            DEST="/tmp/mentex-zips/$(basename "$ZIP" .zip)"
-            mkdir -p "$DEST"
+      for zip in ./**/*.zip ./*.zip; do
+        [ -f "$zip" ] || continue
+        echo "Verificando ZIP: $zip"
 
-            echo "Extraindo: $ZIP"
-            unzip -oq "$ZIP" -d "$DEST"
-          done < <(
-            find "$GITHUB_WORKSPACE" \
-              -maxdepth 4 \
-              -type f -name '*.zip' \
-              -not -path '*/.git/*' \
-              -print0
-          )
+        destino="/tmp/mentex-zips/$(basename "${zip%.zip}")"
+        mkdir -p "$destino"
+        unzip -oq "$zip" -d "$destino" || {
+          echo "::warning::Falha ao extrair $zip"
+        }
+      done
 
-      - name: Encontrar projeto Android
-        shell: bash
-        run: |
-          set -euo pipefail
+      PROJETO=""
 
-          FOUND=""
+      while IFS= read -r -d '' arquivo; do
+        pasta="$(dirname "$arquivo")"
 
-          # Prioriza projetos presentes no repositório.
-          for BASE in "$GITHUB_WORKSPACE" /tmp/mentex-zips; do
-            while IFS= read -r -d '' SETTINGS; do
-              ROOT="$(dirname "$SETTINGS")"
+        if [ -f "$pasta/app/build.gradle" ] ||
+           [ -f "$pasta/app/build.gradle.kts" ]; then
+          PROJETO="$pasta"
+          break
+        fi
+      done < <(
+        find . /tmp/mentex-zips \
+          -type f \
+          \( -name settings.gradle -o -name settings.gradle.kts \) \
+          -print0
+      )
 
-              if [[ -f "$ROOT/app/build.gradle" ||
-                    -f "$ROOT/app/build.gradle.kts" ]]; then
-                FOUND="$ROOT"
-                break 2
-              fi
-            done < <(
-              find "$BASE" -type f \
-                \( -name settings.gradle \
-                   -o -name settings.gradle.kts \) \
-                -not -path '*/.git/*' \
-                -not -path '*/build/*' \
-                -print0 2>/dev/null
-            )
-          done
+      if [ -z "$PROJETO" ]; then
+        echo "::error::Projeto Android não encontrado."
+        find . /tmp/mentex-zips -type f \
+          \( -name build.gradle -o \
+             -name build.gradle.kts -o \
+             -name settings.gradle -o \
+             -name settings.gradle.kts \) \
+          -print
+        exit 1
+      fi
 
-          if [[ -z "$FOUND" ]]; then
-            echo "::error::Projeto Android completo não encontrado."
-            echo "É necessário incluir settings.gradle e o módulo app."
-            echo "Arquivos Gradle encontrados:"
-            find "$GITHUB_WORKSPACE" /tmp/mentex-zips \
-              -type f \
-              \( -name settings.gradle \
-                 -o -name settings.gradle.kts \
-                 -o -name build.gradle \
-                 -o -name build.gradle.kts \) \
-              -not -path '*/.git/*' \
-              -print 2>/dev/null || true
-            exit 1
-          fi
+      echo "Projeto encontrado: $PROJETO"
+      echo "PROJECT_DIR=$PROJETO" >> "$GITHUB_ENV"
 
-          echo "Projeto selecionado: $FOUND"
-          echo "PROJECT_DIR=$FOUND" >> "$GITHUB_ENV"
+  - name: Configurar Gradle
+    uses: gradle/actions/setup-gradle@v4
+    with:
+      gradle-version: '8.7'
 
-      - name: Configurar Gradle
-        uses: gradle/actions/setup-gradle@v4
+  - name: Compilar APK
+    shell: bash
+    run: |
+      set -Eeuo pipefail
+      cd "$PROJECT_DIR"
 
-      - name: Preparar wrapper
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd "$PROJECT_DIR"
+      if [ -f gradlew ]; then
+        chmod +x gradlew
+        ./gradlew --no-daemon assembleDebug
+      else
+        gradle --no-daemon assembleDebug
+      fi
 
-          if [[ ! -f gradlew ]]; then
-            gradle wrapper --gradle-version 8.7
-          fi
+  - name: Verificar APK gerado
+    shell: bash
+    run: |
+      set -Eeuo pipefail
 
-          chmod +x gradlew
+      mkdir -p "$GITHUB_WORKSPACE/apk-gerado"
 
-      - name: Compilar APK
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd "$PROJECT_DIR"
+      find "$PROJECT_DIR" \
+        -type f \
+        -path '*/build/outputs/apk/*' \
+        -name '*.apk' \
+        -exec cp {} "$GITHUB_WORKSPACE/apk-gerado/" \;
 
-          ./gradlew assembleDebug --no-daemon
+      if ! find "$GITHUB_WORKSPACE/apk-gerado" \
+        -maxdepth 1 -type f -name '*.apk' | grep -q .; then
+        echo "::error::Nenhum APK foi gerado."
+        exit 1
+      fi
 
-      - name: Localizar APK gerado
-        shell: bash
-        run: |
-          set -euo pipefail
+      ls -lh "$GITHUB_WORKSPACE/apk-gerado"
 
-          APK=""
-
-          while IFS= read -r -d '' FILE; do
-            if [[ "$FILE" == */debug/*.apk ]]; then
-              APK="$FILE"
-              break
-            fi
-          done < <(
-            find "$PROJECT_DIR" \
-              -type f -path '*/build/outputs/apk/*/*.apk' \
-              -print0
-          )
-
-          if [[ -z "$APK" ]]; then
-            echo "::error::Nenhum APK foi gerado."
-            find "$PROJECT_DIR" -type f -name '*.apk' -print
-            exit 1
-          fi
-
-          mkdir -p "$GITHUB_WORKSPACE/apk-final"
-          cp "$APK" "$GITHUB_WORKSPACE/apk-final/MENTEX.apk"
-
-          echo "APK encontrado: $APK"
-          ls -lh "$GITHUB_WORKSPACE/apk-final/MENTEX.apk"
-
-      - name: Disponibilizar APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: MENTEX-APK
-          path: apk-final/MENTEX.apk
-          if-no-files-found: error
-          retention-days: 7
-          
+  - name: Disponibilizar APK para download
+    uses: actions/upload-artifact@v4
+    with:
+      name: MENTEX-APK
+      path: apk-gerado/*.apk
+      if-no-files-found: error
+      retention-days: 14
