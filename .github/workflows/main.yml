@@ -12,7 +12,6 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-
       - name: Baixar repositório
         uses: actions/checkout@v4
 
@@ -34,103 +33,5 @@ jobs:
 
           if [ ! -f "MENTEX-V4.6-GITHUB-PRONTO.zip" ]; then
             echo "ERRO: MENTEX-V4.6-GITHUB-PRONTO.zip não encontrado."
-            echo ""
-            echo "Arquivos disponíveis:"
-            find . -maxdepth 1 -type f -printf '%f\n' | sort
             exit 1
           fi
-
-          echo "ZIP encontrado:"
-          ls -lh "MENTEX-V4.6-GITHUB-PRONTO.zip"
-
-      - name: Extrair projeto Android
-        shell: bash
-        run: |
-          rm -rf android-project
-          mkdir -p android-project
-
-          unzip -q "MENTEX-V4.6-GITHUB-PRONTO.zip" -d android-project
-
-          echo "=== Projeto extraído ==="
-          find android-project -maxdepth 3 -type f | sort
-
-      - name: Verificar projeto Android
-        shell: bash
-        run: |
-          if [ ! -f "android-project/settings.gradle" ]; then
-            echo "ERRO: settings.gradle não encontrado."
-            exit 1
-          fi
-
-          if [ ! -f "android-project/build.gradle" ]; then
-            echo "ERRO: build.gradle não encontrado."
-            exit 1
-          fi
-
-          if [ ! -d "android-project/app" ]; then
-            echo "ERRO: módulo app não encontrado."
-            exit 1
-          fi
-
-          echo "=== settings.gradle ==="
-          cat android-project/settings.gradle
-
-          echo ""
-          echo "=== build.gradle ==="
-          cat android-project/build.gradle
-
-          echo ""
-          echo "=== app/build.gradle ==="
-          cat android-project/app/build.gradle
-
-      - name: Verificar Java e Gradle
-        run: |
-          java -version
-          gradle --version
-
-      - name: Compilar APK Debug
-        shell: bash
-        run: |
-          cd android-project
-
-          echo "=== Limpando projeto ==="
-          gradle clean --stacktrace --no-daemon
-
-          echo "=== Compilando APK ==="
-          gradle assembleDebug --stacktrace --no-daemon
-
-      - name: Verificar APK
-        shell: bash
-        run: |
-          echo "=== APKs gerados ==="
-
-          find android-project/app/build/outputs -type f -name "*.apk" -print
-
-          APK=$(find android-project/app/build/outputs/apk/debug -type f -name "*.apk" -print -quit)
-
-          if [ -z "$APK" ]; then
-            echo "ERRO: APK não foi gerado."
-            exit 1
-          fi
-
-          echo ""
-          echo "APK encontrado:"
-          ls -lh "$APK"
-
-      - name: Preparar APK final
-        shell: bash
-        run: |
-          APK=$(find android-project/app/build/outputs/apk/debug -type f -name "*.apk" -print -quit)
-
-          cp "$APK" "$GITHUB_WORKSPACE/MENTEX-V4.6.apk"
-
-          echo "=== APK FINAL ==="
-          ls -lh "$GITHUB_WORKSPACE/MENTEX-V4.6.apk"
-
-      - name: Publicar APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: MENTEX-V4.6-APK
-          path: MENTEX-V4.6.apk
-          if-no-files-found: error
-          
