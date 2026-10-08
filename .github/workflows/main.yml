@@ -1,4 +1,4 @@
-name: MENTEX V4.6.3 - Gerar APK
+name: MENTEX - Compilar APK
 
 on:
   workflow_dispatch:
@@ -8,11 +8,11 @@ permissions:
 
 jobs:
   build:
-    name: Compilar MENTEX V4.6.3
+    name: Compilar MENTEX
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar projeto do GitHub
+      - name: Baixar repositório
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -21,70 +21,82 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Localizar e extrair projeto Android
+      - name: Extrair e localizar projeto
         shell: bash
         run: |
           set -e
 
-          mkdir -p /tmp/mentex-projects
-          FOUND=""
+          mkdir -p /tmp/mentex
 
           while IFS= read -r ZIP; do
-            echo "Verificando: $ZIP"
-
-            if ! unzip -tq "$ZIP" >/dev/null 2>&1; then
-              continue
-            fi
-
-            DEST="/tmp/mentex-projects/$(basename "$ZIP" .zip)"
+            DEST="/tmp/mentex/$(basename "$ZIP" .zip)"
             mkdir -p "$DEST"
-            unzip -oq "$ZIP" -d "$DEST"
 
-            SETTINGS=$(find "$DEST" -type f \
-              \( -name settings.gradle -o -name settings.gradle.kts \) \
-              -not -path '*/.gradle/*' \
-              -not -path '*/build/*' \
-              -print -quit)
+            echo "Analisando $ZIP"
+            unzip -oq "$ZIP" -d "$DEST" || continue
 
-            if [ -n "$SETTINGS" ]; then
-              ROOT=$(dirname "$SETTINGS")
+          done < <(find . -maxdepth 2 -type f \
+            -name '*.zip' -not -path './.git/*' | sort)
 
-              if [ -f "$ROOT/gradlew" ]; then
-                FOUND="$ROOT"
-                echo "Projeto Android encontrado em: $ROOT"
-                break
-              fi
+          FOUND=""
 
-              echo "Projeto encontrado, mas sem gradlew: $ROOT"
+          while IFS= read -r SETTINGS; do
+            ROOT=$(dirname "$SETTINGS")
+
+            if [ -f "$ROOT/app/build.gradle" ] || \
+               [ -f "$ROOT/app/build.gradle.kts" ]; then
+              FOUND="$ROOT"
+              break
             fi
-          done < <(find . -maxdepth 2 -type f -name '*.zip' \
-            -not -path './.git/*' | sort)
+          done < <(find /tmp/mentex . -type f \
+            \( -name settings.gradle -o -name settings.gradle.kts \) \
+            -not -path '*/.git/*' \
+            -not -path '*/build/*' 2>/dev/null)
 
           if [ -z "$FOUND" ]; then
-            echo "ERRO: nenhum ZIP continha projeto Android com gradlew."
-            echo "Arquivos Gradle encontrados no repositório:"
-            find . /tmp/mentex-projects -type f \
-              \( -name settings.gradle \
-              -o -name settings.gradle.kts \
-              -o -name gradlew \) 2>/dev/null | head -200
+            echo "ERRO: projeto com módulo app não encontrado."
+            find /tmp/mentex . -type f \
+              \( -name settings.gradle -o -name build.gradle \
+              -o -name build.gradle.kts \) 2>/dev/null | head -200
             exit 1
           fi
 
+          echo "Projeto encontrado: $FOUND"
           echo "PROJECT_DIR=$FOUND" >> "$GITHUB_ENV"
+
+      - name: Instalar Gradle para criar wrapper
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Preparar Gradle
+        shell: bash
+        run: |
+          set -e
+
+          if [ ! -f "$PROJECT_DIR/gradlew" ]; then
+            echo "Wrapper ausente. Preparando Gradle 8.7..."
+
+            cd /tmp
+            wget -q https://services.gradle.org/distributions/gradle-8.7-bin.zip
+            unzip -oq gradle-8.7-bin.zip
+
+            cd "$PROJECT_DIR"
+            /tmp/gradle-8.7/bin/gradle wrapper \
+              --gradle-version 8.7
+          fi
+
+          chmod +x "$PROJECT_DIR/gradlew"
 
       - name: Compilar APK
         shell: bash
         run: |
           set -e
           cd "$PROJECT_DIR"
-          chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
-      - name: Publicar APK
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V4.6.3-APK
-          path: |
-            /tmp/mentex-projects/**/build/outputs/apk/debug/*.apk
+          name: MENTEX-APK
+          path: /tmp/mentex/**/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 7
