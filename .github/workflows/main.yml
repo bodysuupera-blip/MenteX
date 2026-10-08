@@ -1,33 +1,140 @@
-- name: Localizar APK gerado
+name: MENTEX - Compilação de APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Compilar MENTEX
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Baixar repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Verificar arquivos do projeto
         shell: bash
         run: |
-          set -Eeuo pipefail
+          set -eu
+          echo "Diretório atual:"
+          pwd
+          echo "Arquivos Gradle encontrados:"
+          find . -type f \( \
+            -name 'settings.gradle' -o \
+            -name 'settings.gradle.kts' -o \
+            -name 'build.gradle' -o \
+            -name 'build.gradle.kts' -o \
+            -name 'gradlew' \
+          \) -print
 
+      - name: Instalar ferramentas
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unzip
+
+      - name: Extrair ZIPs
+        shell: bash
+        run: |
+          set -eu
+          mkdir -p /tmp/mentex-extraido
+
+          find . -maxdepth 3 -type f -iname '*.zip' -print0 |
+          while IFS= read -r -d '' arquivo; do
+            destino="/tmp/mentex-extraido/$(basename "$arquivo" .zip)"
+            mkdir -p "$destino"
+            unzip -oq "$arquivo" -d "$destino"
+          done
+
+      - name: Localizar projeto Android
+        shell: bash
+        run: |
+          set -eu
+
+          PROJETO=""
+
+          for base in "$GITHUB_WORKSPACE" /tmp/mentex-extraido; do
+            while IFS= read -r arquivo; do
+              if [ -f "$arquivo" ]; then
+                PROJETO="$(dirname "$arquivo")"
+                break
+              fi
+            done < <(find "$base" -type f -name gradlew -print 2>/dev/null)
+
+            if [ -n "$PROJETO" ]; then
+              break
+            fi
+          done
+
+          if [ -z "$PROJETO" ]; then
+            for base in "$GITHUB_WORKSPACE" /tmp/mentex-extraido; do
+              ARQUIVO="$(find "$base" -type f \
+                -path '*/app/build.gradle' -print -quit 2>/dev/null || true)"
+
+              if [ -n "$ARQUIVO" ]; then
+                PROJETO="$(dirname "$(dirname "$ARQUIVO")")"
+                break
+              fi
+
+              ARQUIVO="$(find "$base" -type f \
+                -path '*/app/build.gradle.kts' -print -quit 2>/dev/null || true)"
+
+              if [ -n "$ARQUIVO" ]; then
+                PROJETO="$(dirname "$(dirname "$ARQUIVO")")"
+                break
+              fi
+            done
+          fi
+
+          if [ -z "$PROJETO" ]; then
+            echo "ERRO: projeto Android não encontrado."
+            echo "É necessário enviar o código-fonte Android completo."
+            exit 1
+          fi
+
+          echo "Projeto encontrado: $PROJETO"
+          echo "PROJETO_ANDROID=$PROJETO" >> "$GITHUB_ENV"
+
+      - name: Compilar APK
+        shell: bash
+        run: |
+          set -eu
+          cd "$PROJETO_ANDROID"
+
+          if [ ! -f gradlew ]; then
+            echo "ERRO: Gradle Wrapper ausente."
+            echo "Restaure o gradlew e a pasta gradle/wrapper do projeto original."
+            exit 1
+          fi
+
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleDebug
+
+      - name: Localizar APK
+        shell: bash
+        run: |
+          set -eu
           mkdir -p "$GITHUB_WORKSPACE/artifacts"
 
-          echo "Procurando arquivos APK..."
-
-          find "$GITHUB_WORKSPACE" \
-            -type f -name '*.apk' \
-            -not -path '*/.git/*' \
-            -print
-
-          APK="$(find "$PROJETO_ANDROID" \
-            -type f \
+          APK="$(find "$PROJETO_ANDROID" -type f \
             -path '*/build/outputs/apk/*/*.apk' \
-            -print -quit 2>/dev/null || true)"
+            -print -quit)"
 
           if [ -z "$APK" ]; then
-            echo "ERRO: nenhum APK foi gerado."
-            echo "Verifique o resultado da etapa Compilar APK."
-            find "$PROJETO_ANDROID" \
-              -type f \( -name '*.apk' -o -name '*.aab' \) \
-              -print 2>/dev/null || true
+            echo "ERRO: a compilação terminou sem gerar APK."
             exit 1
           fi
 
           cp "$APK" "$GITHUB_WORKSPACE/artifacts/MENTEX.apk"
-          echo "APK localizado: $APK"
+          echo "APK gerado com sucesso."
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
