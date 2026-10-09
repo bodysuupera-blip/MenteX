@@ -1,4 +1,4 @@
-name: MENTEX - Preparar APK
+name: MENTEX V4.6.3 - Preparar APK
 
 on:
   workflow_dispatch:
@@ -7,50 +7,90 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    name: Preparar MENTEX
+  preparar-apk:
+    name: Preparar APK do MENTEX
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar repositório
+      - name: Baixar arquivos do repositório
         uses: actions/checkout@v4
 
       - name: Instalar ferramentas
         run: |
           sudo apt-get update
-          sudo apt-get install -y unzip
+          sudo apt-get install -y unzip findutils
 
-      - name: Extrair APK do ZIP
+      - name: Localizar e extrair APK
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          mkdir -p /tmp/mentex-extraido artifacts
+          mkdir -p "$RUNNER_TEMP/mentex-extraido"
+          mkdir -p "$GITHUB_WORKSPACE/apk-final"
 
-          while IFS= read -r -d '' arquivo; do
-            echo "Verificando: $arquivo"
-            unzip -oq "$arquivo" -d /tmp/mentex-extraido
-          done < <(
-            find . -maxdepth 3 -type f -iname '*.zip' \
-              ! -path './.git/*' -print0
+          echo "Procurando arquivos ZIP..."
+
+          mapfile -d '' arquivos < <(
+            find . -maxdepth 5 -type f \
+              -iname '*.zip' \
+              ! -path './.git/*' \
+              -print0
           )
 
-          APK="$(find /tmp/mentex-extraido . \
-            -type f -name '*.apk' \
-            ! -path './.git/*' \
-            -print -quit)"
-
-          if [ -z "$APK" ]; then
-            echo "ERRO: nenhum APK foi encontrado."
+          if [ "${#arquivos[@]}" -eq 0 ]; then
+            echo "::error::Nenhum arquivo ZIP encontrado no repositório."
+            echo "Envie o ZIP do MENTEX para o repositório e tente novamente."
             exit 1
           fi
 
-          cp "$APK" artifacts/MENTEX.apk
-          echo "APK preparado com sucesso."
+          encontrado=""
 
-      - name: Publicar APK
+          for arquivo in "${arquivos[@]}"; do
+            echo "Verificando: $arquivo"
+
+            if unzip -tq "$arquivo" >/dev/null 2>&1; then
+              if unzip -Z1 "$arquivo" |
+                grep -Eiq '(^|/)MENTEX[^/]*\.apk$|(^|/)[^/]+\.apk$'; then
+                encontrado="$arquivo"
+                break
+              fi
+            fi
+          done
+
+          if [ -z "$encontrado" ]; then
+            echo "::error::Nenhum APK foi encontrado dentro dos ZIPs."
+            exit 1
+          fi
+
+          echo "ZIP selecionado: $encontrado"
+
+          unzip -oq "$encontrado" \
+            -d "$RUNNER_TEMP/mentex-extraido"
+
+          apk=""
+
+          while IFS= read -r -d '' candidato; do
+            apk="$candidato"
+            break
+          done < <(
+            find "$RUNNER_TEMP/mentex-extraido" \
+              -type f -iname '*.apk' -print0
+          )
+
+          if [ -z "$apk" ]; then
+            echo "::error::A extração terminou, mas nenhum APK foi encontrado."
+            exit 1
+          fi
+
+          cp "$apk" "$GITHUB_WORKSPACE/apk-final/MENTEX-V4.6.3.apk"
+
+          echo "APK preparado:"
+          ls -lh "$GITHUB_WORKSPACE/apk-final/MENTEX-V4.6.3.apk"
+
+      - name: Disponibilizar APK para download
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-APK
-          path: artifacts/MENTEX.apk
+          name: MENTEX-V4.6.3-APK
+          path: apk-final/MENTEX-V4.6.3.apk
           if-no-files-found: error
+          retention-days: 14
