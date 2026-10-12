@@ -1,162 +1,101 @@
-
-name: MENTEX V4.6.4 - APK Atualizado
+name: MENTEX V4.6.4 - Gerar APK
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-      - master
 
 permissions:
   contents: read
 
 jobs:
   preparar-apk:
-    name: Compilar MENTEX atualizado
+    name: Compilar MENTEX
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar repositorio
+      - name: Baixar repositório
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
 
-      - name: Instalar ferramentas
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y unzip findutils
-
-      - name: Localizar versao atualizada
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          PROJECT_DIR=""
-          DEST="$RUNNER_TEMP/mentex-atualizado"
-
-          mkdir -p "$DEST"
-
-          # Priorizar os ZIPs com as alteracoes desejadas.
-          for ZIP_NAME in \
-            "MENTEX-V4.6.3-TELA-PERGUNTAS-ATUALIZADA.zip" \
-            "MENTEX-V4.6.3-INTERFACE-COMPLETA.zip"; do
-
-            ZIP_FILE="$(find "$GITHUB_WORKSPACE" \
-              -type f -name "$ZIP_NAME" \
-              -not -path '*/.git/*' \
-              -print -quit)"
-
-            if [ -z "$ZIP_FILE" ]; then
-              echo "ZIP nao encontrado: $ZIP_NAME"
-              continue
-            fi
-
-            echo "Verificando ZIP: $ZIP_FILE"
-
-            rm -rf "$DEST"
-            mkdir -p "$DEST"
-            unzip -oq "$ZIP_FILE" -d "$DEST"
-
-            FOUND="$(find "$DEST" \
-              -type d -name build -prune -o \
-              -type f \
-              \( -name settings.gradle \
-                 -o -name settings.gradle.kts \) \
-              -print -quit)"
-
-            if [ -n "$FOUND" ]; then
-              CANDIDATE="$(dirname "$FOUND")"
-
-              if [ -f "$CANDIDATE/app/build.gradle" ] ||
-                 [ -f "$CANDIDATE/app/build.gradle.kts" ]; then
-                PROJECT_DIR="$CANDIDATE"
-                echo "Projeto encontrado no ZIP prioritario."
-                break
-              fi
-            fi
-
-            echo "Este ZIP nao contem um projeto Android completo."
-          done
-
-          # Se os ZIPs nao contiverem o projeto, procurar no repositorio.
-          if [ -z "$PROJECT_DIR" ]; then
-            FOUND="$(find "$GITHUB_WORKSPACE" \
-              -type d \( -name .git -o -name build \) -prune \
-              -o -type f \
-              \( -name settings.gradle \
-                 -o -name settings.gradle.kts \) \
-              -print -quit)"
-
-            if [ -n "$FOUND" ]; then
-              CANDIDATE="$(dirname "$FOUND")"
-
-              if [ -f "$CANDIDATE/app/build.gradle" ] ||
-                 [ -f "$CANDIDATE/app/build.gradle.kts" ]; then
-                PROJECT_DIR="$CANDIDATE"
-              fi
-            fi
-          fi
-
-          if [ -z "$PROJECT_DIR" ]; then
-            echo "::error::Nenhum projeto Android completo foi encontrado."
-            echo "Verifique se o ZIP atualizado contem settings.gradle"
-            echo "e app/build.gradle ou app/build.gradle.kts."
-            exit 1
-          fi
-
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Projeto selecionado: $PROJECT_DIR"
-
-      - name: Configurar Java
-        uses: actions/setup-java@v5
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
 
-      - name: Configurar Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.7'
+      - name: Instalar ferramentas
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unzip findutils
 
-      - name: Compilar APK
+      - name: Localizar projeto Android
+        id: projeto
         shell: bash
         run: |
           set -euo pipefail
-          cd "$PROJECT_DIR"
 
-          if [ -f gradlew ]; then
-            chmod +x gradlew
-            ./gradlew clean assembleDebug --stacktrace
-          else
-            gradle clean assembleDebug --stacktrace
+          echo "Arquivos encontrados no repositório:"
+          find . -maxdepth 3 -type f | head -200
+
+          SETTINGS="$(find . \
+            -type f \
+            \( -name settings.gradle -o -name settings.gradle.kts \) \
+            -not -path './.git/*' \
+            -not -path '*/build/*' \
+            -print -quit)"
+
+          if [ -z "$SETTINGS" ]; then
+            echo "::error::Projeto Android não encontrado. O repositório precisa conter settings.gradle ou settings.gradle.kts."
+            exit 1
           fi
+
+          PROJECT_DIR="$(dirname "$SETTINGS")"
+          PROJECT_DIR="$(realpath "$PROJECT_DIR")"
+
+          echo "Projeto localizado em: $PROJECT_DIR"
+          echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+
+          if [ ! -f "$PROJECT_DIR/gradlew" ]; then
+            echo "::error::O projeto não contém gradlew na pasta raiz do Gradle."
+            exit 1
+          fi
+
+      - name: Compilar APK Debug
+        shell: bash
+        env:
+          PROJECT_DIR: ${{ steps.projeto.outputs.project_dir }}
+        run: |
+          set -euo pipefail
+          cd "$PROJECT_DIR"
+          chmod +x gradlew
+          ./gradlew --no-daemon clean assembleDebug --stacktrace
+
+      - name: Verificar APK gerado
+        shell: bash
+        env:
+          PROJECT_DIR: ${{ steps.projeto.outputs.project_dir }}
+        run: |
+          set -euo pipefail
 
           APK="$(find "$PROJECT_DIR" \
             -type f \
             -path '*/build/outputs/apk/debug/*.apk' \
+            -not -path '*/intermediates/*' \
             -print -quit)"
 
           if [ -z "$APK" ]; then
-            echo "::error::A compilacao terminou sem gerar APK."
+            echo "::error::A compilação terminou sem produzir um APK Debug."
             exit 1
           fi
 
-          mkdir -p "$GITHUB_WORKSPACE/dist"
+          echo "APK gerado: $APK"
+          ls -lh "$APK"
 
-          cp "$APK" \
-            "$GITHUB_WORKSPACE/dist/MENTEX-V4.6.4-ATUALIZADO.apk"
-
-          echo "APK produzido a partir de:"
-          echo "$PROJECT_DIR"
-          ls -lh "$GITHUB_WORKSPACE/dist/MENTEX-V4.6.4-ATUALIZADO.apk"
-
-      - name: Publicar APK
+      - name: Enviar APK como artefato
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V4.6.4-ATUALIZADO
-          path: dist/MENTEX-V4.6.4-ATUALIZADO.apk
+          name: MENTEX-V4.6.4-APK
+          path: |
+            **/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
           
