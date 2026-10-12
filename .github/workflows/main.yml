@@ -1,3 +1,4 @@
+
 name: MENTEX V4.6.4 - Preparar APK
 
 on:
@@ -26,6 +27,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
 
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -45,33 +47,35 @@ jobs:
 
           PROJECT_DIR=""
 
-          # Procurar projeto diretamente no repositorio.
+          # Primeiro, procurar o projeto no repositorio.
           FOUND="$(find "$GITHUB_WORKSPACE" \
-            -type f \
+            -type d \( -name .git -o -name build \) -prune \
+            -o -type f \
             \( -name settings.gradle \
-            -o -name settings.gradle.kts \) \
-            -not -path '*/.git/*' \
+               -o -name settings.gradle.kts \) \
             -print -quit)"
 
           if [ -n "$FOUND" ]; then
             PROJECT_DIR="$(dirname "$FOUND")"
           fi
 
-          # Se nao encontrou, procurar projetos dentro dos ZIPs.
+          # Se nao houver projeto, procurar dentro dos ZIPs.
           if [ -z "$PROJECT_DIR" ]; then
             while IFS= read -r ZIP_FILE; do
               [ -n "$ZIP_FILE" ] || continue
 
-              DEST="$RUNNER_TEMP/mentex-$(basename "$ZIP_FILE" .zip)"
+              DEST="$RUNNER_TEMP/mentex-extraido"
+              rm -rf "$DEST"
               mkdir -p "$DEST"
 
               echo "Extraindo: $ZIP_FILE"
               unzip -oq "$ZIP_FILE" -d "$DEST"
 
               FOUND="$(find "$DEST" \
+                -type d -name build -prune -o \
                 -type f \
                 \( -name settings.gradle \
-                -o -name settings.gradle.kts \) \
+                   -o -name settings.gradle.kts \) \
                 -print -quit)"
 
               if [ -n "$FOUND" ]; then
@@ -88,19 +92,24 @@ jobs:
 
           if [ -z "$PROJECT_DIR" ]; then
             echo "::error::Projeto Android nao encontrado."
-            echo "O repositorio precisa conter o codigo-fonte Android,"
-            echo "incluindo settings.gradle ou settings.gradle.kts."
+            echo "Adicione o codigo-fonte ou um ZIP do projeto."
+            echo "O projeto deve conter settings.gradle ou settings.gradle.kts."
             exit 1
           fi
 
-          if [ ! -f "$PROJECT_DIR/build.gradle" ] &&
-             [ ! -f "$PROJECT_DIR/build.gradle.kts" ]; then
-            echo "::error::Arquivo build.gradle nao encontrado na raiz do projeto."
+          # Confirmar que existe um modulo Android app.
+          if [ ! -f "$PROJECT_DIR/app/build.gradle" ] &&
+             [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
+            echo "::error::Modulo app nao encontrado."
+            echo "Diretorio localizado: $PROJECT_DIR"
+            find "$PROJECT_DIR" -maxdepth 3 -type f \
+              \( -name build.gradle -o -name build.gradle.kts \) \
+              -print
             exit 1
           fi
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Projeto localizado: $PROJECT_DIR"
+          echo "Projeto selecionado: $PROJECT_DIR"
 
       - name: Compilar APK
         shell: bash
@@ -126,12 +135,14 @@ jobs:
           fi
 
           mkdir -p "$GITHUB_WORKSPACE/dist"
+
           cp "$APK" \
             "$GITHUB_WORKSPACE/dist/MENTEX-V4.6.4-APK.apk"
 
           test -s "$GITHUB_WORKSPACE/dist/MENTEX-V4.6.4-APK.apk"
 
-          echo "APK gerado com sucesso."
+          echo "APK gerado:"
+          ls -lh "$GITHUB_WORKSPACE/dist/MENTEX-V4.6.4-APK.apk"
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
@@ -140,3 +151,4 @@ jobs:
           path: dist/MENTEX-V4.6.4-APK.apk
           if-no-files-found: error
           retention-days: 14
+          
