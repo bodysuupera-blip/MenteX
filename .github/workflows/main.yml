@@ -1,3 +1,4 @@
+
 name: MENTEX V4.6.4 - Gerar APK
 
 on:
@@ -125,4 +126,3 @@ jobs:
           path: ${{ steps.apk.outputs.apk_path }}
           if-no-files-found: error
           retention-days: 14
-          
