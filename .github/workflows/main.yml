@@ -16,16 +16,34 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
-          cache: gradle
 
       - name: Instalar ferramentas
         run: |
+          set -e
           sudo apt-get update
           sudo apt-get install -y unzip findutils
+
+      - name: Mostrar estrutura do repositório
+        shell: bash
+        run: |
+          set -e
+          echo "Arquivos na raiz:"
+          ls -la
+          echo "Arquivos de configuração Gradle:"
+          find . -type f \
+            \( -name "settings.gradle" \
+            -o -name "settings.gradle.kts" \
+            -o -name "gradlew" \
+            -o -name "gradle-wrapper.properties" \
+            -o -name "build.gradle" \
+            -o -name "build.gradle.kts" \) \
+            -not -path "./.git/*" \
+            -not -path "*/build/*" \
+            -print | head -200
 
       - name: Localizar projeto Android
         id: projeto
@@ -33,31 +51,39 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "Arquivos encontrados no repositório:"
-          find . -maxdepth 3 -type f | head -200
-
           SETTINGS="$(find . \
             -type f \
-            \( -name settings.gradle -o -name settings.gradle.kts \) \
-            -not -path './.git/*' \
-            -not -path '*/build/*' \
+            \( -name "settings.gradle" \
+            -o -name "settings.gradle.kts" \) \
+            -not -path "./.git/*" \
+            -not -path "*/build/*" \
             -print -quit)"
 
           if [ -z "$SETTINGS" ]; then
-            echo "::error::Projeto Android não encontrado. O repositório precisa conter settings.gradle ou settings.gradle.kts."
+            echo "::error::Não encontrei settings.gradle ou settings.gradle.kts. Envie o projeto Android completo para o repositório."
             exit 1
           fi
 
           PROJECT_DIR="$(dirname "$SETTINGS")"
           PROJECT_DIR="$(realpath "$PROJECT_DIR")"
 
-          echo "Projeto localizado em: $PROJECT_DIR"
-          echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
-
           if [ ! -f "$PROJECT_DIR/gradlew" ]; then
-            echo "::error::O projeto não contém gradlew na pasta raiz do Gradle."
+            echo "::error::Não encontrei gradlew na raiz do projeto Gradle: $PROJECT_DIR"
             exit 1
           fi
+
+          if [ ! -f "$PROJECT_DIR/gradle/wrapper/gradle-wrapper.properties" ]; then
+            echo "::error::Não encontrei gradle/wrapper/gradle-wrapper.properties."
+            exit 1
+          fi
+
+          if [ ! -d "$PROJECT_DIR/app" ]; then
+            echo "::error::A pasta app não foi encontrada. Confira se esta é a raiz correta do projeto Android."
+            exit 1
+          fi
+
+          echo "Projeto localizado: $PROJECT_DIR"
+          echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
 
       - name: Compilar APK Debug
         shell: bash
@@ -70,32 +96,33 @@ jobs:
           ./gradlew --no-daemon clean assembleDebug --stacktrace
 
       - name: Verificar APK gerado
+        id: apk
         shell: bash
         env:
           PROJECT_DIR: ${{ steps.projeto.outputs.project_dir }}
         run: |
           set -euo pipefail
 
-          APK="$(find "$PROJECT_DIR" \
+          APK="$(find "$PROJECT_DIR/app/build/outputs/apk/debug" \
+            -maxdepth 1 \
             -type f \
-            -path '*/build/outputs/apk/debug/*.apk' \
-            -not -path '*/intermediates/*' \
+            -name "*.apk" \
             -print -quit)"
 
           if [ -z "$APK" ]; then
-            echo "::error::A compilação terminou sem produzir um APK Debug."
+            echo "::error::A compilação não gerou um APK Debug na pasta esperada."
             exit 1
           fi
 
-          echo "APK gerado: $APK"
+          echo "APK gerado com sucesso:"
           ls -lh "$APK"
+          echo "apk_path=$APK" >> "$GITHUB_OUTPUT"
 
-      - name: Enviar APK como artefato
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-V4.6.4-APK
-          path: |
-            **/build/outputs/apk/debug/*.apk
+          path: ${{ steps.apk.outputs.apk_path }}
           if-no-files-found: error
           retention-days: 14
           
