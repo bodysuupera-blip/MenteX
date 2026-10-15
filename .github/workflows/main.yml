@@ -25,7 +25,34 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Localizar Android SDK
+      - name: Extrair projeto MENTEX V4.7
+        shell: bash
+        run: |
+          set -e
+
+          ZIP="MENTEX-V4.7-TELA-4-OPCOES.zip"
+
+          if [ ! -f "$ZIP" ]; then
+            echo "ERRO: arquivo $ZIP não encontrado."
+            exit 1
+          fi
+
+          mkdir -p "$RUNNER_TEMP/mentex-project"
+
+          unzip -oq "$ZIP" \
+            -d "$RUNNER_TEMP/mentex-project"
+
+          if [ ! -f "$RUNNER_TEMP/mentex-project/settings.gradle" ]; then
+            echo "ERRO: settings.gradle não está na raiz do ZIP."
+            exit 1
+          fi
+
+          cp -a "$RUNNER_TEMP/mentex-project/." .
+
+          echo "Projeto V4.7 extraído com sucesso."
+          ls -la
+
+      - name: Verificar Android SDK
         shell: bash
         run: |
           set -e
@@ -44,13 +71,11 @@ jobs:
           fi
 
           echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
-          echo "Android SDK localizado com sucesso."
 
       - name: Aceitar licenças Android
         shell: bash
         run: |
           set -e
-
           yes | "$SDKMANAGER" \
             --sdk_root="$ANDROID_HOME" --licenses || true
 
@@ -65,25 +90,19 @@ jobs:
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-      - name: Verificar estrutura do projeto
+      - name: Verificar arquivos do projeto
         shell: bash
         run: |
           set -e
 
-          echo "Conteúdo da raiz:"
-          ls -la
+          test -f settings.gradle
+          test -f build.gradle
+          test -f app/build.gradle
+          test -f app/src/main/AndroidManifest.xml
+          test -f app/src/main/java/com/mentex/game/MainActivity.java
+          test -f app/src/main/assets/index.html
 
-          if [ ! -f settings.gradle ] && \
-             [ ! -f settings.gradle.kts ]; then
-            echo "ERRO: settings.gradle não encontrado na raiz."
-            exit 1
-          fi
-
-          if [ ! -f app/build.gradle ] && \
-             [ ! -f app/build.gradle.kts ]; then
-            echo "ERRO: arquivo Gradle do módulo app não encontrado."
-            exit 1
-          fi
+          echo "Estrutura do projeto validada."
 
       - name: Instalar Gradle 8.7
         shell: bash
@@ -94,25 +113,20 @@ jobs:
             https://services.gradle.org/distributions/gradle-8.7-bin.zip \
             -o "$RUNNER_TEMP/gradle.zip"
 
-          unzip -q "$RUNNER_TEMP/gradle.zip" \
+          unzip -oq "$RUNNER_TEMP/gradle.zip" \
             -d "$RUNNER_TEMP"
 
           echo "$RUNNER_TEMP/gradle-8.7/bin" >> "$GITHUB_PATH"
 
-      - name: Verificar versão do Gradle
+      - name: Compilar APK
         shell: bash
         run: |
           set -e
+
           gradle --version
-
-      - name: Compilar APK MENTEX V4.7
-        shell: bash
-        run: |
-          set -e
-
           gradle --no-daemon --stacktrace assembleDebug
 
-      - name: Verificar APK gerado
+      - name: Verificar APK
         shell: bash
         run: |
           set -e
@@ -128,7 +142,7 @@ jobs:
           ls -lh "$APK"
           sha256sum "$APK"
 
-      - name: Publicar APK para download
+      - name: Disponibilizar APK para download
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-V4.7-APK
