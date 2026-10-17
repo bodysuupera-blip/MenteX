@@ -1,4 +1,3 @@
-
 name: MENTEX V4.7 - Preparar APK
 
 on:
@@ -13,10 +12,10 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar repositorio
+      - name: Baixar repositório
         uses: actions/checkout@v4
 
-      - name: Localizar e extrair APK
+      - name: Localizar e extrair projeto
         shell: bash
         run: |
           set -euo pipefail
@@ -24,41 +23,63 @@ jobs:
           mkdir -p "$RUNNER_TEMP/mentex-apk"
 
           ZIP="$(find . -type f \
-            -name 'MENTEX-V4.6.4-TELA-PERGUNTAS-SEM-VACUO.zip' \
+            \( -iname '*MENTEX*.zip' -o -iname '*.zip' \) \
+            -not -path './.git/*' \
             -print -quit)"
 
           if [ -z "$ZIP" ]; then
-            ZIP="$(find . -type f -name '*.zip' \
-              -not -path './.git/*' -print -quit)"
-          fi
-
-          if [ -z "$ZIP" ]; then
-            echo "::error::Nenhum arquivo ZIP encontrado."
+            echo "::error::Nenhum arquivo ZIP encontrado no repositório."
+            echo "Envie o ZIP completo do projeto Android."
             exit 1
           fi
 
           echo "Arquivo encontrado: $ZIP"
+          unzip -o "$ZIP" -d "$RUNNER_TEMP/mentex-apk"
 
-          unzip -oq "$ZIP" -d "$RUNNER_TEMP/mentex-apk"
+          SETTINGS="$(find "$RUNNER_TEMP/mentex-apk" \
+            -type f \( -name settings.gradle -o -name settings.gradle.kts \) \
+            -print -quit)"
 
-          APK="$(find "$RUNNER_TEMP/mentex-apk" \
-            -type f -name '*.apk' -print -quit)"
-
-          if [ -z "$APK" ]; then
-            echo "::error::O ZIP não contém nenhum APK."
+          if [ -z "$SETTINGS" ]; then
+            echo "::error::O ZIP não contém settings.gradle ou settings.gradle.kts."
+            echo "Este workflow precisa do projeto-fonte Android completo."
             exit 1
           fi
 
-          cp "$APK" "$RUNNER_TEMP/MENTEX.apk"
+          PROJECT_DIR="$(dirname "$SETTINGS")"
 
-          echo "APK preparado com sucesso."
-          ls -lh "$RUNNER_TEMP/MENTEX.apk"
+          if [ ! -f "$PROJECT_DIR/gradlew" ]; then
+            echo "::error::O projeto não contém gradlew."
+            exit 1
+          fi
 
-      - name: Disponibilizar APK para download
+          if [ ! -f "$PROJECT_DIR/app/build.gradle" ] &&
+             [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
+            echo "::error::Não encontrei o arquivo Gradle do módulo app."
+            exit 1
+          fi
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Configurar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Compilar APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$PROJECT_DIR"
+          chmod +x gradlew
+          ./gradlew clean assembleDebug --stacktrace
+
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-APK
-          path: ${{ runner.temp }}/MENTEX.apk
+          name: MENTEX-V4.7-APK
+          path: |
+            ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
-          retention-days: 14
-          
+          retention-days: 7
