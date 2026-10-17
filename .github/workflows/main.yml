@@ -1,4 +1,4 @@
-name: MENTEX V4.7 - Gerar APK Instalavel
+name: MENTEX V4.7 - Gerar APK
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   gerar-apk:
-    name: Reconstruir e assinar o jogo
+    name: Reconstruir e assinar MENTEX
     runs-on: ubuntu-22.04
 
     steps:
@@ -19,39 +19,65 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           sudo apt-get update
           sudo apt-get install -y \
             openjdk-17-jdk \
-            curl \
-            unzip \
-            zip \
-            jq \
-            apksigner \
-            zipalign
+            curl unzip zip jq \
+            apksigner zipalign
 
-      - name: Localizar APK original e interface
+      - name: Instalar Android SDK Build Tools
         shell: bash
         run: |
           set -euo pipefail
 
-          APK=""
+          SDK="$RUNNER_TEMP/android-sdk"
+          mkdir -p "$SDK/cmdline-tools"
 
-          if [ -f "MENTEX-V4.6.3.apk" ]; then
-            APK="MENTEX-V4.6.3.apk"
-          else
-            APK="$(find . -type f -iname '*.apk' \
-              -not -path './.git/*' \
-              -not -path './saida/*' \
-              -print -quit)"
-          fi
+          curl -fL \
+            https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip \
+            -o "$RUNNER_TEMP/cmdline-tools.zip"
+
+          mkdir -p "$RUNNER_TEMP/cmdline-unpack"
+          unzip -q "$RUNNER_TEMP/cmdline-tools.zip" \
+            -d "$RUNNER_TEMP/cmdline-unpack"
+
+          mkdir -p "$SDK/cmdline-tools/latest"
+          cp -a "$RUNNER_TEMP/cmdline-unpack/cmdline-tools/." \
+            "$SDK/cmdline-tools/latest/"
+
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "$SDK/platform-tools" >> "$GITHUB_PATH"
+          echo "$SDK/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+
+          yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" \
+            --sdk_root="$SDK" \
+            --licenses >/dev/null || true
+
+          "$SDK/cmdline-tools/latest/bin/sdkmanager" \
+            --sdk_root="$SDK" \
+            "platform-tools" \
+            "build-tools;35.0.0"
+
+          echo "$SDK/build-tools/35.0.0" >> "$GITHUB_PATH"
+
+      - name: Localizar APK e interface
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APK="$(find . -type f -iname '*.apk' \
+            -not -path './.git/*' \
+            -not -path './saida/*' \
+            -print -quit)"
 
           UI_ZIP="$(find . -type f \
             -iname 'MENTEX-PERGUNTAS-INTERFACE-MELHORADA.zip' \
             -not -path './.git/*' \
             -print -quit)"
 
-          if [ -z "$APK" ] || [ ! -f "$APK" ]; then
-            echo "::error::APK original nao encontrado no repositorio."
+          if [ -z "$APK" ]; then
+            echo "::error::APK original nao encontrado."
             exit 1
           fi
 
@@ -63,6 +89,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/mentex/interface"
 
           cp "$APK" "$RUNNER_TEMP/mentex/original.apk"
+
           unzip -q "$UI_ZIP" \
             -d "$RUNNER_TEMP/mentex/interface"
 
@@ -70,7 +97,7 @@ jobs:
             -type f -name index.html -print -quit)"
 
           if [ -z "$HTML" ]; then
-            echo "::error::index.html nao encontrado dentro do ZIP."
+            echo "::error::index.html nao encontrado no ZIP."
             exit 1
           fi
 
@@ -89,12 +116,11 @@ jobs:
             .browser_download_url' | head -n 1)"
 
           if [ -z "$URL" ] || [ "$URL" = "null" ]; then
-            echo "::error::Nao foi possivel baixar o Apktool."
+            echo "::error::Nao foi possivel baixar Apktool."
             exit 1
           fi
 
-          curl -fL "$URL" \
-            -o "$RUNNER_TEMP/apktool.jar"
+          curl -fL "$URL" -o "$RUNNER_TEMP/apktool.jar"
 
           java -jar "$RUNNER_TEMP/apktool.jar" --version
 
@@ -107,17 +133,12 @@ jobs:
             "$RUNNER_TEMP/mentex/original.apk" \
             -o "$RUNNER_TEMP/mentex/extraido"
 
-          if [ ! -d "$RUNNER_TEMP/mentex/extraido/assets" ]; then
-            echo "::error::A pasta assets nao existe no APK."
-            exit 1
-          fi
-
           if [ ! -f "$RUNNER_TEMP/mentex/extraido/assets/index.html" ]; then
             echo "::error::O APK nao possui assets/index.html."
             exit 1
           fi
 
-      - name: Atualizar somente a interface HTML
+      - name: Atualizar tela de perguntas
         shell: bash
         run: |
           set -euo pipefail
@@ -125,24 +146,28 @@ jobs:
           cp "$HTML_FILE" \
             "$RUNNER_TEMP/mentex/extraido/assets/index.html"
 
-          echo "Interface HTML atualizada."
+          echo "Tela HTML substituida."
 
-      - name: Reconstruir APK
+      - name: Reconstruir APK com AAPT2
         shell: bash
         run: |
           set -euo pipefail
 
-          java -jar "$RUNNER_TEMP/apktool.jar" b \
-            "$RUNNER_TEMP/mentex/extraido" \
-            --use-aapt2 \
-            -o "$RUNNER_TEMP/mentex/reconstruido.apk"
+          AAPT2="$ANDROID_HOME/build-tools/35.0.0/aapt2"
 
-          if [ ! -s "$RUNNER_TEMP/mentex/reconstruido.apk" ]; then
-            echo "::error::A reconstrucao nao produziu um APK."
+          if [ ! -x "$AAPT2" ]; then
+            echo "::error::AAPT2 nao encontrado em $AAPT2"
             exit 1
           fi
 
-      - name: Criar chave de assinatura
+          java -jar "$RUNNER_TEMP/apktool.jar" b \
+            "$RUNNER_TEMP/mentex/extraido" \
+            --aapt "$AAPT2" \
+            -o "$RUNNER_TEMP/mentex/reconstruido.apk"
+
+          test -s "$RUNNER_TEMP/mentex/reconstruido.apk"
+
+      - name: Criar chave de teste
         shell: bash
         run: |
           set -euo pipefail
@@ -179,10 +204,10 @@ jobs:
 
           unzip -t "$RUNNER_TEMP/mentex/MENTEX-V4.7.apk"
 
-      - name: Publicar aplicativo APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V4.7-APK-INSTALAVEL
+          name: MENTEX-V4.7-APK
           path: ${{ runner.temp }}/mentex/MENTEX-V4.7.apk
           if-no-files-found: error
           retention-days: 7
