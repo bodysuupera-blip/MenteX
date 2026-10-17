@@ -1,37 +1,50 @@
-- name: Instalar ferramentas atualizadas
+name: MENTEX V4.7 - Preparar APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preparar-apk:
+    name: Preparar APK para download
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Baixar repositório
+        uses: actions/checkout@v4
+
+      - name: Localizar e validar APK
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y openjdk-17-jdk curl jq apksigner zipalign aapt
 
-          API="https://api.github.com/repos/iBotPeaches/Apktool/releases/latest"
+          APK="$(find . -type f -iname '*.apk' \
+            -not -path './.git/*' \
+            -print -quit)"
 
-          URL="$(curl -fsSL "$API" | jq -r \
-            '.assets[] | select(.name | test("^apktool_.*\\.jar$")) | .browser_download_url' \
-            | head -n 1)"
-
-          if [ -z "$URL" ] || [ "$URL" = "null" ]; then
-            echo "::error::Não foi possível encontrar a versão atual do Apktool."
+          if [ -z "$APK" ]; then
+            echo "::error::Nenhum arquivo APK encontrado no repositório."
             exit 1
           fi
 
-          curl -fL "$URL" -o "$RUNNER_TEMP/apktool.jar"
-          java -jar "$RUNNER_TEMP/apktool.jar" --version
+          echo "APK encontrado: $APK"
 
-      - name: Extrair APK original
-        shell: bash
-        run: |
-          set -euo pipefail
-          java -jar "$RUNNER_TEMP/apktool.jar" d -f \
-            "$RUNNER_TEMP/mentex/original.apk" \
-            -o "$RUNNER_TEMP/mentex/extraido"
+          mkdir -p "$RUNNER_TEMP/mentex-saida"
+          cp "$APK" "$RUNNER_TEMP/mentex-saida/MENTEX-V4.7.apk"
 
-      - name: Reconstruir APK
-        shell: bash
-        run: |
-          set -euo pipefail
-          java -jar "$RUNNER_TEMP/apktool.jar" b \
-            "$RUNNER_TEMP/mentex/extraido" \
-            --use-aapt2 \
-            -o "$RUNNER_TEMP/mentex/reconstruido.apk"
+          if [ ! -s "$RUNNER_TEMP/mentex-saida/MENTEX-V4.7.apk" ]; then
+            echo "::error::O APK copiado está vazio."
+            exit 1
+          fi
+
+          file "$RUNNER_TEMP/mentex-saida/MENTEX-V4.7.apk"
+
+      - name: Disponibilizar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MENTEX-V4.7-APK
+          path: ${{ runner.temp }}/mentex-saida/MENTEX-V4.7.apk
+          if-no-files-found: error
+          retention-days: 7
