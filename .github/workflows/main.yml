@@ -1,239 +1,33 @@
 
-name: MENTEX V4.7 - Gerar APK
-
-on:
-  workflow_dispatch:
-
-permissions:
-  contents: read
-
-jobs:
-  gerar-apk:
-    name: Preparar e assinar APK
-    runs-on: ubuntu-22.04
-
-    steps:
-      - name: Baixar arquivos do repositório
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: Configurar Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Instalar ferramentas
-        shell: bash
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y curl unzip zip jq
-
-      - name: Localizar APK e interface
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          APK="$(find . -type f -iname '*.apk' \
-            -not -path './.git/*' \
-            -not -path './saida/*' | head -n 1)"
-
-          ZIP_INTERFACE="$(find . -type f \
-            -name 'MENTEX-PERGUNTAS-INTERFACE-MELHORADA.zip' \
-            -not -path './.git/*' | head -n 1)"
-
-          if [ -z "$APK" ]; then
-            echo "::error::Nenhum APK original encontrado no repositório."
-            echo "Envie o APK original para o repositório."
-            exit 1
-          fi
-
-          if [ -z "$ZIP_INTERFACE" ]; then
-            echo "::error::ZIP da interface não encontrado."
-            echo "Envie MENTEX-PERGUNTAS-INTERFACE-MELHORADA.zip."
-            exit 1
-          fi
-
-          echo "APK encontrado: $APK"
-          echo "Interface encontrada: $ZIP_INTERFACE"
-
-          mkdir -p "$RUNNER_TEMP/mentex"
-          cp "$APK" "$RUNNER_TEMP/mentex/original.apk"
-          cp "$ZIP_INTERFACE" "$RUNNER_TEMP/mentex/interface.zip"
-
-          echo "APK_ORIGINAL=$RUNNER_TEMP/mentex/original.apk" \
-            >> "$GITHUB_ENV"
-          echo "ZIP_INTERFACE=$RUNNER_TEMP/mentex/interface.zip" \
-            >> "$GITHUB_ENV"
-
-      - name: Preparar Android SDK
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          SDK="$RUNNER_TEMP/android-sdk"
-          mkdir -p "$SDK/cmdline-tools" \
-                   "$RUNNER_TEMP/sdk-unpack"
-
-          curl -fL --retry 3 \
-            "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip" \
-            -o "$RUNNER_TEMP/sdk-tools.zip"
-
-          unzip -q "$RUNNER_TEMP/sdk-tools.zip" \
-            -d "$RUNNER_TEMP/sdk-unpack"
-
-          mkdir -p "$SDK/cmdline-tools/latest"
-          cp -a "$RUNNER_TEMP/sdk-unpack/cmdline-tools/." \
-            "$SDK/cmdline-tools/latest/"
-
-          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
-          echo "$SDK/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
-          echo "$SDK/platform-tools" >> "$GITHUB_PATH"
-          echo "$SDK/build-tools/35.0.0" >> "$GITHUB_PATH"
-
-          set +e
-          yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" \
-            --sdk_root="$SDK" --licenses
-          set -e
-
-          "$SDK/cmdline-tools/latest/bin/sdkmanager" \
-            --sdk_root="$SDK" \
-            "platform-tools" \
-            "build-tools;35.0.0"
-
-          test -x "$SDK/build-tools/35.0.0/apksigner"
-          test -x "$SDK/build-tools/35.0.0/zipalign"
-
-      - name: Extrair interface atualizada
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          mkdir -p "$RUNNER_TEMP/mentex/interface"
-          unzip -q "$ZIP_INTERFACE" \
-            -d "$RUNNER_TEMP/mentex/interface"
-
-          HTML="$(find "$RUNNER_TEMP/mentex/interface" \
-            -type f -name 'index.html' | head -n 1)"
-
-          if [ -z "$HTML" ]; then
-            echo "::error::O ZIP não contém index.html."
-            exit 1
-          fi
-
-          echo "HTML encontrado: $HTML"
-          echo "HTML_INTERFACE=$HTML" >> "$GITHUB_ENV"
-
-      - name: Baixar Apktool
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          URL="$(curl -fsSL \
-            https://api.github.com/repos/iBotPeaches/Apktool/releases/latest \
-            | jq -r '.assets[] |
-              select(.name | test("^apktool_.*\\.jar$")) |
-              .browser_download_url' | head -n 1)"
-
-          if [ -z "$URL" ] || [ "$URL" = "null" ]; then
-            echo "::error::Não foi possível localizar o Apktool."
-            exit 1
-          fi
-
-          curl -fL --retry 3 "$URL" \
-            -o "$RUNNER_TEMP/apktool.jar"
-
-          java -jar "$RUNNER_TEMP/apktool.jar" --version
-
-      - name: Decodificar APK original
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          java -jar "$RUNNER_TEMP/apktool.jar" \
-            d "$APK_ORIGINAL" \
-            -o "$RUNNER_TEMP/mentex/decoded" \
-            -f
-
-          if [ ! -d "$RUNNER_TEMP/mentex/decoded/assets" ]; then
-            echo "::error::O APK não possui a pasta assets."
-            echo "Não é possível aplicar a interface com este método."
-            exit 1
-          fi
-
-      - name: Aplicar interface
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          DEST="$RUNNER_TEMP/mentex/decoded/assets/index.html"
-
-          if [ ! -f "$DEST" ]; then
-            echo "::error::O APK original não possui assets/index.html."
-            echo "Não vou criar um arquivo novo sem confirmar a estrutura."
-            exit 1
-          fi
-
-          cp "$HTML_INTERFACE" "$DEST"
-
-          echo "Interface copiada para o APK decodificado."
-          test -s "$DEST"
-
       - name: Reconstruir APK
         shell: bash
         run: |
           set -euo pipefail
 
-          java -jar "$RUNNER_TEMP/apktool.jar" \
-            b "$RUNNER_TEMP/mentex/decoded" \
-            --use-aapt2 \
-            -o "$RUNNER_TEMP/mentex/mentex-aligned-unsigned.apk"
+          APKTOOL="$RUNNER_TEMP/apktool.jar"
+          PROJETO="$RUNNER_TEMP/mentex/decoded"
+          SAIDA="$RUNNER_TEMP/mentex/MENTEX-V4.7-alinhado.apk"
+          AAPT2="$ANDROID_HOME/build-tools/35.0.0/aapt2"
 
-          test -s "$RUNNER_TEMP/mentex/mentex-aligned-unsigned.apk"
+          if [ ! -f "$APKTOOL" ]; then
+            echo "::error::Apktool não encontrado."
+            exit 1
+          fi
 
-      - name: Alinhar e assinar APK
-        shell: bash
-        run: |
-          set -euo pipefail
+          if [ ! -x "$AAPT2" ]; then
+            echo "::error::AAPT2 não encontrado: $AAPT2"
+            exit 1
+          fi
 
-          SDK="$ANDROID_HOME/build-tools/35.0.0"
-          OUT="$RUNNER_TEMP/mentex"
+          java -jar "$APKTOOL" b "$PROJETO" \
+            --aapt "$AAPT2" \
+            --force \
+            --output "$SAIDA"
 
-          "$SDK/zipalign" -f -v 4 \
-            "$OUT/mentex-aligned-unsigned.apk" \
-            "$OUT/MENTEX-V4.7.apk"
+          if [ ! -s "$SAIDA" ]; then
+            echo "::error::O APK reconstruído não foi gerado."
+            exit 1
+          fi
 
-          keytool -genkeypair \
-            -keystore "$OUT/mentex-test.jks" \
-            -storepass android \
-            -keypass android \
-            -alias mentex \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -dname "CN=MENTEX, OU=App, O=MENTEX, L=Brasil, ST=SP, C=BR"
-
-          "$SDK/apksigner" sign \
-            --ks "$OUT/mentex-test.jks" \
-            --ks-key-alias mentex \
-            --ks-pass pass:android \
-            --key-pass pass:android \
-            --out "$OUT/MENTEX-V4.7-assinado.apk" \
-            "$OUT/MENTEX-V4.7.apk"
-
-          "$SDK/apksigner" verify --verbose \
-            "$OUT/MENTEX-V4.7-assinado.apk"
-
-          echo "APK assinado e verificado."
-
-      - name: Disponibilizar APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: MENTEX-V4.7-APK
-          path: ${{ runner.temp }}/mentex/MENTEX-V4.7-assinado.apk
-          if-no-files-found: error
-          retention-days: 7
+          echo "APK reconstruído com sucesso: $SAIDA"
           
