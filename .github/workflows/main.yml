@@ -1,4 +1,4 @@
-name: MENTEX V4.7 - Preparar APK
+name: MENTEX V4.7 - Atualizar Interface e Gerar APK
 
 on:
   workflow_dispatch:
@@ -7,44 +7,142 @@ permissions:
   contents: read
 
 jobs:
-  preparar-apk:
-    name: Preparar APK para download
+  atualizar:
+    name: Atualizar jogo MENTEX
     runs-on: ubuntu-22.04
 
     steps:
       - name: Baixar repositório
         uses: actions/checkout@v4
 
-      - name: Localizar e validar APK
+      - name: Instalar ferramentas
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y openjdk-17-jdk curl unzip zip jq \
+            apksigner zipalign aapt
+
+      - name: Localizar APK e interface
         shell: bash
         run: |
           set -euo pipefail
 
           APK="$(find . -type f -iname '*.apk' \
-            -not -path './.git/*' \
-            -print -quit)"
+            -not -path './.git/*' -print -quit)"
+
+          UI_ZIP="$(find . -type f \
+            -iname 'MENTEX-INTERFACE-NOVA-CEREBRO-ORIGINAL.zip' \
+            -not -path './.git/*' -print -quit)"
 
           if [ -z "$APK" ]; then
-            echo "::error::Nenhum arquivo APK encontrado no repositório."
+            echo "::error::APK original não encontrado."
             exit 1
           fi
 
-          echo "APK encontrado: $APK"
-
-          mkdir -p "$RUNNER_TEMP/mentex-saida"
-          cp "$APK" "$RUNNER_TEMP/mentex-saida/MENTEX-V4.7.apk"
-
-          if [ ! -s "$RUNNER_TEMP/mentex-saida/MENTEX-V4.7.apk" ]; then
-            echo "::error::O APK copiado está vazio."
+          if [ -z "$UI_ZIP" ]; then
+            echo "::error::ZIP da nova interface não encontrado."
             exit 1
           fi
 
-          file "$RUNNER_TEMP/mentex-saida/MENTEX-V4.7.apk"
+          mkdir -p "$RUNNER_TEMP/mentex/ui"
 
-      - name: Disponibilizar APK
+          cp "$APK" "$RUNNER_TEMP/mentex/original.apk"
+          unzip -q "$UI_ZIP" -d "$RUNNER_TEMP/mentex/ui"
+
+          HTML="$(find "$RUNNER_TEMP/mentex/ui" \
+            -type f -name index.html -print -quit)"
+
+          if [ -z "$HTML" ]; then
+            echo "::error::O ZIP da interface não contém index.html."
+            exit 1
+          fi
+
+          echo "HTML_INTERFACE=$HTML" >> "$GITHUB_ENV"
+
+      - name: Baixar Apktool atualizado
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          API="https://api.github.com/repos/iBotPeaches/Apktool/releases/latest"
+
+          URL="$(curl -fsSL "$API" | jq -r \
+            '.assets[] | select(.name | test("^apktool_.*\\.jar$")) | .browser_download_url' \
+            | head -n 1)"
+
+          if [ -z "$URL" ] || [ "$URL" = "null" ]; then
+            echo "::error::Não foi possível localizar o Apktool."
+            exit 1
+          fi
+
+          curl -fL "$URL" -o "$RUNNER_TEMP/apktool.jar"
+
+      - name: Extrair APK original
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          java -jar "$RUNNER_TEMP/apktool.jar" d -f \
+            "$RUNNER_TEMP/mentex/original.apk" \
+            -o "$RUNNER_TEMP/mentex/decoded"
+
+      - name: Substituir interface
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ASSETS="$RUNNER_TEMP/mentex/decoded/assets"
+
+          if [ ! -d "$ASSETS" ]; then
+            echo "::error::O APK não possui a pasta assets esperada."
+            exit 1
+          fi
+
+          cp "$HTML_INTERFACE" "$ASSETS/index.html"
+          echo "Interface HTML substituída."
+
+      - name: Reconstruir APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          java -jar "$RUNNER_TEMP/apktool.jar" b \
+            "$RUNNER_TEMP/mentex/decoded" \
+            -o "$RUNNER_TEMP/mentex/reconstruido.apk"
+
+      - name: Assinar APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          keytool -genkeypair \
+            -keystore "$RUNNER_TEMP/mentex/teste.jks" \
+            -storepass mentex123 \
+            -keypass mentex123 \
+            -alias mentex \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 3650 \
+            -dname "CN=MENTEX"
+
+          zipalign -f 4 \
+            "$RUNNER_TEMP/mentex/reconstruido.apk" \
+            "$RUNNER_TEMP/mentex/alinhado.apk"
+
+          apksigner sign \
+            --ks "$RUNNER_TEMP/mentex/teste.jks" \
+            --ks-pass pass:mentex123 \
+            --key-pass pass:mentex123 \
+            --out "$RUNNER_TEMP/mentex/MENTEX-V4.7.apk" \
+            "$RUNNER_TEMP/mentex/alinhado.apk"
+
+          apksigner verify "$RUNNER_TEMP/mentex/MENTEX-V4.7.apk"
+
+      - name: Disponibilizar APK final
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V4.7-APK
-          path: ${{ runner.temp }}/mentex-saida/MENTEX-V4.7.apk
+          name: MENTEX-V4.7-APK-ATUALIZADO
+          path: ${{ runner.temp }}/mentex/MENTEX-V4.7.apk
           if-no-files-found: error
           retention-days: 7
