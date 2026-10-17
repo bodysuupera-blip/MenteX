@@ -1,53 +1,188 @@
-- name: Reconstruir APK com AAPT2
+name: MENTEX V4.7 - Gerar APK Instalavel
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gerar-apk:
+    name: Reconstruir e assinar o jogo
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Baixar repositorio
+        uses: actions/checkout@v4
+
+      - name: Instalar ferramentas
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            openjdk-17-jdk \
+            curl \
+            unzip \
+            zip \
+            jq \
+            apksigner \
+            zipalign
+
+      - name: Localizar APK original e interface
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APK=""
+
+          if [ -f "MENTEX-V4.6.3.apk" ]; then
+            APK="MENTEX-V4.6.3.apk"
+          else
+            APK="$(find . -type f -iname '*.apk' \
+              -not -path './.git/*' \
+              -not -path './saida/*' \
+              -print -quit)"
+          fi
+
+          UI_ZIP="$(find . -type f \
+            -iname 'MENTEX-PERGUNTAS-INTERFACE-MELHORADA.zip' \
+            -not -path './.git/*' \
+            -print -quit)"
+
+          if [ -z "$APK" ] || [ ! -f "$APK" ]; then
+            echo "::error::APK original nao encontrado no repositorio."
+            exit 1
+          fi
+
+          if [ -z "$UI_ZIP" ]; then
+            echo "::error::ZIP da interface melhorada nao encontrado."
+            exit 1
+          fi
+
+          mkdir -p "$RUNNER_TEMP/mentex/interface"
+
+          cp "$APK" "$RUNNER_TEMP/mentex/original.apk"
+          unzip -q "$UI_ZIP" \
+            -d "$RUNNER_TEMP/mentex/interface"
+
+          HTML="$(find "$RUNNER_TEMP/mentex/interface" \
+            -type f -name index.html -print -quit)"
+
+          if [ -z "$HTML" ]; then
+            echo "::error::index.html nao encontrado dentro do ZIP."
+            exit 1
+          fi
+
+          echo "HTML_FILE=$HTML" >> "$GITHUB_ENV"
+
+      - name: Baixar Apktool
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          API="https://api.github.com/repos/iBotPeaches/Apktool/releases/latest"
+
+          URL="$(curl -fsSL "$API" | jq -r \
+            '.assets[] |
+            select(.name | test("^apktool_.*\\.jar$")) |
+            .browser_download_url' | head -n 1)"
+
+          if [ -z "$URL" ] || [ "$URL" = "null" ]; then
+            echo "::error::Nao foi possivel baixar o Apktool."
+            exit 1
+          fi
+
+          curl -fL "$URL" \
+            -o "$RUNNER_TEMP/apktool.jar"
+
+          java -jar "$RUNNER_TEMP/apktool.jar" --version
+
+      - name: Extrair APK original
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          java -jar "$RUNNER_TEMP/apktool.jar" d -f \
+            "$RUNNER_TEMP/mentex/original.apk" \
+            -o "$RUNNER_TEMP/mentex/extraido"
+
+          if [ ! -d "$RUNNER_TEMP/mentex/extraido/assets" ]; then
+            echo "::error::A pasta assets nao existe no APK."
+            exit 1
+          fi
+
+          if [ ! -f "$RUNNER_TEMP/mentex/extraido/assets/index.html" ]; then
+            echo "::error::O APK nao possui assets/index.html."
+            exit 1
+          fi
+
+      - name: Atualizar somente a interface HTML
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cp "$HTML_FILE" \
+            "$RUNNER_TEMP/mentex/extraido/assets/index.html"
+
+          echo "Interface HTML atualizada."
+
+      - name: Reconstruir APK
         shell: bash
         run: |
           set -euo pipefail
 
           java -jar "$RUNNER_TEMP/apktool.jar" b \
-            "$RUNNER_TEMP/mentex/decoded" \
+            "$RUNNER_TEMP/mentex/extraido" \
             --use-aapt2 \
-            -o "$RUNNER_TEMP/mentex/rebuilt.apk"
+            -o "$RUNNER_TEMP/mentex/reconstruido.apk"
 
-          if [ ! -s "$RUNNER_TEMP/mentex/rebuilt.apk" ]; then
-            echo "::error::O APK reconstruído está vazio."
+          if [ ! -s "$RUNNER_TEMP/mentex/reconstruido.apk" ]; then
+            echo "::error::A reconstrucao nao produziu um APK."
             exit 1
           fi
 
-      - name: Validar APK reconstruído
+      - name: Criar chave de assinatura
         shell: bash
         run: |
           set -euo pipefail
 
-          unzip -t "$RUNNER_TEMP/mentex/rebuilt.apk"
-          aapt dump badging "$RUNNER_TEMP/mentex/rebuilt.apk"
+          keytool -genkeypair \
+            -keystore "$RUNNER_TEMP/mentex/teste.jks" \
+            -storepass mentex123 \
+            -keypass mentex123 \
+            -alias mentex \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 3650 \
+            -dname "CN=MENTEX"
 
-      - name: Assinar APK reconstruído
+      - name: Alinhar e assinar APK
         shell: bash
         run: |
           set -euo pipefail
+
+          zipalign -f 4 \
+            "$RUNNER_TEMP/mentex/reconstruido.apk" \
+            "$RUNNER_TEMP/mentex/alinhado.apk"
 
           apksigner sign \
-            --ks "$RUNNER_TEMP/mentex/keystore.jks" \
-            --ks-key-alias "$KEY_ALIAS" \
-            --ks-pass "pass:$KEYSTORE_PASSWORD" \
-            --key-pass "pass:$KEY_PASSWORD" \
-            "$RUNNER_TEMP/mentex/rebuilt.apk"
+            --ks "$RUNNER_TEMP/mentex/teste.jks" \
+            --ks-pass pass:mentex123 \
+            --key-pass pass:mentex123 \
+            --ks-key-alias mentex \
+            --out "$RUNNER_TEMP/mentex/MENTEX-V4.7.apk" \
+            "$RUNNER_TEMP/mentex/alinhado.apk"
 
-          apksigner verify --verbose "$RUNNER_TEMP/mentex/rebuilt.apk"
+          apksigner verify --verbose \
+            "$RUNNER_TEMP/mentex/MENTEX-V4.7.apk"
 
-      - name: Publicar APK
+          unzip -t "$RUNNER_TEMP/mentex/MENTEX-V4.7.apk"
+
+      - name: Publicar aplicativo APK
         uses: actions/upload-artifact@v4
         with:
-          name: mentex-apk
-          path: ${{ runner.temp }}/mentex/rebuilt.apk
-
-Mantenha as etapas de assinatura e publicação depois dessas duas etapas.
-
-Depois, execute novamente
-
-1. Salve o arquivo no GitHub.
-2. Abra Actions e execute o workflow.
-3. Se falhar em Validar APK reconstruído, envie o log dessa etapa.
-4. Se passar, baixe o novo artefato e tente instalar.
-
-Importante: ainda precisamos confirmar que o APK contém a nova tela de perguntas e preserva a animação do cérebro. Não desinstale o jogo antigo até termos um APK que passe na validação e possa ser instalado.
+          name: MENTEX-V4.7-APK-INSTALAVEL
+          path: ${{ runner.temp }}/mentex/MENTEX-V4.7.apk
+          if-no-files-found: error
+          retention-days: 7
