@@ -1,127 +1,103 @@
+
 name: MENTEX V4.7 - Gerar APK
+
 on:
-workflow_dispatch:
+  workflow_dispatch:
+
 permissions:
-contents: read
+  contents: read
+
 jobs:
-preparar-apk:
-name: Compilar MENTEX V4.7
-runs-on: ubuntu-22.04
-steps:
-  - name: Baixar código do repositório
-    uses: actions/checkout@v4
+  preparar-apk:
+    name: Compilar MENTEX V4.7
+    runs-on: ubuntu-22.04
 
-  - name: Configurar Java 17
-    uses: actions/setup-java@v4
-    with:
-      distribution: temurin
-      java-version: '17'
+    steps:
+      - name: Baixar codigo do repositorio
+        uses: actions/checkout@v4
 
-  - name: Configurar Android SDK
-    uses: android-actions/setup-android@v3
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
 
-  - name: Instalar componentes Android
-    run: |
-      set -e
-      sdkmanager --install \
-        "platform-tools" \
-        "platforms;android-35" \
-        "build-tools;35.0.0"
+      - name: Instalar Android SDK
+        uses: android-actions/setup-android@v3
 
-  - name: Extrair projeto Android V4.7
-    shell: bash
-    run: |
-      set -euo pipefail
+      - name: Instalar ferramentas Android
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
+          yes | sdkmanager --licenses || true
 
-      ZIP="MENTEX-V4.7-TELA-4-OPCOES.zip"
+      - name: Extrair e localizar projeto Android
+        shell: bash
+        run: |
+          set -euo pipefail
 
-      if [ ! -f "$ZIP" ]; then
-        echo "::error::Arquivo $ZIP não encontrado na raiz do repositório."
-        echo "Arquivos ZIP encontrados:"
-        find . -maxdepth 3 -type f -iname "*.zip"
-        exit 1
-      fi
+          mkdir -p "$RUNNER_TEMP/mentex"
+          find . -type f -name '*.zip' \
+            -not -path './.git/*' \
+            -print0 > "$RUNNER_TEMP/zips.txt"
 
-      mkdir -p "$RUNNER_TEMP/mentex-project"
+          while IFS= read -r -d '' arquivo; do
+            echo "Extraindo: $arquivo"
+            destino="$RUNNER_TEMP/mentex/$(basename "$arquivo" .zip)"
+            mkdir -p "$destino"
+            unzip -oq "$arquivo" -d "$destino"
+          done < "$RUNNER_TEMP/zips.txt"
 
-      unzip -oq "$ZIP" -d "$RUNNER_TEMP/mentex-project"
+          projeto=""
 
-      SETTINGS="$(find "$RUNNER_TEMP/mentex-project" \
-        -type f \( -name settings.gradle -o -name settings.gradle.kts \) \
-        -print -quit)"
+          while IFS= read -r -d '' arquivo; do
+            pasta="${arquivo%/gradlew}"
+            if [ -f "$pasta/settings.gradle" ] ||
+               [ -f "$pasta/settings.gradle.kts" ]; then
+              projeto="$pasta"
+              break
+            fi
+          done < <(
+            find "$RUNNER_TEMP/mentex" \
+              -type f -name gradlew -print0
+          )
 
-      if [ -z "$SETTINGS" ]; then
-        echo "::error::O ZIP não contém um projeto Gradle Android."
-        exit 1
-      fi
+          if [ -z "$projeto" ]; then
+            echo "::error::Projeto sem Gradle Wrapper."
+            echo "O ZIP precisa conter gradlew e gradle/wrapper."
+            find "$RUNNER_TEMP/mentex" -maxdepth 5 \
+              \( -name settings.gradle \
+              -o -name settings.gradle.kts \
+              -o -name gradlew \
+              -o -name gradle-wrapper.properties \) -print
+            exit 1
+          fi
 
-      ROOT="$(dirname "$SETTINGS")"
+          echo "Projeto localizado: $projeto"
+          echo "PROJECT_DIR=$projeto" >> "$GITHUB_ENV"
 
-      if [ ! -f "$ROOT/app/build.gradle" ] && \
-         [ ! -f "$ROOT/app/build.gradle.kts" ]; then
-        echo "::error::O projeto não contém a configuração esperada em app/."
-        exit 1
-      fi
+      - name: Compilar APK de depuracao
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$PROJECT_DIR"
 
-      cp -a "$ROOT/." .
+          test -f gradlew
+          test -f gradle/wrapper/gradle-wrapper.properties
 
-      echo "Projeto Android extraído:"
-      ls -la
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleDebug
 
-  - name: Verificar arquivos Android
-    shell: bash
-    run: |
-      set -e
-
-      test -f settings.gradle || test -f settings.gradle.kts
-      test -f build.gradle || test -f build.gradle.kts
-      test -f app/src/main/AndroidManifest.xml
-
-      echo "Estrutura Android validada."
-
-  - name: Instalar Gradle 8.7
-    shell: bash
-    run: |
-      set -e
-
-      curl -fL \
-        https://services.gradle.org/distributions/gradle-8.7-bin.zip \
-        -o "$RUNNER_TEMP/gradle.zip"
-
-      unzip -oq "$RUNNER_TEMP/gradle.zip" \
-        -d "$RUNNER_TEMP"
-
-      echo "$RUNNER_TEMP/gradle-8.7/bin" >> "$GITHUB_PATH"
-
-  - name: Compilar APK
-    shell: bash
-    run: |
-      set -e
-
-      gradle --version
-      gradle --no-daemon --stacktrace assembleDebug
-
-  - name: Verificar APK gerado
-    shell: bash
-    run: |
-      set -e
-
-      APK="app/build/outputs/apk/debug/app-debug.apk"
-
-      if [ ! -f "$APK" ]; then
-        echo "::error::APK não foi gerado."
-        find app/build/outputs -type f 2>/dev/null || true
-        exit 1
-      fi
-
-      ls -lh "$APK"
-      sha256sum "$APK"
-
-  - name: Disponibilizar APK para download
-    uses: actions/upload-artifact@v4
-    with:
-      name: MENTEX-V4.7-APK
-      path: app/build/outputs/apk/debug/app-debug.apk
-      if-no-files-found: error
-      retention-days: 14
-
+      - name: Publicar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MENTEX-V4.7-APK
+          path: |
+            **/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+          
