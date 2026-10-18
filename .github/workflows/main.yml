@@ -2,6 +2,13 @@ name: MENTEX V4.6.4 - Gerar APK
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - "**/*.gradle"
+      - "**/*.gradle.kts"
+      - "**/gradlew"
+      - "gradle.properties"
+      - ".github/workflows/main.yml"
 
 permissions:
   contents: read
@@ -14,53 +21,128 @@ jobs:
       - name: Baixar arquivos do repositorio
         uses: actions/checkout@v4
 
+      - name: Verificar arquivos do repositorio
+        shell: bash
+        run: |
+          set -eu
+
+          echo "===== RAIZ DO REPOSITORIO ====="
+          ls -la
+
+          echo "===== ARQUIVOS GRADLE ====="
+          find . -type f \( \
+            -name "gradlew" -o \
+            -name "settings.gradle" -o \
+            -name "settings.gradle.kts" -o \
+            -name "build.gradle" -o \
+            -name "build.gradle.kts" -o \
+            -name "gradle-wrapper.properties" \
+          \) -not -path "./.git/*" -print
+
       - name: Configurar Java 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
-          cache: gradle
-          cache-dependency-path: |
-            **/*.gradle
-            **/*.gradle.kts
-            **/gradle-wrapper.properties
 
       - name: Configurar Android SDK
         uses: android-actions/setup-android@v3
 
       - name: Instalar ferramentas Android
+        shell: bash
         run: |
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          set -eu
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
 
       - name: Localizar projeto Android
         shell: bash
         run: |
-          set -euo pipefail
+          set -eu
 
           WRAPPER="$(find . -type f -name gradlew \
-            -not -path './.git/*' | head -n 1 || true)"
+            -not -path "./.git/*" \
+            -print -quit)"
 
           if [ -z "$WRAPPER" ]; then
-            echo "::error::Arquivo gradlew não encontrado."
-            echo "Este repositório precisa conter o projeto-fonte Android."
+            echo "::error::Arquivo gradlew nao encontrado."
+            echo "Adicione o projeto-fonte Android ao repositorio."
             exit 1
           fi
 
           PROJECT_DIR="$(dirname "$WRAPPER")"
+
+          echo "Projeto encontrado em: $PROJECT_DIR"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
           chmod +x "$WRAPPER"
 
-      - name: Compilar APK
+      - name: Compilar APK release
+        shell: bash
         run: |
-          set -euo pipefail
+          set -eu
+
           cd "$PROJECT_DIR"
+
           ./gradlew --no-daemon assembleRelease
 
-      - name: Publicar APK
+      - name: Localizar APK gerado
+        shell: bash
+        run: |
+          set -eu
+
+          mkdir -p "$GITHUB_WORKSPACE/saida"
+
+          find "$PROJECT_DIR" \
+            -type f \
+            -path "*/build/outputs/apk/*/*.apk" \
+            -exec cp {} "$GITHUB_WORKSPACE/saida/" \;
+
+          if ! find "$GITHUB_WORKSPACE/saida" \
+            -type f -name "*.apk" -print -quit | grep -q .; then
+            echo "::error::Nenhum APK foi gerado."
+            exit 1
+          fi
+
+          ls -lh "$GITHUB_WORKSPACE/saida"
+
+      - name: Verificar assinatura do APK
+        shell: bash
+        continue-on-error: true
+        run: |
+          set -eu
+
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" \
+            -type f -name apksigner | sort -V | tail -n 1)"
+
+          for APK in "$GITHUB_WORKSPACE"/saida/*.apk; do
+            echo "Verificando: $APK"
+
+            "$APKSIGNER" verify \
+              --verbose \
+              --print-certs "$APK" || true
+          done
+
+      - name: Criar ZIP da atualizacao
+        shell: bash
+        run: |
+          set -eu
+
+          cd "$GITHUB_WORKSPACE/saida"
+
+          zip -j \
+            "$GITHUB_WORKSPACE/MENTEX-V4.6.4-PACOTE.zip" \
+            ./*.apk
+
+      - name: Publicar APK e ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V4.6.4-APK
-          path: "**/build/outputs/apk/**/*.apk"
+          name: MENTEX-V4.6.4
+          path: |
+            saida/*.apk
+            MENTEX-V4.6.4-PACOTE.zip
           if-no-files-found: error
           retention-days: 14
           
