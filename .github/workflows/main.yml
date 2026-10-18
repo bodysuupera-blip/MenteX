@@ -1,117 +1,90 @@
-
-name: MENTEX V4.6.4 - Diagnostico e APK
+name: Gerar APK MENTEX V4.6.3
 
 on:
   workflow_dispatch:
-
-permissions:
-  contents: read
+  push:
+    paths:
+      - "MENTEX-V4.6.3-PERGUNTAS-MELHORADAS.zip"
+      - ".github/workflows/android.yml"
 
 jobs:
-  gerar-apk:
-    runs-on: ubuntu-22.04
+  build:
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar repositorio
+      - name: Baixar arquivos do repositório
         uses: actions/checkout@v4
 
       - name: Configurar Java
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Diagnosticar repositorio
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Extrair projeto MENTEX
         shell: bash
         run: |
-          set -eu
+          set -e
 
-          echo "=== DIRETORIO ==="
-          pwd
+          ZIP="MENTEX-V4.6.3-PERGUNTAS-MELHORADAS.zip"
 
-          echo "=== ARQUIVOS PRINCIPAIS ==="
-          ls -la
-
-          echo "=== ARQUIVOS ANDROID E GRADLE ==="
-          find . -type f \
-            \( -name gradlew \
-            -o -name settings.gradle \
-            -o -name settings.gradle.kts \
-            -o -name build.gradle \
-            -o -name build.gradle.kts \
-            -o -name AndroidManifest.xml \
-            -o -name '*.apk' \
-            -o -name 'gradle-wrapper.properties' \) \
-            -not -path './.git/*' -print
-
-      - name: Localizar projeto Gradle
-        id: projeto
-        shell: bash
-        run: |
-          set -eu
-
-          WRAPPER="$(find . -type f -name gradlew \
-            -not -path './.git/*' -print -quit)"
-
-          if [ -z "$WRAPPER" ]; then
-            echo "::error::Projeto Gradle não encontrado: falta gradlew."
+          if [ ! -f "$ZIP" ]; then
+            echo "ERRO: arquivo $ZIP não encontrado no repositório."
+            echo "Envie o ZIP para a raiz do repositório no GitHub."
             exit 1
           fi
 
-          DIR="$(dirname "$WRAPPER")"
+          mkdir -p projeto
+          unzip -q "$ZIP" -d projeto
 
-          if [ ! -f "$DIR/settings.gradle" ] && \
-             [ ! -f "$DIR/settings.gradle.kts" ]; then
-            echo "::error::Falta settings.gradle ou settings.gradle.kts."
+          SETTINGS=$(find projeto -type f \
+            \( -name settings.gradle -o -name settings.gradle.kts \) \
+            -print -quit)
+
+          if [ -z "$SETTINGS" ]; then
+            echo "ERRO: settings.gradle não encontrado dentro do ZIP."
+            echo "Confira se o ZIP contém o projeto Android completo."
             exit 1
           fi
 
-          chmod +x "$WRAPPER"
-          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+          echo "PROJETO_DIR=$(dirname "$SETTINGS")" >> "$GITHUB_ENV"
+          echo "Projeto encontrado em: $(dirname "$SETTINGS")"
 
-      - name: Compilar APK
+      - name: Gerar APK
         shell: bash
-        env:
-          PROJECT_DIR: ${{ steps.projeto.outputs.dir }}
         run: |
-          set -eu
-          cd "$PROJECT_DIR"
-          ./gradlew --no-daemon --stacktrace assembleRelease
+          set -e
+          cd "$PROJETO_DIR"
 
-      - name: Localizar APK
+          gradle --no-daemon clean assembleDebug
+
+      - name: Preparar APK final
         shell: bash
-        env:
-          PROJECT_DIR: ${{ steps.projeto.outputs.dir }}
         run: |
-          set -eu
+          set -e
 
-          mkdir -p saida
+          APK=$(find "$PROJETO_DIR" -type f \
+            -path "*/build/outputs/apk/debug/*.apk" \
+            -print -quit)
 
-          find "$PROJECT_DIR" -type f \
-            -path '*/build/outputs/apk/*/*.apk' \
-            -exec cp {} saida/ \;
-
-          if ! find saida -type f -name '*.apk' \
-            -print -quit | grep -q .; then
-            echo "::error::A compilação não produziu APK."
+          if [ -z "$APK" ]; then
+            echo "ERRO: APK não foi gerado."
             exit 1
           fi
 
-          ls -lh saida
+          mkdir -p apk-final
+          cp "$APK" apk-final/MENTEX-V4.6.3.apk
+          ls -lh apk-final/
 
-      - name: Criar ZIP
-        shell: bash
-        run: |
-          set -eu
-          zip -j MENTEX-V4.6.4-PACOTE.zip saida/*.apk
-
-      - name: Publicar arquivos
-        if: success()
+      - name: Disponibilizar APK para download
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V4.6.4
-          path: |
-            saida/*.apk
-            MENTEX-V4.6.4-PACOTE.zip
+          name: MENTEX-V4.6.3-APK
+          path: apk-final/MENTEX-V4.6.3.apk
           if-no-files-found: error
           retention-days: 14
