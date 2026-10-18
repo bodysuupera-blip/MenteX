@@ -1,14 +1,7 @@
-
 name: MENTEX V4.6.4 - Gerar APK
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - "**/*.gradle"
-      - "**/*.gradle.kts"
-      - "gradle.properties"
-      - ".github/workflows/gerar-apk.yml"
 
 permissions:
   contents: read
@@ -22,11 +15,15 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
           cache: gradle
+          cache-dependency-path: |
+            **/*.gradle
+            **/*.gradle.kts
+            **/gradle-wrapper.properties
 
       - name: Configurar Android SDK
         uses: android-actions/setup-android@v3
@@ -44,7 +41,8 @@ jobs:
             -not -path './.git/*' | head -n 1 || true)"
 
           if [ -z "$WRAPPER" ]; then
-            echo "::error::Projeto fonte nao encontrado. O repositorio precisa conter o arquivo gradlew."
+            echo "::error::Arquivo gradlew não encontrado."
+            echo "Este repositório precisa conter o projeto-fonte Android."
             exit 1
           fi
 
@@ -52,50 +50,17 @@ jobs:
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           chmod +x "$WRAPPER"
 
-      - name: Gerar APK release
-        shell: bash
+      - name: Compilar APK
         run: |
           set -euo pipefail
           cd "$PROJECT_DIR"
-          ./gradlew --no-daemon clean assembleRelease
+          ./gradlew --no-daemon assembleRelease
 
-      - name: Preparar pacote ZIP
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p saida
-
-          find "$PROJECT_DIR" \
-            -type f \
-            -path '*/build/outputs/apk/*/*.apk' \
-            -exec cp {} saida/ \;
-
-          if ! find saida -name '*.apk' | grep -q .; then
-            echo "::error::Nenhum APK foi gerado."
-            exit 1
-          fi
-
-          cd saida
-          zip -j ../MENTEX-V4.6.4-PACOTE.zip *.apk
-
-      - name: Verificar assinatura do APK
-        shell: bash
-        continue-on-error: true
-        run: |
-          APKSIGNER="$(find "$ANDROID_HOME/build-tools" \
-            -type f -name apksigner | sort -V | tail -n 1)"
-
-          for APK in saida/*.apk; do
-            "$APKSIGNER" verify --verbose --print-certs "$APK"
-          done
-
-      - name: Disponibilizar APK e ZIP
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V4.6.4
-          path: |
-            saida/*.apk
-            MENTEX-V4.6.4-PACOTE.zip
+          name: MENTEX-V4.6.4-APK
+          path: "**/build/outputs/apk/**/*.apk"
           if-no-files-found: error
           retention-days: 14
           
