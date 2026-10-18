@@ -24,35 +24,38 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Instalar dependencias
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl unzip zip
+
       - name: Instalar Android Command-line Tools
         shell: bash
         run: |
           set -euo pipefail
 
-          sudo apt-get update
-          sudo apt-get install -y curl unzip
-
           mkdir -p "$ANDROID_HOME/cmdline-tools"
 
-          curl -fL \
+          curl -fL --retry 3 \
             "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip" \
             -o "$RUNNER_TEMP/android-tools.zip"
 
-          mkdir -p "$RUNNER_TEMP/android-tools"
+          mkdir -p "$RUNNER_TEMP/android-tools-unpack"
 
           unzip -q "$RUNNER_TEMP/android-tools.zip" \
-            -d "$RUNNER_TEMP/android-tools"
+            -d "$RUNNER_TEMP/android-tools-unpack"
 
-          mv "$RUNNER_TEMP/android-tools/cmdline-tools" \
+          mv "$RUNNER_TEMP/android-tools-unpack/cmdline-tools" \
             "$ANDROID_HOME/cmdline-tools/latest"
 
           echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
           echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
 
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
-            --version
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --version
 
-      - name: Instalar componentes Android
+      - name: Instalar pacotes Android
         shell: bash
         run: |
           set -euo pipefail
@@ -74,31 +77,30 @@ jobs:
           set -euo pipefail
 
           WRAPPER="$(find . -type f -name gradlew \
-            -not -path './.git/*' \
-            -print -quit)"
+            -not -path './.git/*' -print -quit)"
 
           if [ -z "$WRAPPER" ]; then
-            echo "::error::Arquivo gradlew não encontrado."
-            echo "O repositório precisa conter o projeto-fonte Android."
+            echo "::error::gradlew nao encontrado. Adicione o projeto-fonte Android ao repositorio."
             exit 1
           fi
 
           PROJECT_DIR="$(dirname "$WRAPPER")"
 
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          if [ ! -f "$PROJECT_DIR/settings.gradle" ] && \
+             [ ! -f "$PROJECT_DIR/settings.gradle.kts" ]; then
+            echo "::error::settings.gradle ou settings.gradle.kts nao encontrado."
+            exit 1
+          fi
 
           chmod +x "$WRAPPER"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-          echo "Projeto encontrado: $PROJECT_DIR"
-
-      - name: Compilar APK release
+      - name: Compilar APK Release
         shell: bash
         run: |
           set -euo pipefail
-
           cd "$PROJECT_DIR"
-
-          ./gradlew --no-daemon assembleRelease
+          ./gradlew --no-daemon --stacktrace assembleRelease
 
       - name: Localizar APK gerado
         shell: bash
@@ -134,7 +136,7 @@ jobs:
               --print-certs "$APK" || true
           done
 
-      - name: Criar ZIP da atualização
+      - name: Criar ZIP
         shell: bash
         run: |
           set -euo pipefail
