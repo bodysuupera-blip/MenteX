@@ -1,119 +1,101 @@
+
 name: MENTEX V4.6.4 - Gerar APK
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - "**/*.gradle"
+      - "**/*.gradle.kts"
+      - "gradle.properties"
+      - ".github/workflows/gerar-apk.yml"
 
 permissions:
   contents: read
 
 jobs:
   gerar-apk:
-    name: Gerar APK MENTEX V4.6.4
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar arquivos do repositório
+      - name: Baixar arquivos do repositorio
         uses: actions/checkout@v4
 
-      - name: Configurar Java
-        uses: actions/setup-java@v5
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
+          cache: gradle
+
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v3
 
       - name: Instalar ferramentas Android
         run: |
-          set -euo pipefail
-          SDK="$ANDROID_HOME"
-          "$SDK/cmdline-tools/latest/bin/sdkmanager" \
-            "build-tools;35.0.0"
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Localizar e extrair ZIP correto
+      - name: Localizar projeto Android
         shell: bash
         run: |
           set -euo pipefail
 
-          ZIP="$GITHUB_WORKSPACE/MENTEX-V4.6.3-PROPORCIONAL.zip"
-          DIR="$RUNNER_TEMP/mentex"
+          WRAPPER="$(find . -type f -name gradlew \
+            -not -path './.git/*' | head -n 1 || true)"
 
-          mkdir -p "$DIR"
-
-          if [ ! -f "$ZIP" ]; then
-            echo "::error::Não encontrei MENTEX-V4.6.3-PROPORCIONAL.zip na raiz do repositório."
+          if [ -z "$WRAPPER" ]; then
+            echo "::error::Projeto fonte nao encontrado. O repositorio precisa conter o arquivo gradlew."
             exit 1
           fi
 
-          unzip -l "$ZIP"
+          PROJECT_DIR="$(dirname "$WRAPPER")"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          chmod +x "$WRAPPER"
 
-          unzip -p "$ZIP" \
-            "MENTEX-V4.6.3-PROPORCIONAL.apk" \
-            > "$DIR/MENTEX-V4.6.4-original.apk"
+      - name: Gerar APK release
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$PROJECT_DIR"
+          ./gradlew --no-daemon clean assembleRelease
 
-          if [ ! -s "$DIR/MENTEX-V4.6.4-original.apk" ]; then
-            echo "::error::Não foi possível extrair o APK do ZIP."
+      - name: Preparar pacote ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p saida
+
+          find "$PROJECT_DIR" \
+            -type f \
+            -path '*/build/outputs/apk/*/*.apk' \
+            -exec cp {} saida/ \;
+
+          if ! find saida -name '*.apk' | grep -q .; then
+            echo "::error::Nenhum APK foi gerado."
             exit 1
           fi
 
-      - name: Baixar Apktool
+          cd saida
+          zip -j ../MENTEX-V4.6.4-PACOTE.zip *.apk
+
+      - name: Verificar assinatura do APK
+        shell: bash
+        continue-on-error: true
         run: |
-          set -euo pipefail
-          curl -fL --retry 3 \
-            https://github.com/iBotPeaches/Apktool/releases/download/v2.11.1/apktool_2.11.1.jar \
-            -o "$RUNNER_TEMP/apktool.jar"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" \
+            -type f -name apksigner | sort -V | tail -n 1)"
 
-      - name: Reconstruir APK
-        run: |
-          set -euo pipefail
+          for APK in saida/*.apk; do
+            "$APKSIGNER" verify --verbose --print-certs "$APK"
+          done
 
-          DIR="$RUNNER_TEMP/mentex"
-          APKTOOL="$RUNNER_TEMP/apktool.jar"
-
-          java -jar "$APKTOOL" d \
-            "$DIR/MENTEX-V4.6.4-original.apk" \
-            -o "$DIR/decoded" -f
-
-          java -jar "$APKTOOL" b \
-            "$DIR/decoded" \
-            -o "$DIR/MENTEX-V4.6.4-reconstruido.apk"
-
-          test -s "$DIR/MENTEX-V4.6.4-reconstruido.apk"
-
-      - name: Alinhar e assinar APK
-        run: |
-          set -euo pipefail
-
-          DIR="$RUNNER_TEMP/mentex"
-          TOOLS="$ANDROID_HOME/build-tools/35.0.0"
-          KEY="$RUNNER_TEMP/mentex-debug.keystore"
-
-          keytool -genkeypair \
-            -keystore "$KEY" \
-            -storepass android \
-            -keypass android \
-            -alias androiddebugkey \
-            -dname "CN=Android Debug,O=Android,C=US" \
-            -keyalg RSA -keysize 2048 \
-            -validity 10000 -noprompt
-
-          "$TOOLS/zipalign" -f -p 4 \
-            "$DIR/MENTEX-V4.6.4-reconstruido.apk" \
-            "$DIR/MENTEX-V4.6.4-alinhado.apk"
-
-          "$TOOLS/apksigner" sign \
-            --ks "$KEY" \
-            --ks-key-alias androiddebugkey \
-            --ks-pass pass:android \
-            --key-pass pass:android \
-            --out "$DIR/MENTEX-V4.6.4.apk" \
-            "$DIR/MENTEX-V4.6.4-alinhado.apk"
-
-          "$TOOLS/apksigner" verify --verbose \
-            "$DIR/MENTEX-V4.6.4.apk"
-
-      - name: Disponibilizar APK para download
+      - name: Disponibilizar APK e ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V4.6.4-APK
-          path: ${{ runner.temp }}/mentex/MENTEX-V4.6.4.apk
+          name: MENTEX-V4.6.4
+          path: |
+            saida/*.apk
+            MENTEX-V4.6.4-PACOTE.zip
           if-no-files-found: error
           retention-days: 14
+          
