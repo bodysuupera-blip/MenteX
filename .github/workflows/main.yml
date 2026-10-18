@@ -1,4 +1,5 @@
-name: MENTEX V4.6.4 - Gerar APK
+
+name: MENTEX V4.6.4 - Diagnostico e APK
 
 on:
   workflow_dispatch:
@@ -10,144 +11,102 @@ jobs:
   gerar-apk:
     runs-on: ubuntu-22.04
 
-    env:
-      ANDROID_HOME: ${{ runner.temp }}/android-sdk
-      ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
-
     steps:
       - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Configurar Java 17
+      - name: Configurar Java
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Instalar dependencias
+      - name: Diagnosticar repositorio
         shell: bash
         run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y curl unzip zip
+          set -eu
 
-      - name: Instalar Android Command-line Tools
+          echo "=== DIRETORIO ==="
+          pwd
+
+          echo "=== ARQUIVOS PRINCIPAIS ==="
+          ls -la
+
+          echo "=== ARQUIVOS ANDROID E GRADLE ==="
+          find . -type f \
+            \( -name gradlew \
+            -o -name settings.gradle \
+            -o -name settings.gradle.kts \
+            -o -name build.gradle \
+            -o -name build.gradle.kts \
+            -o -name AndroidManifest.xml \
+            -o -name '*.apk' \
+            -o -name 'gradle-wrapper.properties' \) \
+            -not -path './.git/*' -print
+
+      - name: Localizar projeto Gradle
+        id: projeto
         shell: bash
         run: |
-          set -euo pipefail
-
-          mkdir -p "$ANDROID_HOME/cmdline-tools"
-
-          curl -fL --retry 3 \
-            "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip" \
-            -o "$RUNNER_TEMP/android-tools.zip"
-
-          mkdir -p "$RUNNER_TEMP/android-tools-unpack"
-
-          unzip -q "$RUNNER_TEMP/android-tools.zip" \
-            -d "$RUNNER_TEMP/android-tools-unpack"
-
-          mv "$RUNNER_TEMP/android-tools-unpack/cmdline-tools" \
-            "$ANDROID_HOME/cmdline-tools/latest"
-
-          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
-          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
-
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --version
-
-      - name: Instalar pacotes Android
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-
-          yes | "$SDKMANAGER" \
-            --sdk_root="$ANDROID_HOME" --licenses || true
-
-          "$SDKMANAGER" \
-            --sdk_root="$ANDROID_HOME" \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
-
-      - name: Localizar projeto Android
-        shell: bash
-        run: |
-          set -euo pipefail
+          set -eu
 
           WRAPPER="$(find . -type f -name gradlew \
             -not -path './.git/*' -print -quit)"
 
           if [ -z "$WRAPPER" ]; then
-            echo "::error::gradlew nao encontrado. Adicione o projeto-fonte Android ao repositorio."
+            echo "::error::Projeto Gradle não encontrado: falta gradlew."
             exit 1
           fi
 
-          PROJECT_DIR="$(dirname "$WRAPPER")"
+          DIR="$(dirname "$WRAPPER")"
 
-          if [ ! -f "$PROJECT_DIR/settings.gradle" ] && \
-             [ ! -f "$PROJECT_DIR/settings.gradle.kts" ]; then
-            echo "::error::settings.gradle ou settings.gradle.kts nao encontrado."
+          if [ ! -f "$DIR/settings.gradle" ] && \
+             [ ! -f "$DIR/settings.gradle.kts" ]; then
+            echo "::error::Falta settings.gradle ou settings.gradle.kts."
             exit 1
           fi
 
           chmod +x "$WRAPPER"
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
 
-      - name: Compilar APK Release
+      - name: Compilar APK
         shell: bash
+        env:
+          PROJECT_DIR: ${{ steps.projeto.outputs.dir }}
         run: |
-          set -euo pipefail
+          set -eu
           cd "$PROJECT_DIR"
           ./gradlew --no-daemon --stacktrace assembleRelease
 
-      - name: Localizar APK gerado
+      - name: Localizar APK
         shell: bash
+        env:
+          PROJECT_DIR: ${{ steps.projeto.outputs.dir }}
         run: |
-          set -euo pipefail
+          set -eu
 
-          mkdir -p "$GITHUB_WORKSPACE/saida"
+          mkdir -p saida
 
-          find "$PROJECT_DIR" \
-            -type f \
+          find "$PROJECT_DIR" -type f \
             -path '*/build/outputs/apk/*/*.apk' \
-            -exec cp {} "$GITHUB_WORKSPACE/saida/" \;
+            -exec cp {} saida/ \;
 
-          if ! find "$GITHUB_WORKSPACE/saida" \
-            -type f -name '*.apk' -print -quit | grep -q .; then
-            echo "::error::Nenhum APK foi gerado."
+          if ! find saida -type f -name '*.apk' \
+            -print -quit | grep -q .; then
+            echo "::error::A compilação não produziu APK."
             exit 1
           fi
 
-          ls -lh "$GITHUB_WORKSPACE/saida"
-
-      - name: Verificar assinatura
-        shell: bash
-        continue-on-error: true
-        run: |
-          set -euo pipefail
-
-          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
-
-          for APK in "$GITHUB_WORKSPACE"/saida/*.apk; do
-            "$APKSIGNER" verify \
-              --verbose \
-              --print-certs "$APK" || true
-          done
+          ls -lh saida
 
       - name: Criar ZIP
         shell: bash
         run: |
-          set -euo pipefail
+          set -eu
+          zip -j MENTEX-V4.6.4-PACOTE.zip saida/*.apk
 
-          cd "$GITHUB_WORKSPACE/saida"
-
-          zip -j \
-            "$GITHUB_WORKSPACE/MENTEX-V4.6.4-PACOTE.zip" \
-            ./*.apk
-
-      - name: Publicar APK e ZIP
+      - name: Publicar arquivos
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-V4.6.4
@@ -156,3 +115,4 @@ jobs:
             MENTEX-V4.6.4-PACOTE.zip
           if-no-files-found: error
           retention-days: 14
+          
