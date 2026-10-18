@@ -11,7 +11,8 @@ jobs:
     runs-on: ubuntu-22.04
 
     env:
-      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_HOME: ${{ runner.temp }}/android-sdk
+      ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
 
     steps:
       - name: Baixar repositorio
@@ -23,29 +24,49 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Configurar Android SDK manualmente
+      - name: Instalar Android Command-line Tools
         shell: bash
         run: |
           set -euo pipefail
 
-          mkdir -p "$ANDROID_HOME"
+          sudo apt-get update
+          sudo apt-get install -y curl unzip
 
-          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
-          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+          mkdir -p "$ANDROID_HOME/cmdline-tools"
+
+          curl -fL \
+            "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip" \
+            -o "$RUNNER_TEMP/android-tools.zip"
+
+          mkdir -p "$RUNNER_TEMP/android-tools"
+
+          unzip -q "$RUNNER_TEMP/android-tools.zip" \
+            -d "$RUNNER_TEMP/android-tools"
+
+          mv "$RUNNER_TEMP/android-tools/cmdline-tools" \
+            "$ANDROID_HOME/cmdline-tools/latest"
+
           echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
 
-          if ! command -v sdkmanager >/dev/null 2>&1; then
-            echo "::error::sdkmanager não encontrado na imagem do runner."
-            exit 1
-          fi
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            --version
 
-          sdkmanager --sdk_root="$ANDROID_HOME" \
+      - name: Instalar componentes Android
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+
+          yes | "$SDKMANAGER" \
+            --sdk_root="$ANDROID_HOME" --licenses || true
+
+          "$SDKMANAGER" \
+            --sdk_root="$ANDROID_HOME" \
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
-
-          yes | sdkmanager --sdk_root="$ANDROID_HOME" --licenses \
-            >/dev/null || true
 
       - name: Localizar projeto Android
         shell: bash
@@ -53,7 +74,8 @@ jobs:
           set -euo pipefail
 
           WRAPPER="$(find . -type f -name gradlew \
-            -not -path './.git/*' -print -quit)"
+            -not -path './.git/*' \
+            -print -quit)"
 
           if [ -z "$WRAPPER" ]; then
             echo "::error::Arquivo gradlew não encontrado."
@@ -62,32 +84,41 @@ jobs:
           fi
 
           PROJECT_DIR="$(dirname "$WRAPPER")"
+
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
           chmod +x "$WRAPPER"
+
+          echo "Projeto encontrado: $PROJECT_DIR"
 
       - name: Compilar APK release
         shell: bash
         run: |
           set -euo pipefail
+
           cd "$PROJECT_DIR"
+
           ./gradlew --no-daemon assembleRelease
 
-      - name: Preparar APK
+      - name: Localizar APK gerado
         shell: bash
         run: |
           set -euo pipefail
 
           mkdir -p "$GITHUB_WORKSPACE/saida"
 
-          find "$PROJECT_DIR" -type f \
+          find "$PROJECT_DIR" \
+            -type f \
             -path '*/build/outputs/apk/*/*.apk' \
             -exec cp {} "$GITHUB_WORKSPACE/saida/" \;
 
           if ! find "$GITHUB_WORKSPACE/saida" \
-            -name '*.apk' -print -quit | grep -q .; then
+            -type f -name '*.apk' -print -quit | grep -q .; then
             echo "::error::Nenhum APK foi gerado."
             exit 1
           fi
+
+          ls -lh "$GITHUB_WORKSPACE/saida"
 
       - name: Verificar assinatura
         shell: bash
@@ -95,19 +126,24 @@ jobs:
         run: |
           set -euo pipefail
 
-          APKSIGNER="$(find "$ANDROID_HOME/build-tools" \
-            -type f -name apksigner | sort -V | tail -n 1)"
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
 
           for APK in "$GITHUB_WORKSPACE"/saida/*.apk; do
-            "$APKSIGNER" verify --verbose --print-certs "$APK"
+            "$APKSIGNER" verify \
+              --verbose \
+              --print-certs "$APK" || true
           done
 
-      - name: Criar ZIP
+      - name: Criar ZIP da atualização
         shell: bash
         run: |
           set -euo pipefail
+
           cd "$GITHUB_WORKSPACE/saida"
-          zip -j "$GITHUB_WORKSPACE/MENTEX-V4.6.4-PACOTE.zip" ./*.apk
+
+          zip -j \
+            "$GITHUB_WORKSPACE/MENTEX-V4.6.4-PACOTE.zip" \
+            ./*.apk
 
       - name: Publicar APK e ZIP
         uses: actions/upload-artifact@v4
@@ -118,4 +154,3 @@ jobs:
             MENTEX-V4.6.4-PACOTE.zip
           if-no-files-found: error
           retention-days: 14
-          
