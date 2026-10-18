@@ -1,33 +1,68 @@
-
-      - name: Reconstruir APK
+- name: Reconstruir APK
         shell: bash
         run: |
           set -euo pipefail
 
           APKTOOL="$RUNNER_TEMP/apktool.jar"
           PROJETO="$RUNNER_TEMP/mentex/decoded"
-          SAIDA="$RUNNER_TEMP/mentex/MENTEX-V4.7-alinhado.apk"
+          DIRETORIO_SAIDA="$RUNNER_TEMP/mentex"
+          SAIDA="$DIRETORIO_SAIDA/MENTEX-V4.7-alinhado.apk"
           AAPT2="$ANDROID_HOME/build-tools/35.0.0/aapt2"
 
+          echo "Verificando ferramentas..."
+
           if [ ! -f "$APKTOOL" ]; then
-            echo "::error::Apktool não encontrado."
+            echo "::error::Apktool não encontrado: $APKTOOL"
+            exit 1
+          fi
+
+          if [ ! -d "$PROJETO" ]; then
+            echo "::error::Projeto decodificado não encontrado: $PROJETO"
+            exit 1
+          fi
+
+          if [ ! -d "$ANDROID_HOME/build-tools/35.0.0" ]; then
+            echo "::error::Android Build Tools 35.0.0 não encontradas."
             exit 1
           fi
 
           if [ ! -x "$AAPT2" ]; then
-            echo "::error::AAPT2 não encontrado: $AAPT2"
+            echo "::error::AAPT2 não encontrado ou sem permissão: $AAPT2"
             exit 1
           fi
 
-          java -jar "$APKTOOL" b "$PROJETO" \
-            --aapt "$AAPT2" \
-            --force \
-            --output "$SAIDA"
+          mkdir -p "$DIRETORIO_SAIDA"
+          rm -f "$SAIDA"
+
+          echo "Versão do Apktool:"
+          java -jar "$APKTOOL" --version
+
+          echo "Versão do AAPT2:"
+          "$AAPT2" version
+
+          echo "Reconstruindo o APK..."
+
+          # O Apktool 3.x utiliza --aapt para indicar o executável
+          # de compilação de recursos, quando essa opção é suportada.
+          if java -jar "$APKTOOL" b --help 2>&1 | grep -q -- '--aapt'; then
+            java -jar "$APKTOOL" b "$PROJETO" \
+              --aapt "$AAPT2" \
+              --force \
+              --output "$SAIDA"
+          else
+            echo "::error::Esta versão do Apktool não oferece a opção --aapt. Verifique a versão e a sintaxe antes de reconstruir."
+            exit 1
+          fi
 
           if [ ! -s "$SAIDA" ]; then
-            echo "::error::O APK reconstruído não foi gerado."
+            echo "::error::O APK reconstruído não foi gerado ou está vazio."
             exit 1
           fi
 
-          echo "APK reconstruído com sucesso: $SAIDA"
-          
+          echo "Validando estrutura ZIP do APK..."
+          unzip -t "$SAIDA"
+
+          echo "APK reconstruído com sucesso:"
+          ls -lh "$SAIDA"
+
+          echo "APK_SAIDA=$SAIDA" >> "$GITHUB_ENV"
