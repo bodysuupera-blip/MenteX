@@ -1,68 +1,119 @@
-- name: Reconstruir APK
+name: MENTEX V4.6.4 - Gerar APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gerar-apk:
+    name: Gerar APK MENTEX V4.6.4
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Baixar arquivos do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Instalar ferramentas Android
+        run: |
+          set -euo pipefail
+          SDK="$ANDROID_HOME"
+          "$SDK/cmdline-tools/latest/bin/sdkmanager" \
+            "build-tools;35.0.0"
+
+      - name: Localizar e extrair ZIP correto
         shell: bash
         run: |
           set -euo pipefail
 
+          ZIP="$GITHUB_WORKSPACE/MENTEX-V4.6.3-PROPORCIONAL.zip"
+          DIR="$RUNNER_TEMP/mentex"
+
+          mkdir -p "$DIR"
+
+          if [ ! -f "$ZIP" ]; then
+            echo "::error::Não encontrei MENTEX-V4.6.3-PROPORCIONAL.zip na raiz do repositório."
+            exit 1
+          fi
+
+          unzip -l "$ZIP"
+
+          unzip -p "$ZIP" \
+            "MENTEX-V4.6.3-PROPORCIONAL.apk" \
+            > "$DIR/MENTEX-V4.6.4-original.apk"
+
+          if [ ! -s "$DIR/MENTEX-V4.6.4-original.apk" ]; then
+            echo "::error::Não foi possível extrair o APK do ZIP."
+            exit 1
+          fi
+
+      - name: Baixar Apktool
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 \
+            https://github.com/iBotPeaches/Apktool/releases/download/v2.11.1/apktool_2.11.1.jar \
+            -o "$RUNNER_TEMP/apktool.jar"
+
+      - name: Reconstruir APK
+        run: |
+          set -euo pipefail
+
+          DIR="$RUNNER_TEMP/mentex"
           APKTOOL="$RUNNER_TEMP/apktool.jar"
-          PROJETO="$RUNNER_TEMP/mentex/decoded"
-          DIRETORIO_SAIDA="$RUNNER_TEMP/mentex"
-          SAIDA="$DIRETORIO_SAIDA/MENTEX-V4.7-alinhado.apk"
-          AAPT2="$ANDROID_HOME/build-tools/35.0.0/aapt2"
 
-          echo "Verificando ferramentas..."
+          java -jar "$APKTOOL" d \
+            "$DIR/MENTEX-V4.6.4-original.apk" \
+            -o "$DIR/decoded" -f
 
-          if [ ! -f "$APKTOOL" ]; then
-            echo "::error::Apktool não encontrado: $APKTOOL"
-            exit 1
-          fi
+          java -jar "$APKTOOL" b \
+            "$DIR/decoded" \
+            -o "$DIR/MENTEX-V4.6.4-reconstruido.apk"
 
-          if [ ! -d "$PROJETO" ]; then
-            echo "::error::Projeto decodificado não encontrado: $PROJETO"
-            exit 1
-          fi
+          test -s "$DIR/MENTEX-V4.6.4-reconstruido.apk"
 
-          if [ ! -d "$ANDROID_HOME/build-tools/35.0.0" ]; then
-            echo "::error::Android Build Tools 35.0.0 não encontradas."
-            exit 1
-          fi
+      - name: Alinhar e assinar APK
+        run: |
+          set -euo pipefail
 
-          if [ ! -x "$AAPT2" ]; then
-            echo "::error::AAPT2 não encontrado ou sem permissão: $AAPT2"
-            exit 1
-          fi
+          DIR="$RUNNER_TEMP/mentex"
+          TOOLS="$ANDROID_HOME/build-tools/35.0.0"
+          KEY="$RUNNER_TEMP/mentex-debug.keystore"
 
-          mkdir -p "$DIRETORIO_SAIDA"
-          rm -f "$SAIDA"
+          keytool -genkeypair \
+            -keystore "$KEY" \
+            -storepass android \
+            -keypass android \
+            -alias androiddebugkey \
+            -dname "CN=Android Debug,O=Android,C=US" \
+            -keyalg RSA -keysize 2048 \
+            -validity 10000 -noprompt
 
-          echo "Versão do Apktool:"
-          java -jar "$APKTOOL" --version
+          "$TOOLS/zipalign" -f -p 4 \
+            "$DIR/MENTEX-V4.6.4-reconstruido.apk" \
+            "$DIR/MENTEX-V4.6.4-alinhado.apk"
 
-          echo "Versão do AAPT2:"
-          "$AAPT2" version
+          "$TOOLS/apksigner" sign \
+            --ks "$KEY" \
+            --ks-key-alias androiddebugkey \
+            --ks-pass pass:android \
+            --key-pass pass:android \
+            --out "$DIR/MENTEX-V4.6.4.apk" \
+            "$DIR/MENTEX-V4.6.4-alinhado.apk"
 
-          echo "Reconstruindo o APK..."
+          "$TOOLS/apksigner" verify --verbose \
+            "$DIR/MENTEX-V4.6.4.apk"
 
-          # O Apktool 3.x utiliza --aapt para indicar o executável
-          # de compilação de recursos, quando essa opção é suportada.
-          if java -jar "$APKTOOL" b --help 2>&1 | grep -q -- '--aapt'; then
-            java -jar "$APKTOOL" b "$PROJETO" \
-              --aapt "$AAPT2" \
-              --force \
-              --output "$SAIDA"
-          else
-            echo "::error::Esta versão do Apktool não oferece a opção --aapt. Verifique a versão e a sintaxe antes de reconstruir."
-            exit 1
-          fi
-
-          if [ ! -s "$SAIDA" ]; then
-            echo "::error::O APK reconstruído não foi gerado ou está vazio."
-            exit 1
-          fi
-
-          echo "Validando estrutura ZIP do APK..."
-          unzip -t "$SAIDA"
-
-          echo "APK reconstruído com sucesso:"
-          ls -lh "$SAIDA"
-
-          echo "APK_SAIDA=$SAIDA" >> "$GITHUB_ENV"
+      - name: Disponibilizar APK para download
+        uses: actions/upload-artifact@v4
+        with:
+          name: MENTEX-V4.6.4-APK
+          path: ${{ runner.temp }}/mentex/MENTEX-V4.6.4.apk
+          if-no-files-found: error
+          retention-days: 14
