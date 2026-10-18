@@ -1,18 +1,21 @@
-name: Gerar APK MENTEX V4.6.3
+name: Gerar APK MENTEX V4.6.4
 
 on:
   workflow_dispatch:
   push:
     paths:
-      - "MENTEX-V4.6.3-PERGUNTAS-MELHORADAS.zip"
+      - "MENTEX-V4.6.4-PERGUNTAS-CEREBRO-SEM-DESLIZAR.zip"
       - ".github/workflows/android.yml"
 
+permissions:
+  contents: read
+
 jobs:
-  build:
+  gerar-apk:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar arquivos do repositório
+      - name: Baixar projeto
         uses: actions/checkout@v4
 
       - name: Configurar Java
@@ -26,44 +29,51 @@ jobs:
         with:
           gradle-version: "8.7"
 
-      - name: Extrair projeto MENTEX
+      - name: Extrair projeto
         shell: bash
         run: |
           set -e
 
-          ZIP="MENTEX-V4.6.3-PERGUNTAS-MELHORADAS.zip"
+          ZIP="MENTEX-V4.6.4-PERGUNTAS-CEREBRO-SEM-DESLIZAR.zip"
 
           if [ ! -f "$ZIP" ]; then
-            echo "ERRO: arquivo $ZIP não encontrado no repositório."
-            echo "Envie o ZIP para a raiz do repositório no GitHub."
+            echo "ERRO: ZIP não encontrado na raiz do repositório."
             exit 1
           fi
 
-          mkdir -p projeto
+          mkdir projeto
           unzip -q "$ZIP" -d projeto
 
           SETTINGS=$(find projeto -type f \
-            \( -name settings.gradle -o -name settings.gradle.kts \) \
+            \( -name settings.gradle \
+            -o -name settings.gradle.kts \) \
             -print -quit)
 
           if [ -z "$SETTINGS" ]; then
-            echo "ERRO: settings.gradle não encontrado dentro do ZIP."
-            echo "Confira se o ZIP contém o projeto Android completo."
+            echo "ERRO: settings.gradle não encontrado."
+            echo "O ZIP precisa conter um projeto Android Gradle completo."
             exit 1
           fi
 
-          echo "PROJETO_DIR=$(dirname "$SETTINGS")" >> "$GITHUB_ENV"
-          echo "Projeto encontrado em: $(dirname "$SETTINGS")"
+          DIR="$(dirname "$SETTINGS")"
+          echo "PROJETO_DIR=$DIR" >> "$GITHUB_ENV"
 
-      - name: Gerar APK
+          echo "Projeto localizado em: $DIR"
+
+      - name: Compilar APK Android
         shell: bash
         run: |
           set -e
           cd "$PROJETO_DIR"
 
-          gradle --no-daemon clean assembleDebug
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+            ./gradlew --no-daemon clean assembleDebug
+          else
+            gradle --no-daemon clean assembleDebug
+          fi
 
-      - name: Preparar APK final
+      - name: Preparar APK
         shell: bash
         run: |
           set -e
@@ -73,18 +83,19 @@ jobs:
             -print -quit)
 
           if [ -z "$APK" ]; then
-            echo "ERRO: APK não foi gerado."
+            echo "ERRO: nenhum APK foi encontrado."
             exit 1
           fi
 
-          mkdir -p apk-final
-          cp "$APK" apk-final/MENTEX-V4.6.3.apk
-          ls -lh apk-final/
+          mkdir -p resultado
+          cp "$APK" resultado/MENTEX-V4.6.4.apk
 
-      - name: Disponibilizar APK para download
+          ls -lh resultado/MENTEX-V4.6.4.apk
+
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V4.6.3-APK
-          path: apk-final/MENTEX-V4.6.3.apk
+          name: MENTEX-V4.6.4-APK
+          path: resultado/MENTEX-V4.6.4.apk
           if-no-files-found: error
           retention-days: 14
