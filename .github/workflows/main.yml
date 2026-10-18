@@ -1,3 +1,4 @@
+
 name: MENTEX V4.6.4 - Gerar APK
 
 on:
@@ -10,8 +11,11 @@ jobs:
   gerar-apk:
     runs-on: ubuntu-22.04
 
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+
     steps:
-      - name: Baixar arquivos do repositorio
+      - name: Baixar repositorio
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -20,13 +24,21 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Configurar Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Instalar ferramentas Android
+      - name: Configurar Android SDK manualmente
         shell: bash
         run: |
           set -euo pipefail
+
+          mkdir -p "$ANDROID_HOME"
+
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+
+          if ! command -v sdkmanager >/dev/null 2>&1; then
+            echo "::error::sdkmanager não encontrado na imagem do runner."
+            exit 1
+          fi
 
           sdkmanager --sdk_root="$ANDROID_HOME" \
             "platform-tools" \
@@ -45,8 +57,8 @@ jobs:
             -not -path './.git/*' -print -quit)"
 
           if [ -z "$WRAPPER" ]; then
-            echo "::error::Arquivo gradlew nao encontrado."
-            echo "Adicione o projeto-fonte Android ao repositorio."
+            echo "::error::Arquivo gradlew não encontrado."
+            echo "O repositório precisa conter o projeto-fonte Android."
             exit 1
           fi
 
@@ -61,10 +73,11 @@ jobs:
           cd "$PROJECT_DIR"
           ./gradlew --no-daemon assembleRelease
 
-      - name: Localizar APK gerado
+      - name: Preparar APK
         shell: bash
         run: |
           set -euo pipefail
+
           mkdir -p "$GITHUB_WORKSPACE/saida"
 
           find "$PROJECT_DIR" -type f \
@@ -72,12 +85,12 @@ jobs:
             -exec cp {} "$GITHUB_WORKSPACE/saida/" \;
 
           if ! find "$GITHUB_WORKSPACE/saida" \
-            -type f -name '*.apk' -print -quit | grep -q .; then
+            -name '*.apk' -print -quit | grep -q .; then
             echo "::error::Nenhum APK foi gerado."
             exit 1
           fi
 
-      - name: Verificar assinatura do APK
+      - name: Verificar assinatura
         shell: bash
         continue-on-error: true
         run: |
@@ -87,11 +100,10 @@ jobs:
             -type f -name apksigner | sort -V | tail -n 1)"
 
           for APK in "$GITHUB_WORKSPACE"/saida/*.apk; do
-            "$APKSIGNER" verify \
-              --verbose --print-certs "$APK" || true
+            "$APKSIGNER" verify --verbose --print-certs "$APK"
           done
 
-      - name: Criar ZIP da atualizacao
+      - name: Criar ZIP
         shell: bash
         run: |
           set -euo pipefail
@@ -107,3 +119,4 @@ jobs:
             MENTEX-V4.6.4-PACOTE.zip
           if-no-files-found: error
           retention-days: 14
+          
