@@ -1,70 +1,80 @@
-name: Publicar MENTEX Web
+name: Gerar APK MENTEX V4.6.4 Android
 
 on:
   workflow_dispatch:
   push:
-    branches:
-      - principal
+    paths:
+      - "app/**"
+      - "build.gradle"
+      - "settings.gradle"
+      - "gradle.properties"
+      - "gradle/**"
+      - "gradlew"
+      - ".github/workflows/android.yml"
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: pages
-  cancel-in-progress: true
 
 jobs:
-  publicar:
+  android:
+    name: Compilar aplicativo Android
     runs-on: ubuntu-latest
 
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-
     steps:
-      - name: Baixar código
+      - name: Baixar projeto
         uses: actions/checkout@v4
 
-      - name: Preparar MENTEX Web
-        run: |
-          rm -rf /tmp/mentex-web
-          mkdir -p /tmp/mentex-web
-
-          ZIP="./MENTEX_WEB_999_Voz_IA_Abertura.zip"
-
-          if [ ! -f "$ZIP" ]; then
-            echo "ERRO: MENTEX_WEB_999_Voz_IA_Abertura.zip não encontrado."
-            exit 1
-          fi
-
-          unzip -o "$ZIP" -d /tmp/mentex-web
-
-          INDEX=$(find /tmp/mentex-web -type f -name 'index.html' | head -1)
-
-          if [ -z "$INDEX" ]; then
-            echo "ERRO: index.html não encontrado."
-            exit 1
-          fi
-
-          PASTA=$(dirname "$INDEX")
-
-          rm -rf _site
-          mkdir -p _site
-          cp -a "$PASTA"/. _site/
-
-          echo "=== ARQUIVOS DO SITE ==="
-          find _site -maxdepth 3 -type f
-
-      - name: Configurar GitHub Pages
-        uses: actions/configure-pages@v5
-
-      - name: Preparar publicação
-        uses: actions/upload-pages-artifact@v3
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
         with:
-          path: ./_site
+          distribution: temurin
+          java-version: "17"
 
-      - name: Publicar no GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Verificar arquivos do projeto
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -f settings.gradle
+          test -f app/build.gradle
+          test -f app/src/main/AndroidManifest.xml
+          test -f app/src/main/java/com/mentex/app/MainActivity.java
+          test -f app/src/main/assets/index.html
+
+          grep -Fq "MENTEX V4.6.4" \
+            app/src/main/assets/index.html
+
+          grep -Eq "versionName[[:space:]]+['\"]4\.6\.4['\"]" \
+            app/build.gradle
+
+          echo "Arquivos do MENTEX V4.6.4 encontrados."
+
+      - name: Compilar APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          gradle --no-daemon clean assembleDebug
+
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+
+          test -s "$APK"
+
+          echo "APK compilado com sucesso."
+          ls -lh "$APK"
+
+      - name: Disponibilizar APK para download
+        uses: actions/upload-artifact@v4
+        with:
+          name: MENTEX-V4.6.4-APK-ANDROID
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
