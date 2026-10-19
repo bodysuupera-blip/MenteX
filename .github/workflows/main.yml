@@ -1,10 +1,12 @@
-name: Compilar MENTEX V4.6.4 Android Atualizado
+name: Gerar APK MENTEX V4.6.4 Atualizado
 
 on:
   workflow_dispatch:
   push:
     paths:
-      - "MENTEX-V4.6.4-ANDROID-PROJETO-CORRIGIDO.zip"
+      - "app/**"
+      - "build.gradle"
+      - "settings.gradle"
       - ".github/workflows/android.yml"
 
 permissions:
@@ -15,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar repositório
+      - name: Baixar projeto
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -23,69 +25,36 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-          cache: gradle
 
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.7"
 
-      - name: Extrair projeto Android
+      - name: Verificar projeto
         shell: bash
         run: |
           set -euo pipefail
 
-          ZIP="MENTEX-V4.6.4-ANDROID-PROJETO-CORRIGIDO.zip"
+          test -f settings.gradle -o -f settings.gradle.kts
+          test -f app/build.gradle -o -f app/build.gradle.kts
+          test -f app/src/main/AndroidManifest.xml
+          test -f app/src/main/assets/index.html
 
-          if [ ! -f "$ZIP" ]; then
-            echo "::error::ZIP do projeto Android não encontrado: $ZIP"
-            exit 1
-          fi
+          echo "Projeto Android encontrado."
 
-          mkdir -p projeto
-          unzip -q "$ZIP" -d projeto
-
-          if [ ! -f projeto/settings.gradle ] &&
-             [ ! -f projeto/settings.gradle.kts ]; then
-            echo "::error::settings.gradle ou settings.gradle.kts não encontrado na raiz extraída."
-            find projeto -maxdepth 3 -type f | head -100
-            exit 1
-          fi
-
-          if [ ! -f projeto/gradlew ]; then
-            echo "::warning::Gradle Wrapper não encontrado; será usado o Gradle instalado."
-          else
-            chmod +x projeto/gradlew
-          fi
-
-      - name: Verificar arquivos de interface
+      - name: Gerar APK atualizado
         shell: bash
         run: |
           set -euo pipefail
-          find projeto -type f \( \
-            -name "index.html" -o \
-            -name "brain_happy.png" -o \
-            -name "brain_neutral.png" -o \
-            -name "brain_sad.png" \
-          \) -print
 
-      - name: Compilar APK Debug
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd projeto
+          gradle --no-daemon clean assembleDebug
 
-          if [ -f gradlew ]; then
-            ./gradlew --no-daemon clean assembleDebug
-          else
-            gradle --no-daemon clean assembleDebug
-          fi
+          APK=$(find app/build/outputs/apk/debug \
+            -maxdepth 1 -name '*.apk' -print -quit)
 
-          APK="$(find app/build/outputs/apk/debug \
-            -maxdepth 1 -name '*.apk' -print -quit)"
-
-          if [ -z "$APK" ] || [ ! -f "$APK" ]; then
-            echo "::error::APK Debug não foi gerado."
+          if [ -z "$APK" ]; then
+            echo "ERRO: APK não foi gerado."
             exit 1
           fi
 
@@ -95,6 +64,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-V4.6.4-APK
-          path: projeto/app/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
