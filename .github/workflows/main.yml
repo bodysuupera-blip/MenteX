@@ -1,11 +1,11 @@
 
-name: Gerar APK MENTEX V4.6.4 Android
+name: Gerar APK MENTEX V4.6.4
 
 on:
   workflow_dispatch:
   push:
     paths:
-      - "app/**"
+      - "MENTEX-codigo-fonte-extraido.zip"
       - ".github/workflows/android.yml"
 
 permissions:
@@ -13,44 +13,63 @@ permissions:
 
 jobs:
   android:
-    name: Compilar aplicativo Android
+    name: Compilar APK Android
     runs-on: ubuntu-latest
+
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
     steps:
       - name: Baixar projeto
         uses: actions/checkout@v4
 
-      - name: Configurar Java 17
+      - name: Configurar Java
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Verificar interface
+      - name: Extrair código do MENTEX
         shell: bash
         run: |
           set -euo pipefail
 
-          if [ ! -s app/src/main/assets/index.html ]; then
-            echo "::error::Envie o index.html para app/src/main/assets/."
+          ZIP="MENTEX-codigo-fonte-extraido.zip"
+
+          if [ ! -f "$ZIP" ]; then
+            echo "::error::Envie o ZIP do MENTEX para a raiz do repositório."
             exit 1
           fi
 
-          echo "Interface MENTEX encontrada."
+          mkdir extracted
+          unzip -q "$ZIP" -d extracted
+
+          HTML="$(find extracted -type f -name index.html | head -n 1)"
+
+          if [ -z "$HTML" ]; then
+            echo "::error::O ZIP não contém index.html."
+            exit 1
+          fi
+
+          echo "HTML encontrado: $HTML"
+
+          mkdir -p app/src/main/assets
+          cp -a "$(dirname "$HTML")/." app/src/main/assets/
 
       - name: Configurar Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Instalar plataforma Android
         shell: bash
         run: |
           set -euo pipefail
 
           SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" \
-            -type f -name sdkmanager \
+            -type f -name sdkmanager 2>/dev/null \
             | sort -V | tail -n 1)"
 
-          test -n "$SDKMANAGER"
+          if [ -z "$SDKMANAGER" ]; then
+            echo "::error::Android SDK Manager não encontrado."
+            exit 1
+          fi
 
           yes | "$SDKMANAGER" \
             --sdk_root="$ANDROID_HOME" \
@@ -63,7 +82,7 @@ jobs:
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-      - name: Criar estrutura Android
+      - name: Criar projeto Android
         shell: bash
         run: |
           set -euo pipefail
@@ -121,9 +140,10 @@ jobs:
 
           cat > app/src/main/AndroidManifest.xml <<'EOF'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET"/>
               <application
-                  android:theme="@android:style/Theme.Material.Light.NoActionBar"
                   android:label="MENTEX"
+                  android:theme="@android:style/Theme.Material.Light.NoActionBar"
                   android:usesCleartextTraffic="true">
                   <activity
                       android:name=".MainActivity"
@@ -144,7 +164,6 @@ jobs:
           import android.os.Bundle;
           import android.webkit.WebView;
           import android.webkit.WebViewClient;
-          import android.webkit.WebSettings;
 
           public class MainActivity extends Activity {
               @Override
@@ -153,10 +172,8 @@ jobs:
 
                   WebView web = new WebView(this);
                   web.setWebViewClient(new WebViewClient());
-
-                  WebSettings settings = web.getSettings();
-                  settings.setJavaScriptEnabled(true);
-                  settings.setDomStorageEnabled(true);
+                  web.getSettings().setJavaScriptEnabled(true);
+                  web.getSettings().setDomStorageEnabled(true);
 
                   setContentView(web);
                   web.loadUrl("file:///android_asset/index.html");
@@ -169,13 +186,13 @@ jobs:
         with:
           gradle-version: "8.7"
 
-      - name: Compilar APK
+      - name: Gerar APK
         run: gradle --no-daemon clean assembleDebug
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V4.6.4-APK-ANDROID
+          name: MENTEX-V4.6.4-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
