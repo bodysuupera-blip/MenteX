@@ -1,4 +1,4 @@
-name: Gerar APK MENTEX V4.9 Neon
+name: Gerar APK MENTEX Neon
 
 on:
   workflow_dispatch:
@@ -24,7 +24,7 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Extrair e validar ZIP V4.9
+      - name: Extrair e verificar jogo
         shell: bash
         run: |
           set -euo pipefail
@@ -32,7 +32,7 @@ jobs:
           ZIP="MENTEX-codigo-fonte-extraido.zip"
 
           if [ ! -f "$ZIP" ]; then
-            echo "::error::ZIP não encontrado na raiz do repositório."
+            echo "::error::Envie o ZIP para a raiz do repositório."
             exit 1
           fi
 
@@ -41,29 +41,23 @@ jobs:
 
           HTML="$(find extraido -type f -name index.html | head -n 1 || true)"
 
-          if [ -z "$HTML" ]; then
-            echo "::error::Não foi encontrado index.html dentro do ZIP."
+          if [ -z "$HTML" ] || [ ! -s "$HTML" ]; then
+            echo "::error::Não foi encontrado um index.html válido."
             exit 1
           fi
 
           echo "HTML encontrado: $HTML"
+          cp -a "$(dirname "$HTML")/." app/src/main/assets/
 
-          if ! grep -q 'V4.9' "$HTML"; then
-            echo "::error::O HTML não contém a marca V4.9. Verifique se enviou o ZIP atualizado."
+          if [ ! -s app/src/main/assets/index.html ]; then
+            echo "::error::Falha ao copiar index.html."
             exit 1
           fi
 
-          # Copia o HTML e os recursos que ficam ao lado dele.
-          cp -a "$(dirname "$HTML")/." app/src/main/assets/
-
-          test -f app/src/main/assets/index.html
-
-          echo "Arquivos incluídos no aplicativo:"
+          echo "Arquivos copiados:"
           find app/src/main/assets -maxdepth 2 -type f
 
-          echo "Validação V4.9 concluída."
-
-      - name: Configurar SDK Android existente
+      - name: Configurar Android SDK
         shell: bash
         run: |
           set -euo pipefail
@@ -75,12 +69,12 @@ jobs:
             -type f -name sdkmanager 2>/dev/null | head -n 1 || true)"
 
           if [ -z "$SDKMANAGER" ]; then
-            echo "::error::sdkmanager não encontrado no runner."
+            echo "::error::sdkmanager não encontrado."
             exit 1
           fi
 
-          echo "Usando SDK: $ANDROID_HOME"
-          echo "Usando sdkmanager: $SDKMANAGER"
+          echo "SDK: $ANDROID_HOME"
+          echo "SDK Manager: $SDKMANAGER"
 
           yes | "$SDKMANAGER" \
             --sdk_root="$ANDROID_HOME" --licenses || true
@@ -103,6 +97,7 @@ jobs:
                   gradlePluginPortal()
               }
           }
+
           dependencyResolutionManagement {
               repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
               repositories {
@@ -110,6 +105,7 @@ jobs:
                   mavenCentral()
               }
           }
+
           rootProject.name = "MENTEX"
           include(":app")
           EOF
@@ -149,7 +145,7 @@ jobs:
               <uses-permission android:name="android.permission.INTERNET"/>
 
               <application
-                  android:label="MENTEX V4.9"
+                  android:label="MENTEX Neon"
                   android:theme="@android:style/Theme.Material.Light.NoActionBar"
                   android:hardwareAccelerated="true"
                   android:usesCleartextTraffic="true">
@@ -211,26 +207,22 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Gerar APK V4.9
+      - name: Gerar APK
         run: gradle --no-daemon clean assembleDebug
 
-      - name: Verificar APK gerado
+      - name: Verificar APK
         shell: bash
         run: |
           set -euo pipefail
-
           APK="app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
-
-          echo "APK criado:"
           ls -lh "$APK"
+          sha256sum "$APK" > apk-sha256.txt
 
-          sha256sum "$APK" | tee apk-sha256.txt
-
-      - name: Publicar APK V4.9
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V4.9-Neon
+          name: MENTEX-Neon-V4.9
           path: |
             app/build/outputs/apk/debug/app-debug.apk
             apk-sha256.txt
