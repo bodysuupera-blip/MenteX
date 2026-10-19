@@ -1,94 +1,66 @@
-
-name: Gerar APK MENTEX V4.6.4
+name: Gerar APK MENTEX
 
 on:
   workflow_dispatch:
   push:
     paths:
-      - "MENTEX-codigo-fonte-extraido.zip"
-      - ".github/workflows/android.yml"
-
-permissions:
-  contents: read
+      - 'MENTEX-codigo-fonte-extraido.zip'
+      - '.github/workflows/android.yml'
 
 jobs:
-  android:
-    name: Compilar APK Android
+  build:
     runs-on: ubuntu-latest
 
-    env:
-      ANDROID_HOME: /usr/local/lib/android/sdk
-      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-
     steps:
-      - name: Baixar projeto
+      - name: Baixar repositório
         uses: actions/checkout@v4
 
       - name: Configurar Java
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: '17'
 
-      - name: Extrair código do MENTEX
+      - name: Preparar arquivos do MENTEX
         shell: bash
         run: |
-          set -euo pipefail
-
-          ZIP="MENTEX-codigo-fonte-extraido.zip"
-
-          if [ ! -f "$ZIP" ]; then
-            echo "::error::Envie o ZIP do MENTEX para a raiz do repositório."
+          set -e
+          test -f MENTEX-codigo-fonte-extraido.zip || {
+            echo "ERRO: coloque MENTEX-codigo-fonte-extraido.zip na raiz do repositório."
             exit 1
-          fi
+          }
 
-          mkdir extracted
-          unzip -q "$ZIP" -d extracted
+          mkdir -p extraido app/src/main/assets
+          unzip -o MENTEX-codigo-fonte-extraido.zip -d extraido
 
-          HTML="$(find extracted -type f -name index.html | head -n 1)"
-
+          HTML="$(find extraido -type f -name index.html | head -n 1)"
           if [ -z "$HTML" ]; then
-            echo "::error::O ZIP não contém index.html."
+            echo "ERRO: index.html não encontrado no ZIP."
             exit 1
           fi
 
-          echo "HTML encontrado: $HTML"
-
-          mkdir -p app/src/main/assets
           cp -a "$(dirname "$HTML")/." app/src/main/assets/
+
+          mkdir -p app/src/main/java/com/mentex/app
 
       - name: Configurar Android SDK
         shell: bash
         run: |
-          set -euo pipefail
-
-          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" \
-            -type f -name sdkmanager 2>/dev/null \
-            | sort -V | tail -n 1)"
+          set -e
+          SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          SDKMANAGER="$(find "$SDK/cmdline-tools" -type f -name sdkmanager 2>/dev/null | head -n 1)"
 
           if [ -z "$SDKMANAGER" ]; then
-            echo "::error::Android SDK Manager não encontrado."
+            echo "ERRO: sdkmanager não encontrado no runner."
             exit 1
           fi
 
-          yes | "$SDKMANAGER" \
-            --sdk_root="$ANDROID_HOME" \
-            --licenses || true
-
-          "$SDKMANAGER" \
-            --sdk_root="$ANDROID_HOME" \
-            --install \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Criar projeto Android
         shell: bash
         run: |
-          set -euo pipefail
-
-          mkdir -p app/src/main/java/com/mentex/app
-
           cat > settings.gradle <<'EOF'
           pluginManagement {
               repositories {
@@ -115,8 +87,8 @@ jobs:
           EOF
 
           cat > gradle.properties <<'EOF'
-          android.useAndroidX=true
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
           EOF
 
           cat > app/build.gradle <<'EOF'
@@ -132,25 +104,26 @@ jobs:
                   applicationId 'com.mentex.app'
                   minSdk 23
                   targetSdk 28
-                  versionCode 464
-                  versionName '4.6.4'
+                  versionCode 1
+                  versionName '4.6.5'
               }
           }
           EOF
 
           cat > app/src/main/AndroidManifest.xml <<'EOF'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <uses-permission android:name="android.permission.INTERNET"/>
+              <uses-permission android:name="android.permission.INTERNET" />
               <application
-                  android:label="MENTEX"
                   android:theme="@android:style/Theme.Material.Light.NoActionBar"
-                  android:usesCleartextTraffic="true">
+                  android:label="MENTEX"
+                  android:usesCleartextTraffic="true"
+                  android:hardwareAccelerated="true">
                   <activity
                       android:name=".MainActivity"
                       android:exported="true">
                       <intent-filter>
-                          <action android:name="android.intent.action.MAIN"/>
-                          <category android:name="android.intent.category.LAUNCHER"/>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
                       </intent-filter>
                   </activity>
               </application>
@@ -162,6 +135,7 @@ jobs:
 
           import android.app.Activity;
           import android.os.Bundle;
+          import android.webkit.WebChromeClient;
           import android.webkit.WebView;
           import android.webkit.WebViewClient;
 
@@ -170,13 +144,20 @@ jobs:
               protected void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
 
-                  WebView web = new WebView(this);
-                  web.setWebViewClient(new WebViewClient());
-                  web.getSettings().setJavaScriptEnabled(true);
-                  web.getSettings().setDomStorageEnabled(true);
+                  WebView webView = new WebView(this);
+                  webView.setWebViewClient(new WebViewClient());
+                  webView.setWebChromeClient(new WebChromeClient());
+                  webView.getSettings().setJavaScriptEnabled(true);
+                  webView.getSettings().setDomStorageEnabled(true);
+                  webView.getSettings().setDefaultTextEncodingName("UTF-8");
+                  webView.getSettings().setAllowFileAccess(true);
+                  setContentView(webView);
+                  webView.loadUrl("file:///android_asset/index.html");
+              }
 
-                  setContentView(web);
-                  web.loadUrl("file:///android_asset/index.html");
+              @Override
+              public void onBackPressed() {
+                  super.onBackPressed();
               }
           }
           EOF
@@ -184,7 +165,7 @@ jobs:
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.7"
+          gradle-version: '8.7'
 
       - name: Gerar APK
         run: gradle --no-daemon clean assembleDebug
@@ -192,8 +173,6 @@ jobs:
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V4.6.4-APK
+          name: MENTEX-APK-melhorado
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          retention-days: 7
-          
