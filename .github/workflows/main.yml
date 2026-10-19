@@ -1,4 +1,4 @@
-name: Gerar APK MENTEX
+name: Gerar APK MENTEX Neon
 
 on:
   workflow_dispatch:
@@ -21,42 +21,40 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Preparar arquivos do MENTEX
+      - name: Extrair jogo MENTEX
         shell: bash
         run: |
           set -e
-          test -f MENTEX-codigo-fonte-extraido.zip || {
-            echo "ERRO: coloque MENTEX-codigo-fonte-extraido.zip na raiz do repositório."
-            exit 1
-          }
+          ZIP="MENTEX-codigo-fonte-extraido.zip"
 
-          mkdir -p extraido app/src/main/assets
-          unzip -o MENTEX-codigo-fonte-extraido.zip -d extraido
+          if [ ! -f "$ZIP" ]; then
+            echo "ERRO: coloque o ZIP Neon na raiz do repositório."
+            exit 1
+          fi
+
+          mkdir -p extraido
+          unzip -oq "$ZIP" -d extraido
 
           HTML="$(find extraido -type f -name index.html | head -n 1)"
+
           if [ -z "$HTML" ]; then
             echo "ERRO: index.html não encontrado no ZIP."
             exit 1
           fi
 
+          mkdir -p app/src/main/assets
           cp -a "$(dirname "$HTML")/." app/src/main/assets/
-
           mkdir -p app/src/main/java/com/mentex/app
 
       - name: Configurar Android SDK
-        shell: bash
+        uses: android-actions/setup-android@v3
+
+      - name: Instalar SDK
         run: |
-          set -e
-          SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
-          SDKMANAGER="$(find "$SDK/cmdline-tools" -type f -name sdkmanager 2>/dev/null | head -n 1)"
-
-          if [ -z "$SDKMANAGER" ]; then
-            echo "ERRO: sdkmanager não encontrado no runner."
-            exit 1
-          fi
-
-          yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
 
       - name: Criar projeto Android
         shell: bash
@@ -104,26 +102,25 @@ jobs:
                   applicationId 'com.mentex.app'
                   minSdk 23
                   targetSdk 28
-                  versionCode 1
-                  versionName '4.6.5'
+                  versionCode 48
+                  versionName '4.8'
               }
           }
           EOF
 
           cat > app/src/main/AndroidManifest.xml <<'EOF'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.INTERNET"/>
               <application
-                  android:theme="@android:style/Theme.Material.Light.NoActionBar"
                   android:label="MENTEX"
-                  android:usesCleartextTraffic="true"
-                  android:hardwareAccelerated="true">
+                  android:theme="@android:style/Theme.Material.Light.NoActionBar"
+                  android:usesCleartextTraffic="true">
                   <activity
                       android:name=".MainActivity"
                       android:exported="true">
                       <intent-filter>
-                          <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LAUNCHER" />
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
                       </intent-filter>
                   </activity>
               </application>
@@ -144,20 +141,15 @@ jobs:
               protected void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
 
-                  WebView webView = new WebView(this);
-                  webView.setWebViewClient(new WebViewClient());
-                  webView.setWebChromeClient(new WebChromeClient());
-                  webView.getSettings().setJavaScriptEnabled(true);
-                  webView.getSettings().setDomStorageEnabled(true);
-                  webView.getSettings().setDefaultTextEncodingName("UTF-8");
-                  webView.getSettings().setAllowFileAccess(true);
-                  setContentView(webView);
-                  webView.loadUrl("file:///android_asset/index.html");
-              }
+                  WebView web = new WebView(this);
+                  web.setWebViewClient(new WebViewClient());
+                  web.setWebChromeClient(new WebChromeClient());
+                  web.getSettings().setJavaScriptEnabled(true);
+                  web.getSettings().setDomStorageEnabled(true);
+                  web.getSettings().setDefaultTextEncodingName("UTF-8");
 
-              @Override
-              public void onBackPressed() {
-                  super.onBackPressed();
+                  setContentView(web);
+                  web.loadUrl("file:///android_asset/index.html");
               }
           }
           EOF
@@ -170,9 +162,9 @@ jobs:
       - name: Gerar APK
         run: gradle --no-daemon clean assembleDebug
 
-      - name: Disponibilizar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-APK-melhorado
+          name: MENTEX-Neon-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
