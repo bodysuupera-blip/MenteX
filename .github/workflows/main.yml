@@ -1,9 +1,223 @@
-      - name: Configurar Android SDK
-        uses: android-actions/setup-android@v3
 
-      - name: Instalar SDK
+name: Gerar APK MENTEX Neon
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'MENTEX-codigo-fonte-extraido.zip'
+      - '.github/workflows/android.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Baixar repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Extrair jogo MENTEX
+        shell: bash
         run: |
-          sdkmanager --install \
+          set -euo pipefail
+
+          ZIP="MENTEX-codigo-fonte-extraido.zip"
+
+          if [ ! -f "$ZIP" ]; then
+            echo "ERRO: arquivo ZIP não encontrado na raiz do repositório."
+            exit 1
+          fi
+
+          mkdir -p extraido app/src/main/assets
+          unzip -oq "$ZIP" -d extraido
+
+          HTML="$(find extraido -type f -name index.html | head -n 1 || true)"
+
+          if [ -z "$HTML" ]; then
+            echo "ERRO: index.html não encontrado no ZIP."
+            exit 1
+          fi
+
+          cp -a "$(dirname "$HTML")/." app/src/main/assets/
+          mkdir -p app/src/main/java/com/mentex/app
+
+          if [ ! -f app/src/main/assets/index.html ]; then
+            echo "ERRO: index.html não foi copiado corretamente."
+            exit 1
+          fi
+
+      - name: Configurar e instalar Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          export ANDROID_SDK_ROOT="$ANDROID_HOME"
+
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" \
+            -type f -name sdkmanager 2>/dev/null | head -n 1 || true)"
+
+          if [ -z "$SDKMANAGER" ]; then
+            echo "ERRO: sdkmanager não encontrado."
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            exit 1
+          fi
+
+          echo "SDK manager: $SDKMANAGER"
+
+          yes | "$SDKMANAGER" \
+            --sdk_root="$ANDROID_HOME" --licenses || true
+
+          "$SDKMANAGER" --sdk_root="$ANDROID_HOME" \
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
+
+      - name: Criar configurações do projeto Android
+        shell: bash
+        run: |
+          cat > settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+
+          rootProject.name = "MENTEX"
+          include(":app")
+          EOF
+
+          cat > build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.6.1' apply false
+          }
+          EOF
+
+          cat > gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          EOF
+
+          cat > app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+          }
+
+          android {
+              namespace 'com.mentex.app'
+              compileSdk 35
+
+              defaultConfig {
+                  applicationId 'com.mentex.app'
+                  minSdk 23
+                  targetSdk 28
+                  versionCode 48
+                  versionName '4.8'
+              }
+          }
+          EOF
+
+      - name: Criar manifesto Android
+        shell: bash
+        run: |
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET"/>
+
+              <application
+                  android:label="MENTEX"
+                  android:theme="@android:style/Theme.Material.Light.NoActionBar"
+                  android:usesCleartextTraffic="true"
+                  android:hardwareAccelerated="true">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                      </intent-filter>
+
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+      - name: Criar tela Android WebView
+        shell: bash
+        run: |
+          cat > app/src/main/java/com/mentex/app/MainActivity.java <<'EOF'
+          package com.mentex.app;
+
+          import android.app.Activity;
+          import android.os.Bundle;
+          import android.webkit.WebChromeClient;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+
+          public class MainActivity extends Activity {
+              private WebView webView;
+
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+
+                  webView = new WebView(this);
+                  webView.setWebViewClient(new WebViewClient());
+                  webView.setWebChromeClient(new WebChromeClient());
+
+                  webView.getSettings().setJavaScriptEnabled(true);
+                  webView.getSettings().setDomStorageEnabled(true);
+                  webView.getSettings().setDefaultTextEncodingName("UTF-8");
+                  webView.getSettings().setAllowFileAccess(true);
+
+                  setContentView(webView);
+                  webView.loadUrl("file:///android_asset/index.html");
+              }
+
+              @Override
+              public void onBackPressed() {
+                  if (webView != null && webView.canGoBack()) {
+                      webView.goBack();
+                  } else {
+                      super.onBackPressed();
+                  }
+              }
+          }
+          EOF
+
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Gerar APK
+        shell: bash
+        run: |
+          gradle --no-daemon clean assembleDebug
+
+      - name: Publicar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MENTEX-Neon-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+          
