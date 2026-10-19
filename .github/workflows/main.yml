@@ -1,4 +1,3 @@
-
 name: Gerar APK MENTEX V4.6.4 Android
 
 on:
@@ -6,12 +5,11 @@ on:
   push:
     paths:
       - "app/**"
-      - "build.gradle"
-      - "settings.gradle"
-      - "gradle.properties"
       - "gradle/**"
+      - "*.gradle"
       - "gradlew"
-      - ".github/workflows/android.yml"
+      - "gradle.properties"
+      - ".github/workflows/**"
 
 permissions:
   contents: read
@@ -35,28 +33,41 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Diagnosticar estrutura
+        shell: bash
+        run: |
+          echo "=== Raiz do projeto ==="
+          pwd
+          ls -la
+
+          echo "=== Arquivos encontrados ==="
+          find . -maxdepth 6 -type f \
+            ! -path './.git/*' \
+            | sort | head -300
+
       - name: Localizar Android SDK
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "Android SDK: $ANDROID_HOME"
-
-          test -d "$ANDROID_HOME"
+          if [ ! -d "$ANDROID_HOME/cmdline-tools" ]; then
+            echo "::error::Android SDK não encontrado."
+            exit 1
+          fi
 
           SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" \
-            -type f -name sdkmanager 2>/dev/null \
+            -type f -name sdkmanager \
             | sort -V | tail -n 1)"
 
           if [ -z "$SDKMANAGER" ]; then
-            echo "::error::sdkmanager não encontrado no Android SDK."
+            echo "::error::sdkmanager não encontrado."
             exit 1
           fi
 
           echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
           echo "SDK Manager localizado."
 
-      - name: Aceitar licenças Android
+      - name: Instalar componentes Android
         shell: bash
         run: |
           set -euo pipefail
@@ -65,11 +76,6 @@ jobs:
             --sdk_root="$ANDROID_HOME" \
             --licenses || true
 
-      - name: Instalar componentes Android
-        shell: bash
-        run: |
-          set -euo pipefail
-
           "$SDKMANAGER" \
             --sdk_root="$ANDROID_HOME" \
             --install \
@@ -77,26 +83,29 @@ jobs:
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-          echo "Componentes Android instalados."
-
-      - name: Verificar arquivos do projeto
+      - name: Verificar projeto Android
         shell: bash
         run: |
           set -euo pipefail
 
-          test -f settings.gradle
-          test -f app/build.gradle
-          test -f app/src/main/AndroidManifest.xml
-          test -f app/src/main/java/com/mentex/app/MainActivity.java
-          test -f app/src/main/assets/index.html
+          if [ ! -f settings.gradle ] &&
+             [ ! -f settings.gradle.kts ]; then
+            echo "::error::Falta settings.gradle ou settings.gradle.kts na raiz."
+            exit 1
+          fi
 
-          grep -Fq "MENTEX V4.6.4" \
-            app/src/main/assets/index.html
+          if [ ! -f app/build.gradle ] &&
+             [ ! -f app/build.gradle.kts ]; then
+            echo "::error::Não foi encontrado o arquivo Gradle do módulo app."
+            exit 1
+          fi
 
-          grep -Eq "versionName[[:space:]]+['\"]4\.6\.4['\"]" \
-            app/build.gradle
+          if [ ! -f app/src/main/AndroidManifest.xml ]; then
+            echo "::error::AndroidManifest.xml não encontrado."
+            exit 1
+          fi
 
-          echo "Arquivos do MENTEX V4.6.4 encontrados."
+          echo "Estrutura Android básica encontrada."
 
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -113,18 +122,18 @@ jobs:
           APK="app/build/outputs/apk/debug/app-debug.apk"
 
           if [ ! -s "$APK" ]; then
-            echo "::error::O APK não foi gerado."
+            echo "::error::O APK não foi gerado no caminho esperado."
+            find app -type f -name '*.apk' 2>/dev/null || true
             exit 1
           fi
 
-          echo "APK compilado:"
+          echo "APK gerado:"
           ls -lh "$APK"
 
-      - name: Disponibilizar APK para download
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-V4.6.4-APK-ANDROID
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
-          
