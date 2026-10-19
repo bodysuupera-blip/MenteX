@@ -1,5 +1,4 @@
-
-name: Gerar APK MENTEX Neon
+name: Gerar APK MENTEX V4.9 Neon
 
 on:
   workflow_dispatch:
@@ -7,6 +6,9 @@ on:
     paths:
       - 'MENTEX-codigo-fonte-extraido.zip'
       - '.github/workflows/android.yml'
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -16,13 +18,13 @@ jobs:
       - name: Baixar repositório
         uses: actions/checkout@v4
 
-      - name: Configurar Java
+      - name: Configurar Java 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Extrair jogo MENTEX
+      - name: Extrair e validar ZIP V4.9
         shell: bash
         run: |
           set -euo pipefail
@@ -30,7 +32,7 @@ jobs:
           ZIP="MENTEX-codigo-fonte-extraido.zip"
 
           if [ ! -f "$ZIP" ]; then
-            echo "ERRO: arquivo ZIP não encontrado na raiz do repositório."
+            echo "::error::ZIP não encontrado na raiz do repositório."
             exit 1
           fi
 
@@ -40,19 +42,28 @@ jobs:
           HTML="$(find extraido -type f -name index.html | head -n 1 || true)"
 
           if [ -z "$HTML" ]; then
-            echo "ERRO: index.html não encontrado no ZIP."
+            echo "::error::Não foi encontrado index.html dentro do ZIP."
             exit 1
           fi
 
+          echo "HTML encontrado: $HTML"
+
+          if ! grep -q 'V4.9' "$HTML"; then
+            echo "::error::O HTML não contém a marca V4.9. Verifique se enviou o ZIP atualizado."
+            exit 1
+          fi
+
+          # Copia o HTML e os recursos que ficam ao lado dele.
           cp -a "$(dirname "$HTML")/." app/src/main/assets/
-          mkdir -p app/src/main/java/com/mentex/app
 
-          if [ ! -f app/src/main/assets/index.html ]; then
-            echo "ERRO: index.html não foi copiado corretamente."
-            exit 1
-          fi
+          test -f app/src/main/assets/index.html
 
-      - name: Configurar e instalar Android SDK
+          echo "Arquivos incluídos no aplicativo:"
+          find app/src/main/assets -maxdepth 2 -type f
+
+          echo "Validação V4.9 concluída."
+
+      - name: Configurar SDK Android existente
         shell: bash
         run: |
           set -euo pipefail
@@ -64,12 +75,12 @@ jobs:
             -type f -name sdkmanager 2>/dev/null | head -n 1 || true)"
 
           if [ -z "$SDKMANAGER" ]; then
-            echo "ERRO: sdkmanager não encontrado."
-            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "::error::sdkmanager não encontrado no runner."
             exit 1
           fi
 
-          echo "SDK manager: $SDKMANAGER"
+          echo "Usando SDK: $ANDROID_HOME"
+          echo "Usando sdkmanager: $SDKMANAGER"
 
           yes | "$SDKMANAGER" \
             --sdk_root="$ANDROID_HOME" --licenses || true
@@ -79,9 +90,11 @@ jobs:
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-      - name: Criar configurações do projeto Android
+      - name: Criar projeto Android
         shell: bash
         run: |
+          mkdir -p app/src/main/java/com/mentex/app
+
           cat > settings.gradle <<'EOF'
           pluginManagement {
               repositories {
@@ -90,7 +103,6 @@ jobs:
                   gradlePluginPortal()
               }
           }
-
           dependencyResolutionManagement {
               repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
               repositories {
@@ -98,7 +110,6 @@ jobs:
                   mavenCentral()
               }
           }
-
           rootProject.name = "MENTEX"
           include(":app")
           EOF
@@ -127,42 +138,34 @@ jobs:
                   applicationId 'com.mentex.app'
                   minSdk 23
                   targetSdk 28
-                  versionCode 48
-                  versionName '4.8'
+                  versionCode 49
+                  versionName '4.9'
               }
           }
           EOF
 
-      - name: Criar manifesto Android
-        shell: bash
-        run: |
           cat > app/src/main/AndroidManifest.xml <<'EOF'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
               <uses-permission android:name="android.permission.INTERNET"/>
 
               <application
-                  android:label="MENTEX"
+                  android:label="MENTEX V4.9"
                   android:theme="@android:style/Theme.Material.Light.NoActionBar"
-                  android:usesCleartextTraffic="true"
-                  android:hardwareAccelerated="true">
+                  android:hardwareAccelerated="true"
+                  android:usesCleartextTraffic="true">
 
                   <activity
                       android:name=".MainActivity"
                       android:exported="true">
-
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN"/>
                           <category android:name="android.intent.category.LAUNCHER"/>
                       </intent-filter>
-
                   </activity>
               </application>
           </manifest>
           EOF
 
-      - name: Criar tela Android WebView
-        shell: bash
-        run: |
           cat > app/src/main/java/com/mentex/app/MainActivity.java <<'EOF'
           package com.mentex.app;
 
@@ -208,16 +211,28 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Gerar APK
+      - name: Gerar APK V4.9
+        run: gradle --no-daemon clean assembleDebug
+
+      - name: Verificar APK gerado
         shell: bash
         run: |
-          gradle --no-daemon clean assembleDebug
+          set -euo pipefail
 
-      - name: Publicar APK
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+
+          echo "APK criado:"
+          ls -lh "$APK"
+
+          sha256sum "$APK" | tee apk-sha256.txt
+
+      - name: Publicar APK V4.9
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-Neon-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: MENTEX-V4.9-Neon
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            apk-sha256.txt
           if-no-files-found: error
           retention-days: 14
-          
