@@ -1,4 +1,5 @@
-name: Gerar APK MENTEX Neon
+
+name: Gerar APK MENTEX Neon 5.0
 
 on:
   workflow_dispatch:
@@ -54,6 +55,9 @@ jobs:
             exit 1
           fi
 
+          echo "Verificando versão da interface:"
+          grep -in -m 5 'MENTEX 5.0 Neon' app/src/main/assets/index.html || true
+
           echo "Arquivos copiados:"
           find app/src/main/assets -maxdepth 2 -type f
 
@@ -87,6 +91,8 @@ jobs:
       - name: Criar projeto Android
         shell: bash
         run: |
+          set -euo pipefail
+
           mkdir -p app/src/main/java/com/mentex/app
 
           cat > settings.gradle <<'EOF'
@@ -134,8 +140,8 @@ jobs:
                   applicationId 'com.mentex.app'
                   minSdk 23
                   targetSdk 28
-                  versionCode 49
-                  versionName '4.9'
+                  versionCode 50
+                  versionName '5.0'
               }
           }
           EOF
@@ -145,7 +151,7 @@ jobs:
               <uses-permission android:name="android.permission.INTERNET"/>
 
               <application
-                  android:label="MENTEX Neon"
+                  android:label="MENTEX Neon 5.0"
                   android:theme="@android:style/Theme.Material.Light.NoActionBar"
                   android:hardwareAccelerated="true"
                   android:usesCleartextTraffic="true">
@@ -214,17 +220,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           APK="app/build/outputs/apk/debug/app-debug.apk"
-          test -s "$APK"
+
+          if [ ! -s "$APK" ]; then
+            echo "::error::O APK não foi gerado."
+            exit 1
+          fi
+
           ls -lh "$APK"
           sha256sum "$APK" > apk-sha256.txt
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-Neon-V4.9
+          name: MENTEX-Neon-V5.0
           path: |
             app/build/outputs/apk/debug/app-debug.apk
             apk-sha256.txt
           if-no-files-found: error
           retention-days: 14
+          
