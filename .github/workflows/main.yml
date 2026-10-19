@@ -1,63 +1,74 @@
+
 name: Gerar APK MENTEX V4.6.4 Android
 
 on:
   workflow_dispatch:
   push:
     paths:
-      - "**"
-      - "!README.md"
+      - "app/**"
+      - ".github/workflows/android.yml"
 
 permissions:
   contents: read
 
 jobs:
   android:
-    name: Construir APK MENTEX
+    name: Compilar aplicativo Android
     runs-on: ubuntu-latest
 
     steps:
       - name: Baixar projeto
         uses: actions/checkout@v4
 
-      - name: Configurar Java
+      - name: Configurar Java 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Localizar interface web
+      - name: Verificar interface
         shell: bash
         run: |
           set -euo pipefail
 
-          HTML="$(find . \
-            -type f \
-            -name index.html \
-            -not -path './.git/*' \
-            -not -path './.gradle/*' \
-            | head -n 1)"
-
-          if [ -z "$HTML" ]; then
-            echo "::error::Nenhum index.html foi encontrado no repositório."
+          if [ ! -s app/src/main/assets/index.html ]; then
+            echo "::error::Envie o index.html para app/src/main/assets/."
             exit 1
           fi
 
-          echo "Interface encontrada: $HTML"
-          echo "WEB_HTML=$HTML" >> "$GITHUB_ENV"
+          echo "Interface MENTEX encontrada."
 
-      - name: Criar projeto Android
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Instalar plataforma Android
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" \
+            -type f -name sdkmanager \
+            | sort -V | tail -n 1)"
+
+          test -n "$SDKMANAGER"
+
+          yes | "$SDKMANAGER" \
+            --sdk_root="$ANDROID_HOME" \
+            --licenses || true
+
+          "$SDKMANAGER" \
+            --sdk_root="$ANDROID_HOME" \
+            --install \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
+
+      - name: Criar estrutura Android
         shell: bash
         run: |
           set -euo pipefail
 
           mkdir -p app/src/main/java/com/mentex/app
-          mkdir -p app/src/main/assets
-          mkdir -p app/src/main/res/values
-
-          # Copia a interface e os recursos locais
-          SOURCE_DIR="$(dirname "$WEB_HTML")"
-
-          cp -a "$SOURCE_DIR/." app/src/main/assets/
 
           cat > settings.gradle <<'EOF'
           pluginManagement {
@@ -67,7 +78,6 @@ jobs:
                   gradlePluginPortal()
               }
           }
-
           dependencyResolutionManagement {
               repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
               repositories {
@@ -75,7 +85,6 @@ jobs:
                   mavenCentral()
               }
           }
-
           rootProject.name = "MENTEX"
           include(":app")
           EOF
@@ -87,8 +96,8 @@ jobs:
           EOF
 
           cat > gradle.properties <<'EOF'
-          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
           android.useAndroidX=true
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
           EOF
 
           cat > app/build.gradle <<'EOF'
@@ -112,24 +121,17 @@ jobs:
 
           cat > app/src/main/AndroidManifest.xml <<'EOF'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <uses-permission android:name="android.permission.INTERNET"/>
-
               <application
                   android:theme="@android:style/Theme.Material.Light.NoActionBar"
                   android:label="MENTEX"
-                  android:usesCleartextTraffic="true"
-                  android:hardwareAccelerated="true">
-
+                  android:usesCleartextTraffic="true">
                   <activity
                       android:name=".MainActivity"
-                      android:exported="true"
-                      android:screenOrientation="portrait">
-
+                      android:exported="true">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN"/>
                           <category android:name="android.intent.category.LAUNCHER"/>
                       </intent-filter>
-
                   </activity>
               </application>
           </manifest>
@@ -142,51 +144,27 @@ jobs:
           import android.os.Bundle;
           import android.webkit.WebView;
           import android.webkit.WebViewClient;
-          import android.webkit.WebChromeClient;
           import android.webkit.WebSettings;
 
           public class MainActivity extends Activity {
-              private WebView webView;
-
               @Override
               protected void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
 
-                  webView = new WebView(this);
-                  webView.setWebViewClient(new WebViewClient());
-                  webView.setWebChromeClient(new WebChromeClient());
+                  WebView web = new WebView(this);
+                  web.setWebViewClient(new WebViewClient());
 
-                  WebSettings settings = webView.getSettings();
+                  WebSettings settings = web.getSettings();
                   settings.setJavaScriptEnabled(true);
                   settings.setDomStorageEnabled(true);
-                  settings.setAllowFileAccess(true);
 
-                  setContentView(webView);
-                  webView.loadUrl("file:///android_asset/index.html");
-              }
-
-              @Override
-              public void onBackPressed() {
-                  if (webView != null && webView.canGoBack()) {
-                      webView.goBack();
-                  } else {
-                      super.onBackPressed();
-                  }
-              }
-
-              @Override
-              protected void onDestroy() {
-                  if (webView != null) {
-                      webView.destroy();
-                  }
-                  super.onDestroy();
+                  setContentView(web);
+                  web.loadUrl("file:///android_asset/index.html");
               }
           }
           EOF
 
-          echo "Estrutura Android criada."
-
-      - name: Instalar Gradle
+      - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.7"
@@ -194,10 +172,11 @@ jobs:
       - name: Compilar APK
         run: gradle --no-daemon clean assembleDebug
 
-      - name: Publicar APK
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-V4.6.4-APK-ANDROID
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
+          
