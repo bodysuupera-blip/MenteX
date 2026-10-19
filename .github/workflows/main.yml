@@ -4,131 +4,195 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - "app/**"
-      - "gradle/**"
-      - "*.gradle"
-      - "gradlew"
-      - "gradle.properties"
-      - ".github/workflows/**"
+      - "**"
+      - "!README.md"
 
 permissions:
   contents: read
 
 jobs:
   android:
-    name: Compilar aplicativo Android
+    name: Construir APK MENTEX
     runs-on: ubuntu-latest
-
-    env:
-      ANDROID_HOME: /usr/local/lib/android/sdk
-      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
     steps:
       - name: Baixar projeto
         uses: actions/checkout@v4
 
-      - name: Configurar Java 17
+      - name: Configurar Java
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Diagnosticar estrutura
-        shell: bash
-        run: |
-          echo "=== Raiz do projeto ==="
-          pwd
-          ls -la
-
-          echo "=== Arquivos encontrados ==="
-          find . -maxdepth 6 -type f \
-            ! -path './.git/*' \
-            | sort | head -300
-
-      - name: Localizar Android SDK
+      - name: Localizar interface web
         shell: bash
         run: |
           set -euo pipefail
 
-          if [ ! -d "$ANDROID_HOME/cmdline-tools" ]; then
-            echo "::error::Android SDK não encontrado."
+          HTML="$(find . \
+            -type f \
+            -name index.html \
+            -not -path './.git/*' \
+            -not -path './.gradle/*' \
+            | head -n 1)"
+
+          if [ -z "$HTML" ]; then
+            echo "::error::Nenhum index.html foi encontrado no repositório."
             exit 1
           fi
 
-          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" \
-            -type f -name sdkmanager \
-            | sort -V | tail -n 1)"
+          echo "Interface encontrada: $HTML"
+          echo "WEB_HTML=$HTML" >> "$GITHUB_ENV"
 
-          if [ -z "$SDKMANAGER" ]; then
-            echo "::error::sdkmanager não encontrado."
-            exit 1
-          fi
-
-          echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
-          echo "SDK Manager localizado."
-
-      - name: Instalar componentes Android
+      - name: Criar projeto Android
         shell: bash
         run: |
           set -euo pipefail
 
-          yes | "$SDKMANAGER" \
-            --sdk_root="$ANDROID_HOME" \
-            --licenses || true
+          mkdir -p app/src/main/java/com/mentex/app
+          mkdir -p app/src/main/assets
+          mkdir -p app/src/main/res/values
 
-          "$SDKMANAGER" \
-            --sdk_root="$ANDROID_HOME" \
-            --install \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
+          # Copia a interface e os recursos locais
+          SOURCE_DIR="$(dirname "$WEB_HTML")"
 
-      - name: Verificar projeto Android
-        shell: bash
-        run: |
-          set -euo pipefail
+          cp -a "$SOURCE_DIR/." app/src/main/assets/
 
-          if [ ! -f settings.gradle ] &&
-             [ ! -f settings.gradle.kts ]; then
-            echo "::error::Falta settings.gradle ou settings.gradle.kts na raiz."
-            exit 1
-          fi
+          cat > settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
 
-          if [ ! -f app/build.gradle ] &&
-             [ ! -f app/build.gradle.kts ]; then
-            echo "::error::Não foi encontrado o arquivo Gradle do módulo app."
-            exit 1
-          fi
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
 
-          if [ ! -f app/src/main/AndroidManifest.xml ]; then
-            echo "::error::AndroidManifest.xml não encontrado."
-            exit 1
-          fi
+          rootProject.name = "MENTEX"
+          include(":app")
+          EOF
 
-          echo "Estrutura Android básica encontrada."
+          cat > build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.6.1' apply false
+          }
+          EOF
 
-      - name: Configurar Gradle
+          cat > gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          EOF
+
+          cat > app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+          }
+
+          android {
+              namespace 'com.mentex.app'
+              compileSdk 35
+
+              defaultConfig {
+                  applicationId 'com.mentex.app'
+                  minSdk 23
+                  targetSdk 28
+                  versionCode 464
+                  versionName '4.6.4'
+              }
+          }
+          EOF
+
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET"/>
+
+              <application
+                  android:theme="@android:style/Theme.Material.Light.NoActionBar"
+                  android:label="MENTEX"
+                  android:usesCleartextTraffic="true"
+                  android:hardwareAccelerated="true">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:screenOrientation="portrait">
+
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                      </intent-filter>
+
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          cat > app/src/main/java/com/mentex/app/MainActivity.java <<'EOF'
+          package com.mentex.app;
+
+          import android.app.Activity;
+          import android.os.Bundle;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+          import android.webkit.WebChromeClient;
+          import android.webkit.WebSettings;
+
+          public class MainActivity extends Activity {
+              private WebView webView;
+
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+
+                  webView = new WebView(this);
+                  webView.setWebViewClient(new WebViewClient());
+                  webView.setWebChromeClient(new WebChromeClient());
+
+                  WebSettings settings = webView.getSettings();
+                  settings.setJavaScriptEnabled(true);
+                  settings.setDomStorageEnabled(true);
+                  settings.setAllowFileAccess(true);
+
+                  setContentView(webView);
+                  webView.loadUrl("file:///android_asset/index.html");
+              }
+
+              @Override
+              public void onBackPressed() {
+                  if (webView != null && webView.canGoBack()) {
+                      webView.goBack();
+                  } else {
+                      super.onBackPressed();
+                  }
+              }
+
+              @Override
+              protected void onDestroy() {
+                  if (webView != null) {
+                      webView.destroy();
+                  }
+                  super.onDestroy();
+              }
+          }
+          EOF
+
+          echo "Estrutura Android criada."
+
+      - name: Instalar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.7"
 
       - name: Compilar APK
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          gradle --no-daemon clean assembleDebug
-
-          APK="app/build/outputs/apk/debug/app-debug.apk"
-
-          if [ ! -s "$APK" ]; then
-            echo "::error::O APK não foi gerado no caminho esperado."
-            find app -type f -name '*.apk' 2>/dev/null || true
-            exit 1
-          fi
-
-          echo "APK gerado:"
-          ls -lh "$APK"
+        run: gradle --no-daemon clean assembleDebug
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
