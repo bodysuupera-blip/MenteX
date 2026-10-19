@@ -1,3 +1,4 @@
+
 name: Gerar APK MENTEX V4.6.4 Android
 
 on:
@@ -25,27 +26,29 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
-          cache: gradle
 
       - name: Configurar Android SDK
         uses: android-actions/setup-android@v4
         with:
           packages: |
             platform-tools
-
-      - name: Configurar Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.7"
+            platforms;android-35
+            build-tools;35.0.0
 
       - name: Verificar arquivos do projeto
         shell: bash
         run: |
           set -euo pipefail
+
+          echo "Diretório atual:"
+          pwd
+
+          echo "Arquivos da raiz:"
+          ls -la
 
           test -f settings.gradle
           test -f app/build.gradle
@@ -59,7 +62,12 @@ jobs:
           grep -Eq "versionName[[:space:]]+['\"]4\.6\.4['\"]" \
             app/build.gradle
 
-          echo "Arquivos do MENTEX V4.6.4 encontrados."
+          echo "Verificação concluída."
+
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
 
       - name: Compilar APK
         shell: bash
@@ -82,3 +90,4 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
+          
