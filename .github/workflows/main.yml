@@ -12,11 +12,15 @@ permissions:
 
 jobs:
   build:
-    name: Compilar aplicativo MENTEX
+    name: Extrair e compilar MENTEX
     runs-on: ubuntu-22.04
 
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
     steps:
-      - name: Baixar código-fonte
+      - name: Baixar repositório
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -25,75 +29,109 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Android SDK
-        uses: android-actions/setup-android@v3
-        continue-on-error: true
-
-      - name: Instalar pacotes Android
+      - name: Localizar ZIP com projeto Android
         shell: bash
         run: |
           set -euo pipefail
 
-          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          mkdir -p projeto
 
-          if [ ! -f "$SDKMANAGER" ]; then
-            SDKMANAGER=$(find "${ANDROID_HOME}/cmdline-tools" \
-              -type f -name sdkmanager | head -n 1)
+          ZIP_ESCOLHIDO=""
+
+          for ZIP in \
+            "MENTEX-V4.6.4.zip" \
+            "MENTEX-V4.6-ATUALIZADO.zip" \
+            "MENTEX-V4.6-CORRETO-ATUALIZACAO.zip" \
+            "MENTEX-V4.6-GITHUB-PRONTO.zip"; do
+
+            if [ -f "$ZIP" ] && \
+               unzip -Z1 "$ZIP" | grep -Eq '(^|/)gradlew$'; then
+              ZIP_ESCOLHIDO="$ZIP"
+              break
+            fi
+          done
+
+          if [ -z "$ZIP_ESCOLHIDO" ]; then
+            while IFS= read -r ZIP; do
+              if unzip -Z1 "$ZIP" 2>/dev/null |
+                 grep -Eq '(^|/)gradlew$'; then
+                ZIP_ESCOLHIDO="$ZIP"
+                break
+              fi
+            done < <(find . -maxdepth 1 -type f \
+              -iname '*.zip' | sort)
           fi
 
-          if [ -z "$SDKMANAGER" ] || [ ! -f "$SDKMANAGER" ]; then
-            echo "::error::sdkmanager não encontrado no Android SDK."
+          if [ -z "$ZIP_ESCOLHIDO" ]; then
+            echo "::error::Nenhum ZIP contém gradlew."
+            echo "É necessário verificar a estrutura do código-fonte."
             exit 1
           fi
 
-          yes | "$SDKMANAGER" --licenses || true
+          echo "ZIP escolhido: $ZIP_ESCOLHIDO"
+          unzip -q "$ZIP_ESCOLHIDO" -d projeto
+
+          GRADLEW=$(find projeto -type f -name gradlew \
+            | head -n 1 || true)
+
+          if [ -z "$GRADLEW" ]; then
+            echo "::error::Não encontrei gradlew após extrair o ZIP."
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$GRADLEW")
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+          echo "Projeto encontrado em: $PROJECT_DIR"
+          ls -la "$PROJECT_DIR"
+
+      - name: Instalar componentes Android
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" \
+            -type f -name sdkmanager 2>/dev/null \
+            | head -n 1 || true)
+
+          if [ -z "$SDKMANAGER" ]; then
+            echo "::error::sdkmanager não encontrado no runner."
+            exit 1
+          fi
+
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
           "$SDKMANAGER" \
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-      - name: Localizar projeto Android
+      - name: Compilar aplicativo
         shell: bash
         run: |
           set -euo pipefail
 
-          FILE=$(find . -type f -name gradlew \
-            -not -path "*/.git/*" | head -n 1 || true)
-
-          if [ -z "$FILE" ]; then
-            echo "::error::Não encontrei gradlew. O código-fonte Android precisa estar no repositório."
-            ls -la
-            exit 1
-          fi
-
-          PROJECT_DIR=$(dirname "$FILE")
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-
-      - name: Compilar APK
-        shell: bash
-        run: |
-          set -euo pipefail
           cd "$PROJECT_DIR"
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
-      - name: Preparar APK
+      - name: Localizar APK
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$GITHUB_WORKSPACE/apk-final"
 
           APK=$(find "$PROJECT_DIR" -type f \
-            -path "*/build/outputs/apk/debug/*.apk" \
+            -path '*/build/outputs/apk/debug/*.apk' \
             | head -n 1 || true)
 
           if [ -z "$APK" ]; then
-            echo "::error::Nenhum APK foi gerado."
+            echo "::error::A compilação não gerou um APK."
             exit 1
           fi
 
-          cp "$APK" "$GITHUB_WORKSPACE/apk-final/MENTEX-V4.6.4.apk"
+          mkdir -p apk-final
+          cp "$APK" apk-final/MENTEX-V4.6.4.apk
+          ls -lh apk-final/
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
