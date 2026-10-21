@@ -1,5 +1,4 @@
-
-name: MENTEX V4.6.4 - Gerar ZIP
+name: MENTEX V4.6.4 - Preparar ZIP
 
 on:
   workflow_dispatch:
@@ -7,66 +6,42 @@ on:
     branches:
       - main
       - master
-    paths:
-      - 'MENTEX-V4.6.4/**'
-      - '.github/workflows/mentex-v464.yml'
 
 permissions:
   contents: read
 
 jobs:
-  gerar-zip:
-    name: Preparar ZIP MENTEX V4.6.4
+  preparar-zip:
+    name: Preparar atualização MENTEX V4.6.4
     runs-on: ubuntu-22.04
 
     steps:
       - name: Baixar repositório
         uses: actions/checkout@v4
 
-      - name: Verificar arquivos do projeto
+      - name: Preparar arquivos da atualização
         shell: bash
         run: |
           set -euo pipefail
-
-          if [ ! -d "MENTEX-V4.6.4" ]; then
-            echo "::error::A pasta MENTEX-V4.6.4 não existe no repositório."
-            exit 1
-          fi
-
-          if ! find MENTEX-V4.6.4 -type f | grep -q .; then
-            echo "::error::A pasta da atualização está vazia."
-            exit 1
-          fi
-
-          echo "Arquivos encontrados:"
-          find MENTEX-V4.6.4 -type f
-
-      - name: Criar ZIP da atualização
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          sudo apt-get update
-          sudo apt-get install -y zip unzip
 
           mkdir -p saida
 
-          cd MENTEX-V4.6.4
-          zip -qr ../saida/MENTEX-V4.6.4-ATUALIZACAO.zip .
-          cd ..
+          # Evita incluir arquivos internos do GitHub e a própria saída.
+          zip -r saida/MENTEX-V4.6.4-ATUALIZACAO.zip . \
+            -x ".git/*" \
+               ".github/*" \
+               "saida/*" \
+               "*/node_modules/*" \
+               "*/build/*" \
+               "*/.gradle/*"
 
-          unzip -tq saida/MENTEX-V4.6.4-ATUALIZACAO.zip
-
-          sha256sum saida/MENTEX-V4.6.4-ATUALIZACAO.zip \
-            > saida/SHA256.txt
-
-          ls -lh saida/
+          echo "ZIP criado:"
+          ls -lh saida/MENTEX-V4.6.4-ATUALIZACAO.zip
 
       - name: Disponibilizar ZIP
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-V4.6.4-ATUALIZACAO
-          path: saida/*
+          path: saida/MENTEX-V4.6.4-ATUALIZACAO.zip
           if-no-files-found: error
-          retention-days: 14
-          
+          retention-days: 7
