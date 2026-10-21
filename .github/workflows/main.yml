@@ -1,4 +1,4 @@
-name: MENTEX V4.6.4 - Preparar ZIP
+name: MENTEX V4.6.4 - Gerar APK
 
 on:
   workflow_dispatch:
@@ -11,37 +11,84 @@ permissions:
   contents: read
 
 jobs:
-  preparar-zip:
-    name: Preparar atualização MENTEX V4.6.4
+  build:
+    name: Compilar aplicativo MENTEX
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar repositório
+      - name: Baixar código-fonte
         uses: actions/checkout@v4
 
-      - name: Preparar arquivos da atualização
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Instalar ferramentas Android
+        run: |
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Localizar projeto Android
         shell: bash
         run: |
           set -euo pipefail
 
-          mkdir -p saida
+          if [ -f "./gradlew" ]; then
+            echo "PROJECT_DIR=." >> "$GITHUB_ENV"
+          else
+            FILE=$(find . -type f -name gradlew \
+              -not -path "*/.git/*" | head -n 1)
 
-          # Evita incluir arquivos internos do GitHub e a própria saída.
-          zip -r saida/MENTEX-V4.6.4-ATUALIZACAO.zip . \
-            -x ".git/*" \
-               ".github/*" \
-               "saida/*" \
-               "*/node_modules/*" \
-               "*/build/*" \
-               "*/.gradle/*"
+            if [ -z "$FILE" ]; then
+              echo "ERRO: gradlew não encontrado."
+              echo "O repositório precisa conter um projeto Android Gradle."
+              exit 1
+            fi
 
-          echo "ZIP criado:"
-          ls -lh saida/MENTEX-V4.6.4-ATUALIZACAO.zip
+            echo "PROJECT_DIR=$(dirname "$FILE")" >> "$GITHUB_ENV"
+          fi
 
-      - name: Disponibilizar ZIP
+      - name: Dar permissão ao Gradle
+        run: chmod +x "$PROJECT_DIR/gradlew"
+
+      - name: Compilar APK
+        working-directory: .
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$PROJECT_DIR"
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Localizar APK gerado
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p "$GITHUB_WORKSPACE/apk-final"
+
+          APK=$(find "$PROJECT_DIR" -type f \
+            -path "*/build/outputs/apk/debug/*.apk" \
+            | head -n 1)
+
+          if [ -z "$APK" ]; then
+            echo "ERRO: nenhum APK foi encontrado."
+            exit 1
+          fi
+
+          cp "$APK" \
+            "$GITHUB_WORKSPACE/apk-final/MENTEX-V4.6.4.apk"
+
+          ls -lh "$GITHUB_WORKSPACE/apk-final"
+
+      - name: Disponibilizar APK para download
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V4.6.4-ATUALIZACAO
-          path: saida/MENTEX-V4.6.4-ATUALIZACAO.zip
+          name: MENTEX-V4.6.4-APK
+          path: apk-final/MENTEX-V4.6.4.apk
           if-no-files-found: error
           retention-days: 7
