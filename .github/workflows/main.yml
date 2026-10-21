@@ -29,12 +29,20 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Instalar ferramentas Android
+        shell: bash
         run: |
-          sdkmanager "platform-tools" \
+          set -euo pipefail
+
+          yes | sdkmanager --licenses || true
+
+          sdkmanager \
+            "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-      - name: Verificar projeto Android
+          sdkmanager --list_installed
+
+      - name: Localizar projeto Android
         shell: bash
         run: |
           set -euo pipefail
@@ -46,9 +54,10 @@ jobs:
               -not -path "*/.git/*" | head -n 1 || true)
 
             if [ -z "$FILE" ]; then
-              echo "::error::Não encontrei gradlew. O repositório precisa conter o código-fonte de um projeto Android Gradle."
-              echo "Arquivos encontrados na raiz:"
+              echo "::error::Não encontrei gradlew no repositório."
+              echo "Arquivos presentes na raiz:"
               ls -la
+              echo "É necessário enviar o código-fonte de um projeto Android."
               exit 1
             fi
 
@@ -58,18 +67,38 @@ jobs:
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           echo "Projeto encontrado em: $PROJECT_DIR"
 
-      - name: Compilar APK
+      - name: Verificar arquivos Gradle
         shell: bash
         run: |
           set -euo pipefail
           cd "$PROJECT_DIR"
-          chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
 
-      - name: Preparar APK
+          if [ ! -f "settings.gradle" ] && \
+             [ ! -f "settings.gradle.kts" ]; then
+            echo "::error::settings.gradle ou settings.gradle.kts não encontrado."
+            exit 1
+          fi
+
+          if [ ! -f "build.gradle" ] && \
+             [ ! -f "build.gradle.kts" ]; then
+            echo "::error::build.gradle ou build.gradle.kts não encontrado na raiz do projeto."
+            exit 1
+          fi
+
+          chmod +x gradlew
+
+      - name: Compilar APK Debug
         shell: bash
         run: |
           set -euo pipefail
+          cd "$PROJECT_DIR"
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Preparar APK para download
+        shell: bash
+        run: |
+          set -euo pipefail
+
           mkdir -p "$GITHUB_WORKSPACE/apk-final"
 
           APK=$(find "$PROJECT_DIR" -type f \
@@ -77,12 +106,14 @@ jobs:
             | head -n 1 || true)
 
           if [ -z "$APK" ]; then
-            echo "::error::A compilação terminou, mas nenhum APK foi encontrado."
+            echo "::error::APK não encontrado após a compilação."
             exit 1
           fi
 
           cp "$APK" \
             "$GITHUB_WORKSPACE/apk-final/MENTEX-V4.6.4.apk"
+
+          ls -lh "$GITHUB_WORKSPACE/apk-final/MENTEX-V4.6.4.apk"
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
