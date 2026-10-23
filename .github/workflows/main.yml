@@ -1,133 +1,143 @@
-name: MENTEX V4.9 - Cerebro Animado e Icone Redondo
+name: MENTEX V4.10 - Gerar APK
 
 on:
-  workflow_dispatch:
+workflow_dispatch:
 
 permissions:
-  contents: read
+contents: read
 
 jobs:
-  build:
-    name: Compilar MENTEX V4.9
-    runs-on: ubuntu-22.04
+build:
+name: Compilar MENTEX V4.10
+runs-on: ubuntu-22.04
 
-    steps:
-      - name: Baixar repositorio
-        uses: actions/checkout@v4
+env:
+  ANDROID_HOME: /usr/local/lib/android/sdk
+  ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
-      - name: Configurar Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
+steps:
+  - name: Baixar repositorio
+    uses: actions/checkout@v4
 
-      - name: Localizar e extrair projeto V4.9
-        id: projeto
-        shell: bash
-        run: |
-          set -euo pipefail
+  - name: Configurar Java 17
+    uses: actions/setup-java@v4
+    with:
+      distribution: temurin
+      java-version: '17'
 
-          ZIP="$GITHUB_WORKSPACE/MENTEX-V4.9-CEREBRO-EXPRESSOES-ICONE-REDONDO.zip"
+  - name: Localizar projeto Android
+    id: project
+    shell: bash
+    run: |
+      set -euo pipefail
 
-          if [ ! -f "$ZIP" ]; then
-            echo "ERRO: envie o ZIP V4.9 para a raiz do repositorio."
-            exit 1
-          fi
+      ROOT="$GITHUB_WORKSPACE"
+      PROJECT=""
 
-          DEST="$RUNNER_TEMP/mentex-v49"
-          mkdir -p "$DEST"
-          unzip -q "$ZIP" -d "$DEST"
+      while IFS= read -r -d '' FILE; do
+        DIR="$(dirname "$FILE")"
 
-          SETTINGS="$(find "$DEST" -type f \
-            -name settings.gradle -print -quit)"
+        if [ -f "$DIR/app/build.gradle" ] && \
+           [ -f "$DIR/build.gradle" ]; then
+          PROJECT="$DIR"
+          break
+        fi
+      done < <(
+        find "$ROOT" \
+          -type f \
+          -name settings.gradle \
+          -not -path '*/.git/*' \
+          -print0
+      )
 
-          if [ -z "$SETTINGS" ]; then
-            SETTINGS="$(find "$DEST" -type f \
-              -name settings.gradle.kts -print -quit)"
-          fi
+      if [ -z "$PROJECT" ]; then
+        echo "ERRO: Projeto Android nao encontrado."
+        echo "Verifique se a pasta MENTEX foi enviada ao repositorio."
+        exit 1
+      fi
 
-          if [ -z "$SETTINGS" ]; then
-            echo "ERRO: settings.gradle nao encontrado no ZIP."
-            exit 1
-          fi
+      echo "dir=$PROJECT" >> "$GITHUB_OUTPUT"
+      echo "Projeto encontrado: $PROJECT"
 
-          ROOT="$(dirname "$SETTINGS")"
+  - name: Localizar SDK Manager
+    id: sdk
+    shell: bash
+    run: |
+      set -euo pipefail
 
-          if [ ! -f "$ROOT/app/build.gradle" ] && \
-             [ ! -f "$ROOT/app/build.gradle.kts" ]; then
-            echo "ERRO: configuracao do modulo app nao encontrada."
-            exit 1
-          fi
+      SDKMANAGER="$(
+        find "$ANDROID_HOME/cmdline-tools" \
+          -type f \
+          -name sdkmanager \
+          2>/dev/null | sort -V | tail -n 1
+      )"
 
-          if [ ! -d "$ROOT/app/src/main/assets/www" ]; then
-            echo "ERRO: pasta de assets do jogo nao encontrada."
-            exit 1
-          fi
+      if [ -z "$SDKMANAGER" ]; then
+        echo "ERRO: SDK Manager nao encontrado."
+        exit 1
+      fi
 
-          echo "root=$ROOT" >> "$GITHUB_OUTPUT"
-          echo "Projeto encontrado: $ROOT"
+      echo "path=$SDKMANAGER" >> "$GITHUB_OUTPUT"
 
-      - name: Instalar Android SDK
-        shell: bash
-        run: |
-          set -euo pipefail
+  - name: Instalar componentes Android
+    shell: bash
+    run: |
+      set -e
 
-          SDK="$RUNNER_TEMP/android-sdk"
-          mkdir -p "$SDK/cmdline-tools"
+      SDKMANAGER="${{ steps.sdk.outputs.path }}"
 
-          curl -fL \
-            "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip" \
-            -o "$RUNNER_TEMP/android-tools.zip"
+      set +o pipefail
+      yes | "$SDKMANAGER" --licenses || true
+      set -o pipefail
 
-          mkdir -p "$RUNNER_TEMP/android-tools"
-          unzip -q "$RUNNER_TEMP/android-tools.zip" \
-            -d "$RUNNER_TEMP/android-tools"
+      "$SDKMANAGER" \
+        "platform-tools" \
+        "platforms;android-35" \
+        "build-tools;35.0.0"
 
-          mv "$RUNNER_TEMP/android-tools/cmdline-tools" \
-            "$SDK/cmdline-tools/latest"
+  - name: Configurar Gradle
+    uses: gradle/actions/setup-gradle@v4
+    with:
+      gradle-version: '8.9'
 
-          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
-          echo "$SDK/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
-          echo "$SDK/platform-tools" >> "$GITHUB_PATH"
+  - name: Verificar arquivos do projeto
+    working-directory: ${{ steps.project.outputs.dir }}
+    shell: bash
+    run: |
+      set -e
 
-          yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" \
-            --sdk_root="$SDK" --licenses >/dev/null || true
+      test -f settings.gradle
+      test -f build.gradle
+      test -f app/build.gradle
+      test -f app/src/main/AndroidManifest.xml
+      test -f app/src/main/assets/www/index.html
 
-          "$SDK/cmdline-tools/latest/bin/sdkmanager" \
-            --sdk_root="$SDK" \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
+      echo "Arquivos principais encontrados."
 
-      - name: Configurar Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
+  - name: Compilar APK
+    working-directory: ${{ steps.project.outputs.dir }}
+    run: gradle --no-daemon assembleDebug --stacktrace
 
-      - name: Compilar APK
-        shell: bash
-        run: |
-          set -euo pipefail
+  - name: Verificar APK gerado
+    working-directory: ${{ steps.project.outputs.dir }}
+    shell: bash
+    run: |
+      set -e
 
-          cd "${{ steps.projeto.outputs.root }}"
+      APK="app/build/outputs/apk/debug/app-debug.apk"
 
-          gradle --no-daemon assembleDebug --stacktrace
+      if [ ! -s "$APK" ]; then
+        echo "ERRO: APK nao foi gerado."
+        exit 1
+      fi
 
-          APK="$(find app/build/outputs/apk \
-            -type f -name '*.apk' -print -quit)"
+      echo "APK gerado com sucesso."
+      ls -lh "$APK"
 
-          if [ -z "$APK" ]; then
-            echo "ERRO: a compilacao terminou sem gerar APK."
-            exit 1
-          fi
-
-          mkdir -p "$GITHUB_WORKSPACE/apk-final"
-          cp "$APK" "$GITHUB_WORKSPACE/apk-final/MENTEX-V4.9.apk"
-
-      - name: Disponibilizar APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: MENTEX-V4.9-APK
-          path: apk-final/MENTEX-V4.9.apk
-          if-no-files-found: error
+  - name: Disponibilizar APK para download
+    uses: actions/upload-artifact@v4
+    with:
+      name: MENTEX-V4.10-APK
+      path: ${{ steps.project.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk
+      if-no-files-found: error
+      retention-days: 7
