@@ -34,33 +34,66 @@ steps:
       ROOT="$GITHUB_WORKSPACE"
       PROJECT=""
 
-      while IFS= read -r -d '' FILE; do
-        DIR="$(dirname "$FILE")"
+      find_project() {
+        local BASE="$1"
+        while IFS= read -r -d '' FILE; do
+          local DIR
+          DIR="$(dirname "$FILE")"
 
-        if [ -f "$DIR/app/build.gradle" ] && \
-           [ -f "$DIR/build.gradle" ]; then
-          PROJECT="$DIR"
-          break
-        fi
-      done < <(
-        find "$ROOT" \
-          -type f \
-          -name settings.gradle \
-          -not -path '*/.git/*' \
-          -print0
-      )
+          if [ -f "$DIR/app/build.gradle" ] && \
+             [ -f "$DIR/settings.gradle" ]; then
+            PROJECT="$DIR"
+            return 0
+          fi
+        done < <(
+          find "$BASE" \
+            -type f \
+            -name settings.gradle \
+            -not -path '*/.git/*' \
+            -print0
+        )
+        return 1
+      }
+
+      find_project "$ROOT" || true
 
       if [ -z "$PROJECT" ]; then
-        echo "ERRO: Projeto Android nao encontrado."
-        echo "Verifique se a pasta MENTEX foi enviada ao repositorio."
+        while IFS= read -r -d '' ZIPFILE; do
+          TEMP="$RUNNER_TEMP/mentex-extracted"
+          rm -rf "$TEMP"
+          mkdir -p "$TEMP"
+
+          if unzip -oq "$ZIPFILE" -d "$TEMP"; then
+            find_project "$TEMP" || true
+          fi
+
+          if [ -n "$PROJECT" ]; then
+            break
+          fi
+        done < <(
+          find "$ROOT" \
+            -type f \
+            -iname '*.zip' \
+            -not -path '*/.git/*' \
+            -print0
+        )
+      fi
+
+      if [ -z "$PROJECT" ]; then
+        echo "::error::Projeto Android nao encontrado."
+        echo "Verifique se o projeto ou o ZIP esta no repositorio."
         exit 1
       fi
 
       echo "dir=$PROJECT" >> "$GITHUB_OUTPUT"
       echo "Projeto encontrado: $PROJECT"
 
-  - name: Localizar SDK Manager
-    id: sdk
+  - name: Configurar Gradle
+    uses: gradle/actions/setup-gradle@v4
+    with:
+      gradle-version: '8.9'
+
+  - name: Instalar SDK Android
     shell: bash
     run: |
       set -euo pipefail
@@ -73,34 +106,31 @@ steps:
       )"
 
       if [ -z "$SDKMANAGER" ]; then
-        echo "ERRO: SDK Manager nao encontrado."
+        echo "::error::SDK Manager nao encontrado."
         exit 1
       fi
 
-      echo "path=$SDKMANAGER" >> "$GITHUB_OUTPUT"
+      "$SDKMANAGER" --install \
+        "platform-tools" \
+        "platforms;android-35" \
+        "build-tools;35.0.0"
 
-  - name: Instalar componentes Android
+  - name: Aceitar licencas Android
     shell: bash
     run: |
       set -e
-
-      SDKMANAGER="${{ steps.sdk.outputs.path }}"
+      SDKMANAGER="$(
+        find "$ANDROID_HOME/cmdline-tools" \
+          -type f \
+          -name sdkmanager \
+          2>/dev/null | sort -V | tail -n 1
+      )"
 
       set +o pipefail
       yes | "$SDKMANAGER" --licenses || true
       set -o pipefail
 
-      "$SDKMANAGER" \
-        "platform-tools" \
-        "platforms;android-35" \
-        "build-tools;35.0.0"
-
-  - name: Configurar Gradle
-    uses: gradle/actions/setup-gradle@v4
-    with:
-      gradle-version: '8.9'
-
-  - name: Verificar arquivos do projeto
+  - name: Verificar projeto
     working-directory: ${{ steps.project.outputs.dir }}
     shell: bash
     run: |
@@ -116,9 +146,12 @@ steps:
 
   - name: Compilar APK
     working-directory: ${{ steps.project.outputs.dir }}
-    run: gradle --no-daemon assembleDebug --stacktrace
+    shell: bash
+    run: |
+      set -e
+      gradle --no-daemon assembleDebug --stacktrace
 
-  - name: Verificar APK gerado
+  - name: Verificar APK
     working-directory: ${{ steps.project.outputs.dir }}
     shell: bash
     run: |
@@ -127,14 +160,13 @@ steps:
       APK="app/build/outputs/apk/debug/app-debug.apk"
 
       if [ ! -s "$APK" ]; then
-        echo "ERRO: APK nao foi gerado."
+        echo "::error::O APK nao foi gerado."
         exit 1
       fi
 
-      echo "APK gerado com sucesso."
       ls -lh "$APK"
 
-  - name: Disponibilizar APK para download
+  - name: Disponibilizar APK
     uses: actions/upload-artifact@v4
     with:
       name: MENTEX-V4.10-APK
