@@ -9,7 +9,6 @@ permissions:
 
 jobs:
   build:
-    name: Compilar MENTEX V4.8
     runs-on: ubuntu-22.04
 
     env:
@@ -17,7 +16,7 @@ jobs:
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
     steps:
-      - name: Baixar código do repositório
+      - name: Baixar código
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -26,7 +25,48 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Localizar projeto ou ZIP
+      - name: Preparar Android SDK
+        shell: bash
+        run: |
+          set -e
+          SDK="$ANDROID_HOME"
+          mkdir -p "$SDK/cmdline-tools"
+
+          if [ ! -x "$SDK/cmdline-tools/latest/bin/sdkmanager" ]; then
+            mkdir -p "$RUNNER_TEMP/android-cmdline"
+            cd "$RUNNER_TEMP/android-cmdline"
+
+            curl -fL \
+              https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip \
+              -o tools.zip
+
+            unzip -q tools.zip
+            mkdir -p "$SDK/cmdline-tools/latest"
+            cp -a cmdline-tools/. "$SDK/cmdline-tools/latest/"
+          fi
+
+          echo "$SDK/platform-tools" >> "$GITHUB_PATH"
+          echo "$SDK/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+
+      - name: Aceitar licenças e instalar SDK
+        shell: bash
+        run: |
+          set -e
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+
+          yes | "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --licenses || true
+
+          "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --install \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
+
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Localizar projeto
         id: project
         shell: bash
         run: |
@@ -45,69 +85,18 @@ jobs:
             -not -path '*/.git/*' -print0)
 
           if [ -z "$PROJECT" ]; then
-            while IFS= read -r -d '' ZIP; do
-              DEST="$RUNNER_TEMP/mentex-extract"
-              rm -rf "$DEST"
-              mkdir -p "$DEST"
-              unzip -oq "$ZIP" -d "$DEST" || continue
-
-              while IFS= read -r -d '' FILE; do
-                DIR="$(dirname "$FILE")"
-                if [ -f "$DIR/app/build.gradle" ]; then
-                  PROJECT="$DIR"
-                  break
-                fi
-              done < <(find "$DEST" -type f \
-                -name settings.gradle -print0)
-
-              [ -n "$PROJECT" ] && break
-            done < <(find "$ROOT" -type f \
-              -name '*.zip' -not -path '*/.git/*' -print0)
-          fi
-
-          if [ -z "$PROJECT" ]; then
             echo "ERRO: projeto Android não encontrado."
-            echo "Envie o ZIP MENTEX V4.8 ou extraia os arquivos no repositório."
             exit 1
           fi
 
-          echo "Projeto encontrado em: $PROJECT"
+          echo "Projeto: $PROJECT"
           echo "dir=$PROJECT" >> "$GITHUB_OUTPUT"
-
-      - name: Configurar Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Instalar componentes Android
-        shell: bash
-        run: |
-          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" \
-            -type f -name sdkmanager 2>/dev/null \
-            | sort -V | tail -n 1)
-
-          if [ -z "$SDKMANAGER" ]; then
-            echo "ERRO: SDK Manager não encontrado."
-            exit 1
-          fi
-
-          set +o pipefail
-          yes | "$SDKMANAGER" --licenses
-          set -o pipefail
-
-          "$SDKMANAGER" --install \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
-
-      - name: Configurar Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
 
       - name: Gerar APK
         working-directory: ${{ steps.project.outputs.dir }}
         run: gradle --no-daemon assembleDebug --stacktrace
 
-      - name: Publicar APK
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-V4.8-APK
