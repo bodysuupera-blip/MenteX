@@ -1,3 +1,4 @@
+
 name: MENTEX V4.7 - Gerar APK
 
 on:
@@ -8,7 +9,6 @@ permissions:
 
 jobs:
   build:
-    name: Compilar MENTEX
     runs-on: ubuntu-22.04
 
     env:
@@ -25,39 +25,83 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Localizar projeto
+      - name: Localizar ou extrair projeto
         id: project
         shell: bash
         run: |
-          if [ -f "settings.gradle" ] && [ -f "app/build.gradle" ]; then
-            DIR="."
-          elif [ -f "MENTEX_REFEITO_PROJETO/settings.gradle" ] && \
-               [ -f "MENTEX_REFEITO_PROJETO/app/build.gradle" ]; then
-            DIR="MENTEX_REFEITO_PROJETO"
-          else
-            echo "ERRO: não encontrei settings.gradle e app/build.gradle."
-            find . -maxdepth 4 -name settings.gradle -o -name app
+          set -e
+          ROOT="$GITHUB_WORKSPACE"
+          DEST="$RUNNER_TEMP/mentex-source"
+          PROJECT=""
+
+          # Procurar projeto já extraído
+          while IFS= read -r -d '' FILE; do
+            DIR="$(dirname "$FILE")"
+            if [ -f "$DIR/app/build.gradle" ]; then
+              PROJECT="$DIR"
+              break
+            fi
+          done < <(find "$ROOT" -type f \
+            -name settings.gradle \
+            -not -path '*/.git/*' -print0)
+
+          # Se não estiver extraído, procurar ZIP
+          if [ -z "$PROJECT" ]; then
+            mkdir -p "$DEST"
+            while IFS= read -r -d '' ZIP; do
+              TEMP="$RUNNER_TEMP/mentex-test"
+              rm -rf "$TEMP"
+              mkdir -p "$TEMP"
+              if unzip -oq "$ZIP" -d "$TEMP"; then
+                while IFS= read -r -d '' FILE; do
+                  DIR="$(dirname "$FILE")"
+                  if [ -f "$DIR/app/build.gradle" ]; then
+                    PROJECT="$DIR"
+                    break
+                  fi
+                done < <(find "$TEMP" -type f \
+                  -name settings.gradle -print0)
+              fi
+              if [ -n "$PROJECT" ]; then
+                break
+              fi
+            done < <(find "$ROOT" -type f -name '*.zip' \
+              -not -path '*/.git/*' -print0)
+          fi
+
+          if [ -z "$PROJECT" ]; then
+            echo "ERRO: projeto Android não encontrado."
+            echo "Envie o ZIP do projeto reconstruído para o repositório."
+            find "$ROOT" -maxdepth 3 -type f | head -100
             exit 1
           fi
 
-          echo "project_dir=$DIR" >> "$GITHUB_OUTPUT"
-          echo "Projeto localizado em: $DIR"
+          echo "Projeto encontrado: $PROJECT"
+          echo "dir=$PROJECT" >> "$GITHUB_OUTPUT"
 
-      - name: Configurar Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Instalar componentes Android
+      - name: Localizar SDK Manager
+        id: sdk
         shell: bash
         run: |
           SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" \
-            -type f -name sdkmanager 2>/dev/null | sort -V | tail -n 1)
+            -type f -name sdkmanager 2>/dev/null \
+            | sort -V | tail -n 1)
 
           if [ -z "$SDKMANAGER" ]; then
             echo "ERRO: SDK Manager não encontrado."
             exit 1
           fi
 
-          yes | "$SDKMANAGER" --licenses || true
+          echo "path=$SDKMANAGER" >> "$GITHUB_OUTPUT"
+
+      - name: Instalar componentes Android
+        shell: bash
+        run: |
+          SDKMANAGER="${{ steps.sdk.outputs.path }}"
+
+          set +o pipefail
+          yes | "$SDKMANAGER" --licenses
+          set -o pipefail
 
           "$SDKMANAGER" --install \
             "platform-tools" \
@@ -69,13 +113,14 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Compilar APK
-        working-directory: ${{ steps.project.outputs.project_dir }}
-        run: gradle --no-daemon assembleDebug
+      - name: Gerar APK
+        working-directory: ${{ steps.project.outputs.dir }}
+        run: gradle --no-daemon assembleDebug --stacktrace
 
-      - name: Disponibilizar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-V4.7-APK
-          path: ${{ steps.project.outputs.project_dir }}/app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ steps.project.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          
