@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar arquivos do repositorio
+      - name: Baixar arquivos
         uses: actions/checkout@v4
 
       - name: Instalar ferramentas
@@ -27,8 +27,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             openjdk-17-jre-headless \
-            zip unzip curl jq python3-pil \
-            apksigner zipalign aapt
+            zip unzip curl jq python3-pil
 
           URL=$(curl -fsSL \
             https://api.github.com/repos/iBotPeaches/Apktool/releases/latest \
@@ -36,43 +35,59 @@ jobs:
               | select(.name | test("^apktool_[0-9.]+\\.jar$"))
               | .browser_download_url' | head -n 1)
 
-          if [ -z "$URL" ] || [ "$URL" = "null" ]; then
-            echo "::error::Nao foi possivel baixar o Apktool."
-            exit 1
-          fi
-
+          test -n "$URL"
+          test "$URL" != "null"
           curl -fL "$URL" -o "$RUNNER_TEMP/apktool.jar"
-          java -jar "$RUNNER_TEMP/apktool.jar" --version
 
-      - name: Encontrar APK original
+          SDK="$RUNNER_TEMP/android-sdk"
+          mkdir -p "$SDK/cmdline-tools"
+          curl -fL \
+            https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip \
+            -o "$RUNNER_TEMP/sdk-tools.zip"
+          mkdir -p "$RUNNER_TEMP/sdk-unpack"
+          unzip -q "$RUNNER_TEMP/sdk-tools.zip" -d "$RUNNER_TEMP/sdk-unpack"
+          mkdir -p "$SDK/cmdline-tools/latest"
+          cp -a "$RUNNER_TEMP/sdk-unpack/cmdline-tools/." \
+            "$SDK/cmdline-tools/latest/"
+
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "$SDK/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          echo "$SDK/platform-tools" >> "$GITHUB_PATH"
+          echo "$SDK/build-tools/35.0.0" >> "$GITHUB_PATH"
+
+          yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" \
+            --sdk_root="$SDK" --licenses >/dev/null || true
+          "$SDK/cmdline-tools/latest/bin/sdkmanager" \
+            --sdk_root="$SDK" \
+            "platform-tools" "build-tools;35.0.0"
+
+      - name: Localizar APK original
         shell: bash
         run: |
           set -e
 
-          if [ ! -f "MENTEX-V4.17-APK.zip" ]; then
-            echo "::error::Coloque MENTEX-V4.17-APK.zip na raiz do repositorio."
+          test -f "MENTEX-V4.17-APK.zip" || {
+            echo "::error::Falta MENTEX-V4.17-APK.zip na raiz."
             exit 1
-          fi
+          }
 
-          if [ ! -f "mentex_icon.png" ]; then
-            echo "::error::Coloque mentex_icon.png na raiz do repositorio."
+          test -f "mentex_icon.png" || {
+            echo "::error::Falta mentex_icon.png na raiz."
             exit 1
-          fi
+          }
 
           mkdir -p entrada
           unzip -o MENTEX-V4.17-APK.zip -d entrada
 
           APK=$(find entrada -type f -iname "*.apk" | head -n 1)
-
-          if [ -z "$APK" ]; then
-            echo "::error::Nao foi encontrado APK dentro do ZIP."
+          test -n "$APK" || {
+            echo "::error::Nenhum APK encontrado no ZIP."
             exit 1
-          fi
+          }
 
           cp "$APK" original.apk
-          echo "APK localizado com sucesso."
 
-      - name: Preparar icone ampliado
+      - name: Preparar imagem sem margens
         shell: bash
         run: |
           set -e
@@ -81,17 +96,20 @@ jobs:
 
           im = Image.open("mentex_icon.png").convert("RGBA")
 
-          # Recorta a imagem para um quadrado usando a maior area central.
+          # Remove margens externas transparentes, se existirem.
+          alpha = im.getchannel("A")
+          bbox = alpha.getbbox()
+          if bbox:
+              im = im.crop(bbox)
+
+          # Ajusta a arte para preencher um quadrado sem adicionar bordas.
           w, h = im.size
           side = min(w, h)
           left = (w - side) // 2
           top = (h - side) // 2
           im = im.crop((left, top, left + side, top + side))
-
-          # Mantem a arte ate as bordas, sem margem interna adicional.
           im = im.resize((1024, 1024), Image.Resampling.LANCZOS)
           im.save("mentex_icon_preparado.png")
-          print("Icone preparado em 1024x1024, sem bordas adicionadas.")
           PY
 
       - name: Desmontar APK
@@ -101,31 +119,28 @@ jobs:
           java -jar "$RUNNER_TEMP/apktool.jar" \
             d -f original.apk -o projeto
 
-      - name: Atualizar icones e recursos adaptativos
+      - name: Atualizar icones normais e adaptativos
         shell: bash
         run: |
           set -e
-
           python3 - <<'PY'
           from PIL import Image
           from pathlib import Path
           import re
 
-          root = Path("projeto/res")
+          res = Path("projeto/res")
           source = Image.open("mentex_icon_preparado.png").convert("RGBA")
-          launcher_names = (
+          names = (
               "ic_launcher",
               "ic_launcher_round",
               "launcher_icon",
               "app_icon",
               "appicon"
           )
+          changed = 0
 
-          replaced = 0
-
-          # Atualiza PNGs e WEBPs de icones existentes, preservando
-          # os tamanhos esperados pelo aplicativo.
-          for folder in root.iterdir():
+          # Substitui arquivos de imagem existentes pelos novos.
+          for folder in res.iterdir():
               if not folder.is_dir():
                   continue
               if not (folder.name.startswith("mipmap")
@@ -137,34 +152,32 @@ jobs:
                       continue
                   if file.suffix.lower() not in (".png", ".webp"):
                       continue
-                  if not any(n in file.stem.lower()
-                             for n in launcher_names):
+                  if not any(name in file.stem.lower() for name in names):
                       continue
 
                   try:
                       with Image.open(file) as old:
                           size = old.size
-
-                      image = source.resize(size, Image.Resampling.LANCZOS)
+                      new = source.resize(size, Image.Resampling.LANCZOS)
 
                       if file.suffix.lower() == ".webp":
-                          image.save(file, "WEBP")
+                          new.save(file, "WEBP")
                       else:
-                          image.save(file, "PNG")
+                          new.save(file, "PNG")
 
-                      print("Atualizado:", file)
-                      replaced += 1
+                      print("Icone atualizado:", file)
+                      changed += 1
                   except Exception as e:
-                      print("Aviso ao atualizar", file, e)
+                      print("Aviso:", file, e)
 
-          # Cria um foreground de alta resolucao para icones adaptativos.
-          # O Android ainda pode aplicar sua mascara conforme o launcher.
-          nodpi = root / "drawable-nodpi"
-          nodpi.mkdir(parents=True, exist_ok=True)
-          source.save(nodpi / "mentex_launcher_foreground.png")
+          # A mesma arte ocupa o fundo e o primeiro plano do icone
+          # adaptativo, evitando uma pequena logo centralizada sobre branco.
+          nd = res / "drawable-nodpi"
+          nd.mkdir(parents=True, exist_ok=True)
+          source.save(nd / "mentex_launcher_background.png")
+          source.save(nd / "mentex_launcher_foreground.png")
 
-          # Faz os XMLs de icone adaptativo usarem a nova imagem.
-          for xml in root.rglob("*.xml"):
+          for xml in res.rglob("*.xml"):
               try:
                   content = xml.read_text(encoding="utf-8")
               except Exception:
@@ -173,18 +186,21 @@ jobs:
               if "<adaptive-icon" not in content:
                   continue
 
-              updated, count = re.subn(
+              content = re.sub(
                   r'(<foreground\b[^>]*android:drawable=")[^"]+(")',
                   r'\g<1>@drawable/mentex_launcher_foreground\g<2>',
                   content
               )
+              content = re.sub(
+                  r'(<background\b[^>]*android:drawable=")[^"]+(")',
+                  r'\g<1>@drawable/mentex_launcher_background\g<2>',
+                  content
+              )
 
-              if count:
-                  xml.write_text(updated, encoding="utf-8")
-                  print("Foreground adaptativo atualizado:", xml)
+              xml.write_text(content, encoding="utf-8")
+              print("Icone adaptativo ajustado:", xml)
 
-          print(f"Arquivos de icone rasterizados atualizados: {replaced}")
-          print("Recurso adaptativo preparado.")
+          print("Imagens substituidas:", changed)
           PY
 
       - name: Reconstruir APK
@@ -228,8 +244,7 @@ jobs:
           mkdir -p entrega
           cp MENTEX-assinado.apk entrega/
           cp mentex_icon.png entrega/
-          cd entrega
-          zip -j ../MENTEX-APK-final.zip *
+          (cd entrega && zip -j ../MENTEX-APK-final.zip *)
 
       - name: Disponibilizar arquivos
         uses: actions/upload-artifact@v4
