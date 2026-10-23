@@ -1,175 +1,131 @@
-name: MENTEX V4.10 - Gerar APK
+
+name: MENTEX V4.10 - Reacoes do Cerebro
 
 on:
-workflow_dispatch:
+  workflow_dispatch:
 
 permissions:
-contents: read
+  contents: read
 
 jobs:
-build:
-name: Compilar MENTEX V4.10
-runs-on: ubuntu-22.04
+  build:
+    name: Gerar APK MENTEX V4.10
+    runs-on: ubuntu-22.04
 
-env:
-  ANDROID_HOME: /usr/local/lib/android/sdk
-  ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    steps:
+      - name: Baixar repositorio
+        uses: actions/checkout@v4
 
-steps:
-  - name: Baixar repositorio
-    uses: actions/checkout@v4
+      - name: Configurar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
 
-  - name: Configurar Java 17
-    uses: actions/setup-java@v4
-    with:
-      distribution: temurin
-      java-version: '17'
+      - name: Extrair projeto V4.10
+        id: projeto
+        shell: bash
+        run: |
+          set -euo pipefail
 
-  - name: Localizar projeto Android
-    id: project
-    shell: bash
-    run: |
-      set -euo pipefail
+          ZIP="$GITHUB_WORKSPACE/MENTEX-V4.10-REACOES-CEREBRO-CORRIGIDAS.zip"
 
-      ROOT="$GITHUB_WORKSPACE"
-      PROJECT=""
-
-      find_project() {
-        local BASE="$1"
-        while IFS= read -r -d '' FILE; do
-          local DIR
-          DIR="$(dirname "$FILE")"
-
-          if [ -f "$DIR/app/build.gradle" ] && \
-             [ -f "$DIR/settings.gradle" ]; then
-            PROJECT="$DIR"
-            return 0
-          fi
-        done < <(
-          find "$BASE" \
-            -type f \
-            -name settings.gradle \
-            -not -path '*/.git/*' \
-            -print0
-        )
-        return 1
-      }
-
-      find_project "$ROOT" || true
-
-      if [ -z "$PROJECT" ]; then
-        while IFS= read -r -d '' ZIPFILE; do
-          TEMP="$RUNNER_TEMP/mentex-extracted"
-          rm -rf "$TEMP"
-          mkdir -p "$TEMP"
-
-          if unzip -oq "$ZIPFILE" -d "$TEMP"; then
-            find_project "$TEMP" || true
+          if [ ! -f "$ZIP" ]; then
+            echo "ERRO: ZIP V4.10 nao encontrado na raiz do repositorio."
+            exit 1
           fi
 
-          if [ -n "$PROJECT" ]; then
-            break
+          DEST="$RUNNER_TEMP/mentex-v410"
+          mkdir -p "$DEST"
+          unzip -q "$ZIP" -d "$DEST"
+
+          SETTINGS="$(find "$DEST" -type f \
+            \( -name settings.gradle -o -name settings.gradle.kts \) \
+            -print -quit)"
+
+          if [ -z "$SETTINGS" ]; then
+            echo "ERRO: settings.gradle nao encontrado."
+            exit 1
           fi
-        done < <(
-          find "$ROOT" \
-            -type f \
-            -iname '*.zip' \
-            -not -path '*/.git/*' \
-            -print0
-        )
-      fi
 
-      if [ -z "$PROJECT" ]; then
-        echo "::error::Projeto Android nao encontrado."
-        echo "Verifique se o projeto ou o ZIP esta no repositorio."
-        exit 1
-      fi
+          ROOT="$(dirname "$SETTINGS")"
 
-      echo "dir=$PROJECT" >> "$GITHUB_OUTPUT"
-      echo "Projeto encontrado: $PROJECT"
+          if [ ! -d "$ROOT/app/src/main/assets/www" ]; then
+            echo "ERRO: arquivos do jogo nao encontrados."
+            exit 1
+          fi
 
-  - name: Configurar Gradle
-    uses: gradle/actions/setup-gradle@v4
-    with:
-      gradle-version: '8.9'
+          if [ ! -f "$ROOT/app/build.gradle" ] && \
+             [ ! -f "$ROOT/app/build.gradle.kts" ]; then
+            echo "ERRO: build.gradle do aplicativo nao encontrado."
+            exit 1
+          fi
 
-  - name: Instalar SDK Android
-    shell: bash
-    run: |
-      set -euo pipefail
+          echo "root=$ROOT" >> "$GITHUB_OUTPUT"
+          echo "Projeto V4.10 encontrado: $ROOT"
 
-      SDKMANAGER="$(
-        find "$ANDROID_HOME/cmdline-tools" \
-          -type f \
-          -name sdkmanager \
-          2>/dev/null | sort -V | tail -n 1
-      )"
+      - name: Instalar Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
 
-      if [ -z "$SDKMANAGER" ]; then
-        echo "::error::SDK Manager nao encontrado."
-        exit 1
-      fi
+          SDK="$RUNNER_TEMP/android-sdk"
+          mkdir -p "$SDK/cmdline-tools"
 
-      "$SDKMANAGER" --install \
-        "platform-tools" \
-        "platforms;android-35" \
-        "build-tools;35.0.0"
+          curl -fL \
+            "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip" \
+            -o "$RUNNER_TEMP/android-tools.zip"
 
-  - name: Aceitar licencas Android
-    shell: bash
-    run: |
-      set -e
-      SDKMANAGER="$(
-        find "$ANDROID_HOME/cmdline-tools" \
-          -type f \
-          -name sdkmanager \
-          2>/dev/null | sort -V | tail -n 1
-      )"
+          mkdir -p "$RUNNER_TEMP/android-tools"
+          unzip -q "$RUNNER_TEMP/android-tools.zip" \
+            -d "$RUNNER_TEMP/android-tools"
 
-      set +o pipefail
-      yes | "$SDKMANAGER" --licenses || true
-      set -o pipefail
+          mv "$RUNNER_TEMP/android-tools/cmdline-tools" \
+            "$SDK/cmdline-tools/latest"
 
-  - name: Verificar projeto
-    working-directory: ${{ steps.project.outputs.dir }}
-    shell: bash
-    run: |
-      set -e
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          echo "$SDK/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          echo "$SDK/platform-tools" >> "$GITHUB_PATH"
 
-      test -f settings.gradle
-      test -f build.gradle
-      test -f app/build.gradle
-      test -f app/src/main/AndroidManifest.xml
-      test -f app/src/main/assets/www/index.html
+          yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" \
+            --sdk_root="$SDK" --licenses >/dev/null || true
 
-      echo "Arquivos principais encontrados."
+          "$SDK/cmdline-tools/latest/bin/sdkmanager" \
+            --sdk_root="$SDK" \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
 
-  - name: Compilar APK
-    working-directory: ${{ steps.project.outputs.dir }}
-    shell: bash
-    run: |
-      set -e
-      gradle --no-daemon assembleDebug --stacktrace
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
 
-  - name: Verificar APK
-    working-directory: ${{ steps.project.outputs.dir }}
-    shell: bash
-    run: |
-      set -e
+      - name: Compilar APK atualizado
+        shell: bash
+        run: |
+          set -euo pipefail
 
-      APK="app/build/outputs/apk/debug/app-debug.apk"
+          cd "${{ steps.projeto.outputs.root }}"
 
-      if [ ! -s "$APK" ]; then
-        echo "::error::O APK nao foi gerado."
-        exit 1
-      fi
+          gradle --no-daemon assembleDebug --stacktrace
 
-      ls -lh "$APK"
+          APK="$(find app/build/outputs/apk \
+            -type f -name '*.apk' -print -quit)"
 
-  - name: Disponibilizar APK
-    uses: actions/upload-artifact@v4
-    with:
-      name: MENTEX-V4.10-APK
-      path: ${{ steps.project.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk
-      if-no-files-found: error
-      retention-days: 7
+          if [ -z "$APK" ]; then
+            echo "ERRO: APK nao foi gerado."
+            exit 1
+          fi
+
+          mkdir -p "$GITHUB_WORKSPACE/apk-final"
+          cp "$APK" "$GITHUB_WORKSPACE/apk-final/MENTEX-V4.10.apk"
+
+      - name: Disponibilizar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MENTEX-V4.10-APK
+          path: apk-final/MENTEX-V4.10.apk
+          if-no-files-found: error
+          
