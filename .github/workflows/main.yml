@@ -1,12 +1,11 @@
-
-name: MenteX - Gerar APK Atualizado
+name: MENTEX - Compilar APK
 
 on:
   workflow_dispatch:
   push:
     branches:
-      - principal
       - main
+      - principal
 
 permissions:
   contents: read
@@ -19,56 +18,49 @@ jobs:
       - name: Baixar projeto
         uses: actions/checkout@v4
 
-      - name: Configurar Java
+      - name: Instalar Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Localizar projeto Android
-        id: projeto
+        id: project
         shell: bash
         run: |
-          DIR=""
+          FILE=$(find . -type f \
+            \( -name settings.gradle -o -name settings.gradle.kts \) \
+            -not -path '*/build/*' \
+            -not -path '*/.gradle/*' | head -n 1)
 
-          for FILE in settings.gradle settings.gradle.kts; do
-            FOUND=$(find . -type f -name "$FILE" \
-              -not -path '*/.gradle/*' \
-              -not -path '*/build/*' | head -n 1)
-
-            if [ -n "$FOUND" ]; then
-              DIR=$(dirname "$FOUND")
-              break
-            fi
-          done
-
-          if [ -z "$DIR" ]; then
-            echo "::error::Projeto Gradle não encontrado. Verifique se o código-fonte Android está no repositório."
-            find . -maxdepth 3 -type f | head -n 100
+          if [ -z "$FILE" ]; then
+            echo "::error::Projeto Android/Gradle não encontrado."
+            echo "Envie o código-fonte completo do MENTEX."
             exit 1
           fi
 
+          DIR=$(dirname "$FILE")
           echo "dir=$DIR" >> "$GITHUB_OUTPUT"
-          echo "Projeto encontrado em: $DIR"
+          echo "Projeto encontrado em $DIR"
 
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
-      - name: Compilar APK
+      - name: Compilar aplicativo
         shell: bash
         run: |
-          cd "${{ steps.projeto.outputs.dir }}"
+          cd "${{ steps.project.outputs.dir }}"
 
-          if [ -f ./gradlew ]; then
-            chmod +x ./gradlew
+          if [ -f gradlew ]; then
+            chmod +x gradlew
             ./gradlew assembleDebug
           else
             gradle assembleDebug
           fi
 
-      - name: Preparar ZIP
+      - name: Criar ZIP do APK
         shell: bash
         run: |
           mkdir -p release
@@ -91,4 +83,3 @@ jobs:
           name: MENTEX-V4.18-ATUALIZADO
           path: MENTEX-V4.18-ATUALIZADO.zip
           if-no-files-found: error
-          
