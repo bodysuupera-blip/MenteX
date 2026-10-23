@@ -1,4 +1,4 @@
-name: MENTEX V4.12 - Gerar APK
+name: MENTEX V4.13 - Gerar APK
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   build:
-    name: Compilar MENTEX
+    name: Compilar MENTEX V4.13
     runs-on: ubuntu-22.04
 
     env:
@@ -25,21 +25,24 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Localizar e extrair ZIP
+      - name: Instalar ferramentas
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unzip
+
+      - name: Extrair projeto V4.13
         shell: bash
         run: |
           set -euo pipefail
 
-          ZIP="MENTEX-V4.12-TELA-JOGO-SEM-ZOOM.zip"
+          ZIP="MENTEX-V4.13-TELA-AJUSTADA-CELULAR.zip"
 
           if [ ! -f "$ZIP" ]; then
-            echo "::error::ZIP nao encontrado na raiz do repositorio: $ZIP"
+            echo "::error::ZIP nao encontrado: $ZIP"
+            echo "Arquivos ZIP encontrados:"
             find . -maxdepth 3 -type f -iname "*.zip" -print
             exit 1
           fi
-
-          sudo apt-get update
-          sudo apt-get install -y unzip
 
           mkdir -p projeto
           unzip -q "$ZIP" -d projeto
@@ -49,19 +52,19 @@ jobs:
             -not -path "*/.gradle/*" | head -n 1)
 
           if [ -z "$SETTINGS" ]; then
-            echo "::error::O ZIP nao contem settings.gradle."
+            echo "::error::settings.gradle nao encontrado no ZIP."
             exit 1
           fi
 
           PROJECT_DIR="$(dirname "$SETTINGS")"
 
           if [ ! -f "$PROJECT_DIR/app/src/main/assets/www/index.html" ]; then
-            echo "::error::Arquivo do jogo index.html nao encontrado."
+            echo "::error::Arquivo index.html do jogo nao encontrado."
             exit 1
           fi
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Projeto localizado: $PROJECT_DIR"
+          echo "Projeto encontrado: $PROJECT_DIR"
 
       - name: Preparar Android SDK
         shell: bash
@@ -72,11 +75,9 @@ jobs:
             -type f -name sdkmanager | head -n 1)
 
           if [ -z "$SDKMANAGER" ]; then
-            echo "::error::sdkmanager nao encontrado no runner."
+            echo "::error::sdkmanager nao encontrado."
             exit 1
           fi
-
-          echo "SDK Manager: $SDKMANAGER"
 
           yes | "$SDKMANAGER" --licenses || true
 
@@ -108,16 +109,16 @@ jobs:
             -type f -name "*.apk" | head -n 1)
 
           if [ -z "$APK" ]; then
-            echo "::error::Nenhum APK foi gerado."
+            echo "::error::APK nao foi gerado."
             exit 1
           fi
 
           mkdir -p "$GITHUB_WORKSPACE/apk-final"
-          cp "$APK" "$GITHUB_WORKSPACE/apk-final/MENTEX-V4.12.apk"
+          cp "$APK" "$GITHUB_WORKSPACE/apk-final/MENTEX-V4.13.apk"
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V4.12-APK
-          path: apk-final/MENTEX-V4.12.apk
+          name: MENTEX-V4.13-APK
+          path: apk-final/MENTEX-V4.13.apk
           if-no-files-found: error
