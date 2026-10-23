@@ -1,5 +1,5 @@
 
-name: MENTEX - Atualizar Icone pelo APK
+name: MENTEX - Atualizar Icone
 
 on:
   workflow_dispatch:
@@ -15,163 +15,158 @@ jobs:
       - name: Baixar arquivos do repositorio
         uses: actions/checkout@v4
 
-      - name: Verificar arquivos necessarios
+      - name: Localizar APK ZIP e imagem
+        id: arquivos
         shell: bash
         run: |
-          test -f MENTEX-V4.17-APK.zip || {
-            echo "::error::Coloque MENTEX-V4.17-APK.zip na raiz do repositorio."
-            exit 1
-          }
+          ZIP=$(find . -type f -iname '*V4.17*APK*.zip' \
+            -not -path './.git/*' | head -n 1)
 
-          test -f mentex_icon.png || {
-            echo "::error::Coloque mentex_icon.png na raiz do repositorio."
+          if [ -z "$ZIP" ]; then
+            ZIP=$(find . -type f -iname '*.zip' \
+              -not -path './.git/*' | head -n 1)
+          fi
+
+          IMG=$(find . -type f -iname 'mentex_icon.png' \
+            -not -path './.git/*' | head -n 1)
+
+          if [ -z "$ZIP" ]; then
+            echo "::error::Envie o ZIP original do MENTEX ao repositorio."
             exit 1
-          }
+          fi
+
+          if [ -z "$IMG" ]; then
+            echo "::error::Envie mentex_icon.png ao repositorio."
+            exit 1
+          fi
+
+          echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
+          echo "img=$IMG" >> "$GITHUB_OUTPUT"
 
       - name: Instalar ferramentas
         run: |
           sudo apt-get update
-          sudo apt-get install -y apktool python3-pip
+          sudo apt-get install -y apktool python3-pip zip
           python3 -m pip install --break-system-packages pillow
-          
+
       - name: Configurar Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Instalar ferramentas Android
+      - name: Instalar ferramentas de assinatura
         run: sdkmanager "build-tools;35.0.0"
 
-      - name: Extrair APK original
+      - name: Extrair APK
+        shell: bash
         run: |
           mkdir -p original
-          unzip -o MENTEX-V4.17-APK.zip -d original
+          unzip -o "${{ steps.arquivos.outputs.zip }}" -d original
+
           APK=$(find original -type f -name '*.apk' | head -n 1)
 
           if [ -z "$APK" ]; then
-            echo "::error::Nenhum APK encontrado no ZIP."
+            echo "::error::O ZIP nao contem um APK."
             exit 1
           fi
 
           cp "$APK" original.apk
 
-      - name: Desmontar aplicativo
+      - name: Desmontar APK
         run: apktool d -f original.apk -o projeto
 
-      - name: Substituir imagens dos icones
-        shell: bash
+      - name: Trocar icones reconhecidos
+        env:
+          ICON: ${{ steps.arquivos.outputs.img }}
         run: |
-          cat > trocar_icone.py <<'PY'
+          cat > trocar.py <<'PY'
           from pathlib import Path
           from PIL import Image
-          import re
+          import re, os
 
-          raiz = Path("projeto/res")
-          origem = Image.open("mentex_icon.png").convert("RGBA")
-
-          nomes = re.compile(
+          root = Path("projeto/res")
+          src = Image.open(os.environ["ICON"]).convert("RGBA")
+          pattern = re.compile(
               r"(ic_launcher|launcher_icon|app_icon|appicon)",
-              re.IGNORECASE
+              re.I
           )
+          count = 0
 
-          alterados = 0
-
-          for pasta in raiz.rglob("*"):
-              if not pasta.is_dir():
+          for p in root.rglob("*"):
+              if not p.is_file() or p.suffix.lower() not in (".png", ".webp"):
+                  continue
+              if not (p.parent.name.startswith("mipmap") or
+                      p.parent.name.startswith("drawable")):
+                  continue
+              if not pattern.search(p.stem):
                   continue
 
-              if not (
-                  pasta.name.startswith("mipmap")
-                  or pasta.name.startswith("drawable")
-              ):
-                  continue
+              try:
+                  with Image.open(p) as old:
+                      size = old.size
+                      fmt = old.format
 
-              for arquivo in pasta.iterdir():
-                  if not arquivo.is_file():
-                      continue
+                  im = src.resize(size, Image.Resampling.LANCZOS)
+                  if fmt == "WEBP":
+                      im.save(p, "WEBP", lossless=True)
+                  else:
+                      im.save(p, "PNG")
+                  print("Atualizado:", p)
+                  count += 1
+              except Exception as e:
+                  print("Ignorado:", p, e)
 
-                  if arquivo.suffix.lower() not in (".png", ".webp"):
-                      continue
-
-                  if not nomes.search(arquivo.stem):
-                      continue
-
-                  try:
-                      with Image.open(arquivo) as antiga:
-                          tamanho = antiga.size
-                          formato = antiga.format
-
-                      imagem = origem.resize(
-                          tamanho, Image.Resampling.LANCZOS
-                      )
-
-                      if formato == "WEBP":
-                          imagem.save(arquivo, "WEBP", lossless=True)
-                      else:
-                          imagem.save(arquivo, "PNG")
-
-                      print("Icone substituido:", arquivo)
-                      alterados += 1
-
-                  except Exception as erro:
-                      print("Aviso:", arquivo, erro)
-
-          print("Total de imagens substituidas:", alterados)
-
-          if alterados == 0:
+          if count == 0:
               raise SystemExit(
-                  "Nenhuma imagem de icone reconhecida. "
-                  "Os recursos precisam ser identificados manualmente."
+                  "Nenhum icone reconhecido. "
+                  "O APK pode usar nomes de recursos diferentes."
               )
+          print("Total de imagens alteradas:", count)
           PY
 
-          python3 trocar_icone.py
+          python3 trocar.py
 
       - name: Reconstruir APK
         run: apktool b projeto -o mentex-unsigned.apk
 
-      - name: Alinhar e assinar APK
+      - name: Assinar APK
         shell: bash
         run: |
           set -e
-
           BT="$ANDROID_HOME/build-tools/35.0.0"
+
+          keytool -genkeypair -v \
+            -keystore teste.keystore \
+            -storepass android \
+            -keypass android \
+            -alias mentex \
+            -keyalg RSA -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=MENTEX"
 
           "$BT/zipalign" -f 4 \
             mentex-unsigned.apk mentex-aligned.apk
 
-          keytool -genkeypair \
-            -keystore mentex-test.keystore \
-            -storepass android \
-            -keypass android \
-            -alias mentex \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -dname "CN=MENTEX, OU=Test, O=MENTEX, L=SP, ST=SP, C=BR"
-
           "$BT/apksigner" sign \
-            --ks mentex-test.keystore \
+            --ks teste.keystore \
             --ks-key-alias mentex \
             --ks-pass pass:android \
             --key-pass pass:android \
-            --out MENTEX-V4.18-ICON-REDONDO.apk \
+            --out MENTEX-ICON-REDONDO.apk \
             mentex-aligned.apk
 
-          "$BT/apksigner" verify \
-            MENTEX-V4.18-ICON-REDONDO.apk
+          "$BT/apksigner" verify MENTEX-ICON-REDONDO.apk
 
-      - name: Criar ZIP para download
+      - name: Criar ZIP final
         run: |
           mkdir pacote
-          cp MENTEX-V4.18-ICON-REDONDO.apk pacote/
+          cp MENTEX-ICON-REDONDO.apk pacote/
           cd pacote
-          zip ../MENTEX-V4.18-ICON-REDONDO.zip *.apk
+          zip ../MENTEX-ICON-REDONDO.zip *.apk
 
-      - name: Disponibilizar arquivos
+      - name: Disponibilizar para download
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V4.18-ICON-REDONDO
+          name: MENTEX-ICON-REDONDO
           path: |
-            MENTEX-V4.18-ICON-REDONDO.zip
-            MENTEX-V4.18-ICON-REDONDO.apk
-          if-no-files-found: error
-          
+            MENTEX-ICON-REDONDO.zip
+            MENTEX-ICON-REDONDO.apk
+            
