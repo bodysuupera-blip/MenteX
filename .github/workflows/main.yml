@@ -30,55 +30,74 @@ jobs:
           IMG=$(find . -type f -iname 'mentex_icon.png' \
             -not -path './.git/*' | head -n 1)
 
-          if [ -z "$ZIP" ]; then
-            echo "::error::Envie o ZIP do APK ao repositorio."
+          test -n "$ZIP" || {
+            echo "::error::ZIP do APK nao encontrado."
             exit 1
-          fi
+          }
 
-          if [ -z "$IMG" ]; then
-            echo "::error::Envie mentex_icon.png ao repositorio."
+          test -n "$IMG" || {
+            echo "::error::mentex_icon.png nao encontrado."
             exit 1
-          fi
+          }
 
           echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
           echo "img=$IMG" >> "$GITHUB_OUTPUT"
 
-      - name: Instalar Apktool e ferramentas
+      - name: Instalar ferramentas
         run: |
           sudo apt-get update
           sudo apt-get install -y apktool zip python3-pil
 
-      - name: Configurar Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Instalar ferramentas Android
+      - name: Instalar Android SDK manualmente
         shell: bash
         run: |
-          yes | sdkmanager --licenses || true
-          sdkmanager "platform-tools" "build-tools;35.0.0"
+          set -e
 
-      - name: Extrair APK original
+          SDK="$RUNNER_TEMP/android-sdk"
+          mkdir -p "$SDK/cmdline-tools"
+
+          curl -fsSL \
+            https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip \
+            -o "$RUNNER_TEMP/android-tools.zip"
+
+          mkdir -p "$RUNNER_TEMP/android-tools"
+          unzip -q "$RUNNER_TEMP/android-tools.zip" \
+            -d "$RUNNER_TEMP/android-tools"
+
+          mkdir -p "$SDK/cmdline-tools/latest"
+          cp -a "$RUNNER_TEMP/android-tools/cmdline-tools/." \
+            "$SDK/cmdline-tools/latest/"
+
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "$SDK/platform-tools" >> "$GITHUB_PATH"
+          echo "$SDK/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+
+          yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" \
+            --sdk_root="$SDK" --licenses || true
+
+          "$SDK/cmdline-tools/latest/bin/sdkmanager" \
+            --sdk_root="$SDK" "platform-tools" "build-tools;35.0.0"
+
+      - name: Extrair APK
         shell: bash
         run: |
           mkdir original
           unzip -o "${{ steps.arquivos.outputs.zip }}" -d original
 
           APK=$(find original -type f -name '*.apk' | head -n 1)
-
-          if [ -z "$APK" ]; then
-            echo "::error::O ZIP nao contem um APK."
+          test -n "$APK" || {
+            echo "::error::Nenhum APK dentro do ZIP."
             exit 1
-          fi
+          }
 
           cp "$APK" original.apk
 
       - name: Desmontar APK
         run: apktool d -f original.apk -o projeto
 
-      - name: Substituir imagens dos icones
+      - name: Trocar icones reconhecidos
         env:
           ICON: ${{ steps.arquivos.outputs.img }}
-        shell: bash
         run: |
           cat > trocar.py <<'PY'
           from pathlib import Path
@@ -87,49 +106,36 @@ jobs:
 
           root = Path("projeto/res")
           src = Image.open(os.environ["ICON"]).convert("RGBA")
-          pattern = re.compile(
-              r"(ic_launcher|launcher_icon|app_icon|appicon)",
-              re.I
+          pat = re.compile(
+              r"(ic_launcher|launcher_icon|app_icon|appicon)", re.I
           )
           count = 0
 
           for p in root.rglob("*"):
-              if not p.is_file():
-                  continue
-              if p.suffix.lower() not in (".png", ".webp"):
+              if not p.is_file() or p.suffix.lower() not in (".png", ".webp"):
                   continue
               if not (
                   p.parent.name.startswith("mipmap")
                   or p.parent.name.startswith("drawable")
               ):
                   continue
-              if not pattern.search(p.stem):
+              if not pat.search(p.stem):
                   continue
 
               try:
                   with Image.open(p) as old:
-                      size = old.size
-                      fmt = old.format
+                      size, fmt = old.size, old.format
 
                   im = src.resize(size, Image.Resampling.LANCZOS)
-
-                  if fmt == "WEBP":
-                      im.save(p, "WEBP", lossless=True)
-                  else:
-                      im.save(p, "PNG")
-
-                  print("Icone atualizado:", p)
+                  im.save(p, "WEBP", lossless=True) if fmt == "WEBP" \
+                    else im.save(p, "PNG")
+                  print("Atualizado:", p)
                   count += 1
               except Exception as e:
-                  print("Aviso:", p, e)
+                  print("Ignorado:", p, e)
 
           if count == 0:
-              raise SystemExit(
-                  "Nenhum icone reconhecido. "
-                  "Os nomes dos recursos precisam ser verificados."
-              )
-
-          print("Total de imagens substituidas:", count)
+              raise SystemExit("Nenhum icone reconhecido no APK.")
           PY
 
           python3 trocar.py
@@ -148,8 +154,7 @@ jobs:
             -storepass android \
             -keypass android \
             -alias mentex \
-            -keyalg RSA \
-            -keysize 2048 \
+            -keyalg RSA -keysize 2048 \
             -validity 10000 \
             -dname "CN=MENTEX"
 
@@ -166,19 +171,18 @@ jobs:
 
           "$BT/apksigner" verify MENTEX-ICON-REDONDO.apk
 
-      - name: Criar ZIP final
+      - name: Criar ZIP
         run: |
           mkdir pacote
           cp MENTEX-ICON-REDONDO.apk pacote/
           cd pacote
           zip ../MENTEX-ICON-REDONDO.zip *.apk
 
-      - name: Publicar arquivos
+      - name: Disponibilizar download
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-ICON-REDONDO
           path: |
             MENTEX-ICON-REDONDO.zip
             MENTEX-ICON-REDONDO.apk
-          if-no-files-found: error
-          
+            
