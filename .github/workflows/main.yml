@@ -1,5 +1,5 @@
 
-name: MENTEX V4.11 - Cerebro Animado
+name: MENTEX V4.12 - Corrigir Zoom da Partida
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   build:
-    name: Compilar MENTEX V4.11
+    name: Gerar APK V4.12
     runs-on: ubuntu-22.04
 
     steps:
@@ -22,20 +22,20 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Extrair projeto V4.11
+      - name: Extrair projeto V4.12
         id: projeto
         shell: bash
         run: |
           set -euo pipefail
 
-          ZIP="$GITHUB_WORKSPACE/MENTEX-V4.11-CEREBRO-REACOES-ANIMADAS.zip"
+          ZIP="$GITHUB_WORKSPACE/MENTEX-V4.12-TELA-JOGO-SEM-ZOOM.zip"
 
           if [ ! -f "$ZIP" ]; then
-            echo "ERRO: envie o ZIP V4.11 para a raiz do repositorio."
+            echo "ERRO: ZIP V4.12 nao encontrado na raiz do repositorio."
             exit 1
           fi
 
-          DEST="$RUNNER_TEMP/mentex-v411"
+          DEST="$RUNNER_TEMP/mentex-v412"
           mkdir -p "$DEST"
           unzip -q "$ZIP" -d "$DEST"
 
@@ -44,25 +44,25 @@ jobs:
             -print -quit)"
 
           if [ -z "$SETTINGS" ]; then
-            echo "ERRO: settings.gradle nao encontrado no ZIP."
+            echo "ERRO: settings.gradle nao encontrado."
             exit 1
           fi
 
           ROOT="$(dirname "$SETTINGS")"
 
           if [ ! -d "$ROOT/app/src/main/assets/www" ]; then
-            echo "ERRO: pasta de arquivos do jogo nao encontrada."
+            echo "ERRO: arquivos do jogo nao encontrados."
             exit 1
           fi
 
           if [ ! -f "$ROOT/app/build.gradle" ] && \
              [ ! -f "$ROOT/app/build.gradle.kts" ]; then
-            echo "ERRO: configuracao Android do aplicativo nao encontrada."
+            echo "ERRO: configuracao Android nao encontrada."
             exit 1
           fi
 
           echo "root=$ROOT" >> "$GITHUB_OUTPUT"
-          echo "Projeto selecionado: $ROOT"
+          echo "Projeto encontrado: $ROOT"
 
       - name: Instalar Android SDK
         shell: bash
@@ -115,17 +115,17 @@ jobs:
             -type f -name '*.apk' -print -quit)"
 
           if [ -z "$APK" ]; then
-            echo "ERRO: nenhum APK foi gerado."
+            echo "ERRO: APK nao foi gerado."
             exit 1
           fi
 
           mkdir -p "$GITHUB_WORKSPACE/apk-final"
-          cp "$APK" "$GITHUB_WORKSPACE/apk-final/MENTEX-V4.11.apk"
+          cp "$APK" "$GITHUB_WORKSPACE/apk-final/MENTEX-V4.12.apk"
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V4.11-APK
-          path: apk-final/MENTEX-V4.11.apk
+          name: MENTEX-V4.12-APK
+          path: apk-final/MENTEX-V4.12.apk
           if-no-files-found: error
           
