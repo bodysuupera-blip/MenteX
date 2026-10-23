@@ -1,5 +1,4 @@
-
-name: MENTEX V4.8 - Interface Moderna
+name: MENTEX V4.8 - Gerar APK com Interface Ajustada
 
 on:
   workflow_dispatch:
@@ -9,11 +8,8 @@ permissions:
 
 jobs:
   build:
+    name: Compilar MENTEX V4.8 Ajustado
     runs-on: ubuntu-22.04
-
-    env:
-      ANDROID_HOME: /usr/local/lib/android/sdk
-      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
     steps:
       - name: Baixar repositório
@@ -25,84 +21,79 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Extrair obrigatoriamente o ZIP V4.8
-        id: project
+      - name: Localizar e extrair ZIP atualizado
+        id: projeto
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          ZIP=$(find "$GITHUB_WORKSPACE" -maxdepth 2 \
-            -type f \
-            -iname 'MENTEX-V4.8-INTERFACE-MODERNA.zip' \
-            -print -quit)
+          ZIP="$(find "$GITHUB_WORKSPACE" \
+            -maxdepth 2 -type f \
+            -name 'MENTEX-V4.8-INTERFACE-MODERNA-AJUSTADA.zip' \
+            -print -quit)"
 
           if [ -z "$ZIP" ]; then
-            echo "ERRO: ZIP da interface moderna não encontrado."
-            echo "Envie MENTEX-V4.8-INTERFACE-MODERNA.zip para a raiz do GitHub."
+            echo "ERRO: envie MENTEX-V4.8-INTERFACE-MODERNA-AJUSTADA.zip para a raiz do repositório."
             exit 1
           fi
 
-          DEST="$RUNNER_TEMP/mentex-v48"
+          DEST="$RUNNER_TEMP/mentex-ajustado"
           mkdir -p "$DEST"
-          unzip -oq "$ZIP" -d "$DEST"
+          unzip -q "$ZIP" -d "$DEST"
 
-          PROJECT=$(find "$DEST" -type f \
+          INDEX="$(find "$DEST" -type f \
             -path '*/app/src/main/assets/www/index.html' \
-            -print -quit | xargs -r dirname)
+            -print -quit)"
 
-          if [ -z "$PROJECT" ]; then
-            echo "ERRO: index.html da versão V4.8 não encontrado."
+          if [ -z "$INDEX" ]; then
+            echo "ERRO: index.html do jogo não encontrado no ZIP."
             exit 1
           fi
 
-          ASSETS="$PROJECT"
-          APP_DIR="${ASSETS%/src/main/assets/www}"
-          ROOT_DIR="${APP_DIR%/app}"
+          WWW="$(dirname "$INDEX")"
+          APP="${WWW%/src/main/assets/www}"
+          ROOT="${APP%/app}"
 
-          if [ ! -f "$ROOT_DIR/settings.gradle" ] || \
-             [ ! -f "$APP_DIR/build.gradle" ]; then
-            echo "ERRO: arquivos Gradle da V4.8 não encontrados."
+          if [ ! -f "$ROOT/settings.gradle" ] || \
+             [ ! -f "$APP/build.gradle" ]; then
+            echo "ERRO: estrutura Android incompleta no ZIP."
             exit 1
           fi
 
-          if ! grep -q 'Interface Moderna' "$ASSETS/index.html"; then
-            echo "ERRO: o index.html não corresponde à interface V4.8."
-            exit 1
-          fi
+          echo "Projeto selecionado: $ROOT"
+          echo "Tela do jogo: $INDEX"
 
-          echo "Projeto V4.8 confirmado: $ROOT_DIR"
-          echo "dir=$ROOT_DIR" >> "$GITHUB_OUTPUT"
+          echo "root=$ROOT" >> "$GITHUB_OUTPUT"
 
-      - name: Preparar Android SDK
+      - name: Instalar Android SDK
         shell: bash
         run: |
-          set -e
-          SDK="$ANDROID_HOME"
+          set -euo pipefail
+
+          SDK="$RUNNER_TEMP/android-sdk"
           mkdir -p "$SDK/cmdline-tools"
 
-          if [ ! -x "$SDK/cmdline-tools/latest/bin/sdkmanager" ]; then
-            cd "$RUNNER_TEMP"
-            curl -fL \
-              https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip \
-              -o android-tools.zip
+          curl -fL \
+            "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip" \
+            -o "$RUNNER_TEMP/android-tools.zip"
 
-            mkdir -p android-tools
-            unzip -oq android-tools.zip -d android-tools
-            mkdir -p "$SDK/cmdline-tools/latest"
-            cp -a android-tools/cmdline-tools/. \
-              "$SDK/cmdline-tools/latest/"
-          fi
+          mkdir -p "$RUNNER_TEMP/android-tools"
+          unzip -q "$RUNNER_TEMP/android-tools.zip" \
+            -d "$RUNNER_TEMP/android-tools"
 
-      - name: Instalar componentes Android
-        shell: bash
-        run: |
-          set -e
-          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          mv "$RUNNER_TEMP/android-tools/cmdline-tools" \
+            "$SDK/cmdline-tools/latest"
 
-          yes | "$SDKMANAGER" \
-            --sdk_root="$ANDROID_HOME" --licenses || true
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          echo "$SDK/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          echo "$SDK/platform-tools" >> "$GITHUB_PATH"
 
-          "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --install \
+          yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" \
+            --sdk_root="$SDK" --licenses >/dev/null || true
+
+          "$SDK/cmdline-tools/latest/bin/sdkmanager" \
+            --sdk_root="$SDK" \
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
@@ -112,27 +103,29 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Gerar APK V4.8
-        working-directory: ${{ steps.project.outputs.dir }}
-        run: gradle --no-daemon assembleDebug --stacktrace
-
-      - name: Verificar APK gerado
+      - name: Compilar APK da interface ajustada
         shell: bash
         run: |
-          APK="${{ steps.project.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk"
+          set -euo pipefail
 
-          if [ ! -f "$APK" ]; then
+          cd "${{ steps.projeto.outputs.root }}"
+
+          gradle --no-daemon assembleDebug --stacktrace
+
+          APK="$(find app/build/outputs/apk/debug \
+            -type f -name '*.apk' -print -quit)"
+
+          if [ -z "$APK" ]; then
             echo "ERRO: APK não foi gerado."
             exit 1
           fi
 
-          ls -lh "$APK"
-          sha256sum "$APK"
+          mkdir -p "$GITHUB_WORKSPACE/apk-final"
+          cp "$APK" "$GITHUB_WORKSPACE/apk-final/MENTEX-V4.8-AJUSTADO.apk"
 
-      - name: Disponibilizar APK
+      - name: Disponibilizar APK para baixar
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V4.8-INTERFACE-MODERNA
-          path: ${{ steps.project.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk
+          name: MENTEX-V4.8-APK-AJUSTADO
+          path: apk-final/MENTEX-V4.8-AJUSTADO.apk
           if-no-files-found: error
-          
