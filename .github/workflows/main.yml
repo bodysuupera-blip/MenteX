@@ -1,4 +1,3 @@
-
 name: MENTEX V4.7 - Gerar APK
 
 on:
@@ -9,7 +8,7 @@ permissions:
 
 jobs:
   build:
-    name: Compilar aplicativo MENTEX
+    name: Compilar MENTEX
     runs-on: ubuntu-22.04
 
     env:
@@ -17,7 +16,7 @@ jobs:
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
     steps:
-      - name: Baixar código
+      - name: Baixar repositório
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -26,8 +25,28 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Localizar SDK Manager
-        id: sdk
+      - name: Localizar projeto
+        id: project
+        shell: bash
+        run: |
+          if [ -f "settings.gradle" ] && [ -f "app/build.gradle" ]; then
+            DIR="."
+          elif [ -f "MENTEX_REFEITO_PROJETO/settings.gradle" ] && \
+               [ -f "MENTEX_REFEITO_PROJETO/app/build.gradle" ]; then
+            DIR="MENTEX_REFEITO_PROJETO"
+          else
+            echo "ERRO: não encontrei settings.gradle e app/build.gradle."
+            find . -maxdepth 4 -name settings.gradle -o -name app
+            exit 1
+          fi
+
+          echo "project_dir=$DIR" >> "$GITHUB_OUTPUT"
+          echo "Projeto localizado em: $DIR"
+
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Instalar componentes Android
         shell: bash
         run: |
           SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" \
@@ -38,16 +57,7 @@ jobs:
             exit 1
           fi
 
-          echo "sdkmanager=$SDKMANAGER" >> "$GITHUB_OUTPUT"
-
-      - name: Instalar componentes Android
-        shell: bash
-        run: |
-          SDKMANAGER="${{ steps.sdk.outputs.sdkmanager }}"
-
-          set +o pipefail
-          yes | "$SDKMANAGER" --licenses
-          set -o pipefail
+          yes | "$SDKMANAGER" --licenses || true
 
           "$SDKMANAGER" --install \
             "platform-tools" \
@@ -59,21 +69,13 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Verificar projeto
-        shell: bash
-        run: |
-          if [ ! -f settings.gradle ] || [ ! -f app/build.gradle ]; then
-            echo "ERRO: coloque o conteúdo de MENTEX_REFEITO_PROJETO na raiz do repositório."
-            exit 1
-          fi
-
-      - name: Gerar APK
+      - name: Compilar APK
+        working-directory: ${{ steps.project.outputs.project_dir }}
         run: gradle --no-daemon assembleDebug
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-V4.7-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ steps.project.outputs.project_dir }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          
