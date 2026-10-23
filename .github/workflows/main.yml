@@ -1,5 +1,5 @@
 
-name: MENTEX V4.7 - Gerar APK
+name: MENTEX V4.8 - Gerar APK
 
 on:
   workflow_dispatch:
@@ -9,6 +9,7 @@ permissions:
 
 jobs:
   build:
+    name: Compilar MENTEX V4.8
     runs-on: ubuntu-22.04
 
     env:
@@ -16,7 +17,7 @@ jobs:
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
     steps:
-      - name: Baixar repositório
+      - name: Baixar código do repositório
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -25,16 +26,14 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Localizar ou extrair projeto
+      - name: Localizar projeto ou ZIP
         id: project
         shell: bash
         run: |
           set -e
           ROOT="$GITHUB_WORKSPACE"
-          DEST="$RUNNER_TEMP/mentex-source"
           PROJECT=""
 
-          # Procurar projeto já extraído
           while IFS= read -r -d '' FILE; do
             DIR="$(dirname "$FILE")"
             if [ -f "$DIR/app/build.gradle" ]; then
@@ -45,42 +44,40 @@ jobs:
             -name settings.gradle \
             -not -path '*/.git/*' -print0)
 
-          # Se não estiver extraído, procurar ZIP
           if [ -z "$PROJECT" ]; then
-            mkdir -p "$DEST"
             while IFS= read -r -d '' ZIP; do
-              TEMP="$RUNNER_TEMP/mentex-test"
-              rm -rf "$TEMP"
-              mkdir -p "$TEMP"
-              if unzip -oq "$ZIP" -d "$TEMP"; then
-                while IFS= read -r -d '' FILE; do
-                  DIR="$(dirname "$FILE")"
-                  if [ -f "$DIR/app/build.gradle" ]; then
-                    PROJECT="$DIR"
-                    break
-                  fi
-                done < <(find "$TEMP" -type f \
-                  -name settings.gradle -print0)
-              fi
-              if [ -n "$PROJECT" ]; then
-                break
-              fi
-            done < <(find "$ROOT" -type f -name '*.zip' \
-              -not -path '*/.git/*' -print0)
+              DEST="$RUNNER_TEMP/mentex-extract"
+              rm -rf "$DEST"
+              mkdir -p "$DEST"
+              unzip -oq "$ZIP" -d "$DEST" || continue
+
+              while IFS= read -r -d '' FILE; do
+                DIR="$(dirname "$FILE")"
+                if [ -f "$DIR/app/build.gradle" ]; then
+                  PROJECT="$DIR"
+                  break
+                fi
+              done < <(find "$DEST" -type f \
+                -name settings.gradle -print0)
+
+              [ -n "$PROJECT" ] && break
+            done < <(find "$ROOT" -type f \
+              -name '*.zip' -not -path '*/.git/*' -print0)
           fi
 
           if [ -z "$PROJECT" ]; then
             echo "ERRO: projeto Android não encontrado."
-            echo "Envie o ZIP do projeto reconstruído para o repositório."
-            find "$ROOT" -maxdepth 3 -type f | head -100
+            echo "Envie o ZIP MENTEX V4.8 ou extraia os arquivos no repositório."
             exit 1
           fi
 
-          echo "Projeto encontrado: $PROJECT"
+          echo "Projeto encontrado em: $PROJECT"
           echo "dir=$PROJECT" >> "$GITHUB_OUTPUT"
 
-      - name: Localizar SDK Manager
-        id: sdk
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Instalar componentes Android
         shell: bash
         run: |
           SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" \
@@ -91,13 +88,6 @@ jobs:
             echo "ERRO: SDK Manager não encontrado."
             exit 1
           fi
-
-          echo "path=$SDKMANAGER" >> "$GITHUB_OUTPUT"
-
-      - name: Instalar componentes Android
-        shell: bash
-        run: |
-          SDKMANAGER="${{ steps.sdk.outputs.path }}"
 
           set +o pipefail
           yes | "$SDKMANAGER" --licenses
@@ -120,7 +110,7 @@ jobs:
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V4.7-APK
+          name: MENTEX-V4.8-APK
           path: ${{ steps.project.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           
