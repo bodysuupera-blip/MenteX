@@ -1,5 +1,5 @@
 
-name: Construir APK MENTEX
+name: Atualizar icone MENTEX
 
 on:
   workflow_dispatch:
@@ -27,8 +27,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             openjdk-17-jre-headless \
-            zip unzip curl jq \
-            python3-pil apksigner zipalign aapt
+            zip unzip curl jq python3-pil \
+            apksigner zipalign aapt
 
           URL=$(curl -fsSL \
             https://api.github.com/repos/iBotPeaches/Apktool/releases/latest \
@@ -36,49 +36,62 @@ jobs:
               | select(.name | test("^apktool_[0-9.]+\\.jar$"))
               | .browser_download_url' | head -n 1)
 
-          test -n "$URL"
+          if [ -z "$URL" ] || [ "$URL" = "null" ]; then
+            echo "::error::Nao foi possivel baixar o Apktool."
+            exit 1
+          fi
+
           curl -fL "$URL" -o "$RUNNER_TEMP/apktool.jar"
           java -jar "$RUNNER_TEMP/apktool.jar" --version
 
-      - name: Localizar e extrair APK
+      - name: Encontrar APK original
         shell: bash
         run: |
           set -e
-          ZIP_FILE="MENTEX-V4.17-APK.zip"
 
-          if [ ! -f "$ZIP_FILE" ]; then
-            echo "::error::Nao encontrei $ZIP_FILE na raiz do repositorio."
+          if [ ! -f "MENTEX-V4.17-APK.zip" ]; then
+            echo "::error::Coloque MENTEX-V4.17-APK.zip na raiz do repositorio."
+            exit 1
+          fi
+
+          if [ ! -f "mentex_icon.png" ]; then
+            echo "::error::Coloque mentex_icon.png na raiz do repositorio."
             exit 1
           fi
 
           mkdir -p entrada
-          unzip -o "$ZIP_FILE" -d entrada
+          unzip -o MENTEX-V4.17-APK.zip -d entrada
 
           APK=$(find entrada -type f -iname "*.apk" | head -n 1)
 
           if [ -z "$APK" ]; then
-            echo "::error::O ZIP nao contem nenhum APK."
+            echo "::error::Nao foi encontrado APK dentro do ZIP."
             exit 1
           fi
 
           cp "$APK" original.apk
-          echo "APK encontrado: $APK"
+          echo "APK localizado com sucesso."
 
-      - name: Verificar imagem do icone
+      - name: Preparar icone ampliado
         shell: bash
         run: |
           set -e
-          if [ ! -f mentex_icon.png ]; then
-            echo "::error::Adicione mentex_icon.png na raiz do repositorio."
-            exit 1
-          fi
-
           python3 - <<'PY'
           from PIL import Image
+
           im = Image.open("mentex_icon.png").convert("RGBA")
-          im.thumbnail((512, 512))
-          im.save("icone_convertido.png")
-          print("Imagem do icone preparada:", im.size)
+
+          # Recorta a imagem para um quadrado usando a maior area central.
+          w, h = im.size
+          side = min(w, h)
+          left = (w - side) // 2
+          top = (h - side) // 2
+          im = im.crop((left, top, left + side, top + side))
+
+          # Mantem a arte ate as bordas, sem margem interna adicional.
+          im = im.resize((1024, 1024), Image.Resampling.LANCZOS)
+          im.save("mentex_icon_preparado.png")
+          print("Icone preparado em 1024x1024, sem bordas adicionadas.")
           PY
 
       - name: Desmontar APK
@@ -88,20 +101,31 @@ jobs:
           java -jar "$RUNNER_TEMP/apktool.jar" \
             d -f original.apk -o projeto
 
-      - name: Substituir icones existentes
+      - name: Atualizar icones e recursos adaptativos
         shell: bash
         run: |
           set -e
+
           python3 - <<'PY'
           from PIL import Image
           from pathlib import Path
+          import re
 
           root = Path("projeto/res")
-          source = Image.open("icone_convertido.png").convert("RGBA")
-          names = ("ic_launcher", "launcher_icon", "app_icon", "appicon")
+          source = Image.open("mentex_icon_preparado.png").convert("RGBA")
+          launcher_names = (
+              "ic_launcher",
+              "ic_launcher_round",
+              "launcher_icon",
+              "app_icon",
+              "appicon"
+          )
+
           replaced = 0
 
-          for folder in root.glob("*"):
+          # Atualiza PNGs e WEBPs de icones existentes, preservando
+          # os tamanhos esperados pelo aplicativo.
+          for folder in root.iterdir():
               if not folder.is_dir():
                   continue
               if not (folder.name.startswith("mipmap")
@@ -113,25 +137,54 @@ jobs:
                       continue
                   if file.suffix.lower() not in (".png", ".webp"):
                       continue
-                  if not any(n in file.stem.lower() for n in names):
+                  if not any(n in file.stem.lower()
+                             for n in launcher_names):
                       continue
 
                   try:
                       with Image.open(file) as old:
                           size = old.size
+
                       image = source.resize(size, Image.Resampling.LANCZOS)
+
                       if file.suffix.lower() == ".webp":
                           image.save(file, "WEBP")
                       else:
                           image.save(file, "PNG")
-                      print("Icone substituido:", file)
+
+                      print("Atualizado:", file)
                       replaced += 1
                   except Exception as e:
-                      print("Aviso:", file, e)
+                      print("Aviso ao atualizar", file, e)
 
-          if replaced == 0:
-              print("Aviso: nenhum icone compativel foi encontrado.")
-              print("Os nomes dos recursos precisam ser verificados.")
+          # Cria um foreground de alta resolucao para icones adaptativos.
+          # O Android ainda pode aplicar sua mascara conforme o launcher.
+          nodpi = root / "drawable-nodpi"
+          nodpi.mkdir(parents=True, exist_ok=True)
+          source.save(nodpi / "mentex_launcher_foreground.png")
+
+          # Faz os XMLs de icone adaptativo usarem a nova imagem.
+          for xml in root.rglob("*.xml"):
+              try:
+                  content = xml.read_text(encoding="utf-8")
+              except Exception:
+                  continue
+
+              if "<adaptive-icon" not in content:
+                  continue
+
+              updated, count = re.subn(
+                  r'(<foreground\b[^>]*android:drawable=")[^"]+(")',
+                  r'\g<1>@drawable/mentex_launcher_foreground\g<2>',
+                  content
+              )
+
+              if count:
+                  xml.write_text(updated, encoding="utf-8")
+                  print("Foreground adaptativo atualizado:", xml)
+
+          print(f"Arquivos de icone rasterizados atualizados: {replaced}")
+          print("Recurso adaptativo preparado.")
           PY
 
       - name: Reconstruir APK
@@ -149,17 +202,15 @@ jobs:
           zipalign -f -p 4 \
             mentex-unsigned.apk mentex-aligned.apk
 
-          if [ ! -f "$RUNNER_TEMP/mentex.keystore" ]; then
-            keytool -genkeypair \
-              -keystore "$RUNNER_TEMP/mentex.keystore" \
-              -storepass android \
-              -keypass android \
-              -alias mentex \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -dname "CN=MENTEX, OU=App, O=MENTEX, L=Brasil, ST=SP, C=BR"
-          fi
+          keytool -genkeypair \
+            -keystore "$RUNNER_TEMP/mentex.keystore" \
+            -storepass android \
+            -keypass android \
+            -alias mentex \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=MENTEX, OU=App, O=MENTEX, L=Brasil, ST=SP, C=BR"
 
           apksigner sign \
             --ks "$RUNNER_TEMP/mentex.keystore" \
@@ -180,7 +231,7 @@ jobs:
           cd entrega
           zip -j ../MENTEX-APK-final.zip *
 
-      - name: Disponibilizar APK e ZIP
+      - name: Disponibilizar arquivos
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-APK-final
