@@ -1,4 +1,4 @@
-name: MENTEX V4.8 - Gerar APK com Interface Ajustada
+name: MENTEX V4.9 - Cerebro Animado e Icone Redondo
 
 on:
   workflow_dispatch:
@@ -8,11 +8,11 @@ permissions:
 
 jobs:
   build:
-    name: Compilar MENTEX V4.8 Ajustado
+    name: Compilar MENTEX V4.9
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar repositório
+      - name: Baixar repositorio
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -21,49 +21,51 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Localizar e extrair ZIP atualizado
+      - name: Localizar e extrair projeto V4.9
         id: projeto
         shell: bash
         run: |
           set -euo pipefail
 
-          ZIP="$(find "$GITHUB_WORKSPACE" \
-            -maxdepth 2 -type f \
-            -name 'MENTEX-V4.8-INTERFACE-MODERNA-AJUSTADA.zip' \
-            -print -quit)"
+          ZIP="$GITHUB_WORKSPACE/MENTEX-V4.9-CEREBRO-EXPRESSOES-ICONE-REDONDO.zip"
 
-          if [ -z "$ZIP" ]; then
-            echo "ERRO: envie MENTEX-V4.8-INTERFACE-MODERNA-AJUSTADA.zip para a raiz do repositório."
+          if [ ! -f "$ZIP" ]; then
+            echo "ERRO: envie o ZIP V4.9 para a raiz do repositorio."
             exit 1
           fi
 
-          DEST="$RUNNER_TEMP/mentex-ajustado"
+          DEST="$RUNNER_TEMP/mentex-v49"
           mkdir -p "$DEST"
           unzip -q "$ZIP" -d "$DEST"
 
-          INDEX="$(find "$DEST" -type f \
-            -path '*/app/src/main/assets/www/index.html' \
-            -print -quit)"
+          SETTINGS="$(find "$DEST" -type f \
+            -name settings.gradle -print -quit)"
 
-          if [ -z "$INDEX" ]; then
-            echo "ERRO: index.html do jogo não encontrado no ZIP."
+          if [ -z "$SETTINGS" ]; then
+            SETTINGS="$(find "$DEST" -type f \
+              -name settings.gradle.kts -print -quit)"
+          fi
+
+          if [ -z "$SETTINGS" ]; then
+            echo "ERRO: settings.gradle nao encontrado no ZIP."
             exit 1
           fi
 
-          WWW="$(dirname "$INDEX")"
-          APP="${WWW%/src/main/assets/www}"
-          ROOT="${APP%/app}"
+          ROOT="$(dirname "$SETTINGS")"
 
-          if [ ! -f "$ROOT/settings.gradle" ] || \
-             [ ! -f "$APP/build.gradle" ]; then
-            echo "ERRO: estrutura Android incompleta no ZIP."
+          if [ ! -f "$ROOT/app/build.gradle" ] && \
+             [ ! -f "$ROOT/app/build.gradle.kts" ]; then
+            echo "ERRO: configuracao do modulo app nao encontrada."
             exit 1
           fi
 
-          echo "Projeto selecionado: $ROOT"
-          echo "Tela do jogo: $INDEX"
+          if [ ! -d "$ROOT/app/src/main/assets/www" ]; then
+            echo "ERRO: pasta de assets do jogo nao encontrada."
+            exit 1
+          fi
 
           echo "root=$ROOT" >> "$GITHUB_OUTPUT"
+          echo "Projeto encontrado: $ROOT"
 
       - name: Instalar Android SDK
         shell: bash
@@ -103,7 +105,7 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Compilar APK da interface ajustada
+      - name: Compilar APK
         shell: bash
         run: |
           set -euo pipefail
@@ -112,20 +114,20 @@ jobs:
 
           gradle --no-daemon assembleDebug --stacktrace
 
-          APK="$(find app/build/outputs/apk/debug \
+          APK="$(find app/build/outputs/apk \
             -type f -name '*.apk' -print -quit)"
 
           if [ -z "$APK" ]; then
-            echo "ERRO: APK não foi gerado."
+            echo "ERRO: a compilacao terminou sem gerar APK."
             exit 1
           fi
 
           mkdir -p "$GITHUB_WORKSPACE/apk-final"
-          cp "$APK" "$GITHUB_WORKSPACE/apk-final/MENTEX-V4.8-AJUSTADO.apk"
+          cp "$APK" "$GITHUB_WORKSPACE/apk-final/MENTEX-V4.9.apk"
 
-      - name: Disponibilizar APK para baixar
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V4.8-APK-AJUSTADO
-          path: apk-final/MENTEX-V4.8-AJUSTADO.apk
+          name: MENTEX-V4.9-APK
+          path: apk-final/MENTEX-V4.9.apk
           if-no-files-found: error
