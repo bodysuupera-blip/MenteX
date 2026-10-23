@@ -1,4 +1,5 @@
-name: MENTEX V4.8 - Gerar APK
+
+name: MENTEX V4.8 - Interface Moderna
 
 on:
   workflow_dispatch:
@@ -24,60 +25,53 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Preparar projeto Android
+      - name: Extrair obrigatoriamente o ZIP V4.8
         id: project
         shell: bash
         run: |
           set -e
-          ROOT="$GITHUB_WORKSPACE"
-          DEST="$RUNNER_TEMP/mentex-project"
-          mkdir -p "$DEST"
 
-          # Procurar um projeto que já esteja extraído
-          PROJECT=""
-          while IFS= read -r -d '' FILE; do
-            DIR="$(dirname "$FILE")"
-            if [ -f "$DIR/app/build.gradle" ] || \
-               [ -f "$DIR/app/build.gradle.kts" ]; then
-              PROJECT="$DIR"
-              break
-            fi
-          done < <(find "$ROOT" -type f \
-            \( -name settings.gradle -o -name settings.gradle.kts \) \
-            -not -path '*/.git/*' -print0)
+          ZIP=$(find "$GITHUB_WORKSPACE" -maxdepth 2 \
+            -type f \
+            -iname 'MENTEX-V4.8-INTERFACE-MODERNA.zip' \
+            -print -quit)
 
-          # Se não encontrou, extrair os ZIPs do repositório
-          if [ -z "$PROJECT" ]; then
-            while IFS= read -r -d '' ZIP; do
-              echo "Analisando ZIP: $ZIP"
-              unzip -oq "$ZIP" -d "$DEST" || continue
-
-              while IFS= read -r -d '' FILE; do
-                DIR="$(dirname "$FILE")"
-                if [ -f "$DIR/app/build.gradle" ] || \
-                   [ -f "$DIR/app/build.gradle.kts" ]; then
-                  PROJECT="$DIR"
-                  break
-                fi
-              done < <(find "$DEST" -type f \
-                \( -name settings.gradle -o -name settings.gradle.kts \) \
-                -print0)
-
-              [ -n "$PROJECT" ] && break
-            done < <(find "$ROOT" -type f \
-              -name '*.zip' -not -path '*/.git/*' -print0)
-          fi
-
-          if [ -z "$PROJECT" ]; then
-            echo "ERRO: projeto Android não encontrado."
-            echo "Envie o ZIP completo do projeto V4.8 ao repositório."
-            echo "Arquivos encontrados:"
-            find "$ROOT" -maxdepth 4 -type f | head -100
+          if [ -z "$ZIP" ]; then
+            echo "ERRO: ZIP da interface moderna não encontrado."
+            echo "Envie MENTEX-V4.8-INTERFACE-MODERNA.zip para a raiz do GitHub."
             exit 1
           fi
 
-          echo "Projeto encontrado em: $PROJECT"
-          echo "dir=$PROJECT" >> "$GITHUB_OUTPUT"
+          DEST="$RUNNER_TEMP/mentex-v48"
+          mkdir -p "$DEST"
+          unzip -oq "$ZIP" -d "$DEST"
+
+          PROJECT=$(find "$DEST" -type f \
+            -path '*/app/src/main/assets/www/index.html' \
+            -print -quit | xargs -r dirname)
+
+          if [ -z "$PROJECT" ]; then
+            echo "ERRO: index.html da versão V4.8 não encontrado."
+            exit 1
+          fi
+
+          ASSETS="$PROJECT"
+          APP_DIR="${ASSETS%/src/main/assets/www}"
+          ROOT_DIR="${APP_DIR%/app}"
+
+          if [ ! -f "$ROOT_DIR/settings.gradle" ] || \
+             [ ! -f "$APP_DIR/build.gradle" ]; then
+            echo "ERRO: arquivos Gradle da V4.8 não encontrados."
+            exit 1
+          fi
+
+          if ! grep -q 'Interface Moderna' "$ASSETS/index.html"; then
+            echo "ERRO: o index.html não corresponde à interface V4.8."
+            exit 1
+          fi
+
+          echo "Projeto V4.8 confirmado: $ROOT_DIR"
+          echo "dir=$ROOT_DIR" >> "$GITHUB_OUTPUT"
 
       - name: Preparar Android SDK
         shell: bash
@@ -91,15 +85,13 @@ jobs:
             curl -fL \
               https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip \
               -o android-tools.zip
+
             mkdir -p android-tools
             unzip -oq android-tools.zip -d android-tools
             mkdir -p "$SDK/cmdline-tools/latest"
             cp -a android-tools/cmdline-tools/. \
               "$SDK/cmdline-tools/latest/"
           fi
-
-          echo "$SDK/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
-          echo "$SDK/platform-tools" >> "$GITHUB_PATH"
 
       - name: Instalar componentes Android
         shell: bash
@@ -120,13 +112,27 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Gerar APK
+      - name: Gerar APK V4.8
         working-directory: ${{ steps.project.outputs.dir }}
         run: gradle --no-daemon assembleDebug --stacktrace
+
+      - name: Verificar APK gerado
+        shell: bash
+        run: |
+          APK="${{ steps.project.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk"
+
+          if [ ! -f "$APK" ]; then
+            echo "ERRO: APK não foi gerado."
+            exit 1
+          fi
+
+          ls -lh "$APK"
+          sha256sum "$APK"
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V4.8-APK
+          name: MENTEX-V4.8-INTERFACE-MODERNA
           path: ${{ steps.project.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          
