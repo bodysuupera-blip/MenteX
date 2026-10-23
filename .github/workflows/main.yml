@@ -12,10 +12,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar arquivos do repositorio
+      - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Localizar APK ZIP e imagem
+      - name: Localizar arquivos
         id: arquivos
         shell: bash
         run: |
@@ -31,12 +31,12 @@ jobs:
             -not -path './.git/*' | head -n 1)
 
           if [ -z "$ZIP" ]; then
-            echo "::error::Envie o ZIP original do MENTEX ao repositorio."
+            echo "::error::Envie o ZIP do APK para o repositorio."
             exit 1
           fi
 
           if [ -z "$IMG" ]; then
-            echo "::error::Envie mentex_icon.png ao repositorio."
+            echo "::error::Envie mentex_icon.png para a raiz do repositorio."
             exit 1
           fi
 
@@ -46,41 +46,39 @@ jobs:
       - name: Instalar ferramentas
         run: |
           sudo apt-get update
-          sudo apt-get install -y apktool python3-pip zip
-          python3 -m pip install --break-system-packages pillow
+          sudo apt-get install -y apktool zip python3-pil
 
       - name: Configurar Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Instalar ferramentas de assinatura
+      - name: Instalar ferramentas Android
         run: sdkmanager "build-tools;35.0.0"
 
       - name: Extrair APK
-        shell: bash
         run: |
-          mkdir -p original
+          mkdir original
           unzip -o "${{ steps.arquivos.outputs.zip }}" -d original
 
           APK=$(find original -type f -name '*.apk' | head -n 1)
 
           if [ -z "$APK" ]; then
-            echo "::error::O ZIP nao contem um APK."
+            echo "::error::O ZIP nao contem nenhum APK."
             exit 1
           fi
 
           cp "$APK" original.apk
 
-      - name: Desmontar APK
+      - name: Desmontar aplicativo
         run: apktool d -f original.apk -o projeto
 
-      - name: Trocar icones reconhecidos
+      - name: Trocar icones
         env:
           ICON: ${{ steps.arquivos.outputs.img }}
         run: |
           cat > trocar.py <<'PY'
           from pathlib import Path
           from PIL import Image
-          import re, os
+          import os, re
 
           root = Path("projeto/res")
           src = Image.open(os.environ["ICON"]).convert("RGBA")
@@ -91,10 +89,14 @@ jobs:
           count = 0
 
           for p in root.rglob("*"):
-              if not p.is_file() or p.suffix.lower() not in (".png", ".webp"):
+              if not p.is_file():
                   continue
-              if not (p.parent.name.startswith("mipmap") or
-                      p.parent.name.startswith("drawable")):
+              if p.suffix.lower() not in (".png", ".webp"):
+                  continue
+              if not (
+                  p.parent.name.startswith("mipmap")
+                  or p.parent.name.startswith("drawable")
+              ):
                   continue
               if not pattern.search(p.stem):
                   continue
@@ -104,22 +106,22 @@ jobs:
                       size = old.size
                       fmt = old.format
 
-                  im = src.resize(size, Image.Resampling.LANCZOS)
+                  image = src.resize(size, Image.Resampling.LANCZOS)
+
                   if fmt == "WEBP":
-                      im.save(p, "WEBP", lossless=True)
+                      image.save(p, "WEBP", lossless=True)
                   else:
-                      im.save(p, "PNG")
-                  print("Atualizado:", p)
+                      image.save(p, "PNG")
+
+                  print("Icone atualizado:", p)
                   count += 1
               except Exception as e:
-                  print("Ignorado:", p, e)
+                  print("Aviso:", p, e)
 
           if count == 0:
               raise SystemExit(
-                  "Nenhum icone reconhecido. "
-                  "O APK pode usar nomes de recursos diferentes."
+                  "Nenhum icone reconhecido no APK."
               )
-          print("Total de imagens alteradas:", count)
           PY
 
           python3 trocar.py
@@ -128,17 +130,16 @@ jobs:
         run: apktool b projeto -o mentex-unsigned.apk
 
       - name: Assinar APK
-        shell: bash
         run: |
-          set -e
           BT="$ANDROID_HOME/build-tools/35.0.0"
 
-          keytool -genkeypair -v \
-            -keystore teste.keystore \
+          keytool -genkeypair \
+            -keystore mentex.keystore \
             -storepass android \
             -keypass android \
             -alias mentex \
-            -keyalg RSA -keysize 2048 \
+            -keyalg RSA \
+            -keysize 2048 \
             -validity 10000 \
             -dname "CN=MENTEX"
 
@@ -146,7 +147,7 @@ jobs:
             mentex-unsigned.apk mentex-aligned.apk
 
           "$BT/apksigner" sign \
-            --ks teste.keystore \
+            --ks mentex.keystore \
             --ks-key-alias mentex \
             --ks-pass pass:android \
             --key-pass pass:android \
@@ -162,7 +163,7 @@ jobs:
           cd pacote
           zip ../MENTEX-ICON-REDONDO.zip *.apk
 
-      - name: Disponibilizar para download
+      - name: Disponibilizar download
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-ICON-REDONDO
