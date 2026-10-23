@@ -31,19 +31,19 @@ jobs:
             -not -path './.git/*' | head -n 1)
 
           if [ -z "$ZIP" ]; then
-            echo "::error::Envie o ZIP do APK para o repositorio."
+            echo "::error::Envie o ZIP do APK ao repositorio."
             exit 1
           fi
 
           if [ -z "$IMG" ]; then
-            echo "::error::Envie mentex_icon.png para a raiz do repositorio."
+            echo "::error::Envie mentex_icon.png ao repositorio."
             exit 1
           fi
 
           echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
           echo "img=$IMG" >> "$GITHUB_OUTPUT"
 
-      - name: Instalar ferramentas
+      - name: Instalar Apktool e ferramentas
         run: |
           sudo apt-get update
           sudo apt-get install -y apktool zip python3-pil
@@ -52,9 +52,13 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Instalar ferramentas Android
-        run: sdkmanager "build-tools;35.0.0"
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses || true
+          sdkmanager "platform-tools" "build-tools;35.0.0"
 
-      - name: Extrair APK
+      - name: Extrair APK original
+        shell: bash
         run: |
           mkdir original
           unzip -o "${{ steps.arquivos.outputs.zip }}" -d original
@@ -62,18 +66,19 @@ jobs:
           APK=$(find original -type f -name '*.apk' | head -n 1)
 
           if [ -z "$APK" ]; then
-            echo "::error::O ZIP nao contem nenhum APK."
+            echo "::error::O ZIP nao contem um APK."
             exit 1
           fi
 
           cp "$APK" original.apk
 
-      - name: Desmontar aplicativo
+      - name: Desmontar APK
         run: apktool d -f original.apk -o projeto
 
-      - name: Trocar icones
+      - name: Substituir imagens dos icones
         env:
           ICON: ${{ steps.arquivos.outputs.img }}
+        shell: bash
         run: |
           cat > trocar.py <<'PY'
           from pathlib import Path
@@ -106,12 +111,12 @@ jobs:
                       size = old.size
                       fmt = old.format
 
-                  image = src.resize(size, Image.Resampling.LANCZOS)
+                  im = src.resize(size, Image.Resampling.LANCZOS)
 
                   if fmt == "WEBP":
-                      image.save(p, "WEBP", lossless=True)
+                      im.save(p, "WEBP", lossless=True)
                   else:
-                      image.save(p, "PNG")
+                      im.save(p, "PNG")
 
                   print("Icone atualizado:", p)
                   count += 1
@@ -120,8 +125,11 @@ jobs:
 
           if count == 0:
               raise SystemExit(
-                  "Nenhum icone reconhecido no APK."
+                  "Nenhum icone reconhecido. "
+                  "Os nomes dos recursos precisam ser verificados."
               )
+
+          print("Total de imagens substituidas:", count)
           PY
 
           python3 trocar.py
@@ -130,7 +138,9 @@ jobs:
         run: apktool b projeto -o mentex-unsigned.apk
 
       - name: Assinar APK
+        shell: bash
         run: |
+          set -e
           BT="$ANDROID_HOME/build-tools/35.0.0"
 
           keytool -genkeypair \
@@ -163,11 +173,12 @@ jobs:
           cd pacote
           zip ../MENTEX-ICON-REDONDO.zip *.apk
 
-      - name: Disponibilizar download
+      - name: Publicar arquivos
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-ICON-REDONDO
           path: |
             MENTEX-ICON-REDONDO.zip
             MENTEX-ICON-REDONDO.apk
-            
+          if-no-files-found: error
+          
