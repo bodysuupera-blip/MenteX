@@ -1,85 +1,177 @@
-name: MENTEX - Compilar APK
+
+name: MENTEX - Atualizar Icone pelo APK
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-      - principal
 
 permissions:
   contents: read
 
 jobs:
-  build:
+  atualizar:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar projeto
+      - name: Baixar arquivos do repositorio
         uses: actions/checkout@v4
 
-      - name: Instalar Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Localizar projeto Android
-        id: project
+      - name: Verificar arquivos necessarios
         shell: bash
         run: |
-          FILE=$(find . -type f \
-            \( -name settings.gradle -o -name settings.gradle.kts \) \
-            -not -path '*/build/*' \
-            -not -path '*/.gradle/*' | head -n 1)
+          test -f MENTEX-V4.17-APK.zip || {
+            echo "::error::Coloque MENTEX-V4.17-APK.zip na raiz do repositorio."
+            exit 1
+          }
 
-          if [ -z "$FILE" ]; then
-            echo "::error::Projeto Android/Gradle não encontrado."
-            echo "Envie o código-fonte completo do MENTEX."
+          test -f mentex_icon.png || {
+            echo "::error::Coloque mentex_icon.png na raiz do repositorio."
+            exit 1
+          }
+
+      - name: Instalar ferramentas
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y apktool python3-pip
+          python3 -m pip install --break-system-packages pillow
+          
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Instalar ferramentas Android
+        run: sdkmanager "build-tools;35.0.0"
+
+      - name: Extrair APK original
+        run: |
+          mkdir -p original
+          unzip -o MENTEX-V4.17-APK.zip -d original
+          APK=$(find original -type f -name '*.apk' | head -n 1)
+
+          if [ -z "$APK" ]; then
+            echo "::error::Nenhum APK encontrado no ZIP."
             exit 1
           fi
 
-          DIR=$(dirname "$FILE")
-          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
-          echo "Projeto encontrado em $DIR"
+          cp "$APK" original.apk
 
-      - name: Configurar Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.7'
+      - name: Desmontar aplicativo
+        run: apktool d -f original.apk -o projeto
 
-      - name: Compilar aplicativo
+      - name: Substituir imagens dos icones
         shell: bash
         run: |
-          cd "${{ steps.project.outputs.dir }}"
+          cat > trocar_icone.py <<'PY'
+          from pathlib import Path
+          from PIL import Image
+          import re
 
-          if [ -f gradlew ]; then
-            chmod +x gradlew
-            ./gradlew assembleDebug
-          else
-            gradle assembleDebug
-          fi
+          raiz = Path("projeto/res")
+          origem = Image.open("mentex_icon.png").convert("RGBA")
 
-      - name: Criar ZIP do APK
+          nomes = re.compile(
+              r"(ic_launcher|launcher_icon|app_icon|appicon)",
+              re.IGNORECASE
+          )
+
+          alterados = 0
+
+          for pasta in raiz.rglob("*"):
+              if not pasta.is_dir():
+                  continue
+
+              if not (
+                  pasta.name.startswith("mipmap")
+                  or pasta.name.startswith("drawable")
+              ):
+                  continue
+
+              for arquivo in pasta.iterdir():
+                  if not arquivo.is_file():
+                      continue
+
+                  if arquivo.suffix.lower() not in (".png", ".webp"):
+                      continue
+
+                  if not nomes.search(arquivo.stem):
+                      continue
+
+                  try:
+                      with Image.open(arquivo) as antiga:
+                          tamanho = antiga.size
+                          formato = antiga.format
+
+                      imagem = origem.resize(
+                          tamanho, Image.Resampling.LANCZOS
+                      )
+
+                      if formato == "WEBP":
+                          imagem.save(arquivo, "WEBP", lossless=True)
+                      else:
+                          imagem.save(arquivo, "PNG")
+
+                      print("Icone substituido:", arquivo)
+                      alterados += 1
+
+                  except Exception as erro:
+                      print("Aviso:", arquivo, erro)
+
+          print("Total de imagens substituidas:", alterados)
+
+          if alterados == 0:
+              raise SystemExit(
+                  "Nenhuma imagem de icone reconhecida. "
+                  "Os recursos precisam ser identificados manualmente."
+              )
+          PY
+
+          python3 trocar_icone.py
+
+      - name: Reconstruir APK
+        run: apktool b projeto -o mentex-unsigned.apk
+
+      - name: Alinhar e assinar APK
         shell: bash
         run: |
-          mkdir -p release
+          set -e
 
-          find . -type f \
-            -path '*/build/outputs/apk/*/*.apk' \
-            -exec cp {} release/ \;
+          BT="$ANDROID_HOME/build-tools/35.0.0"
 
-          if [ -z "$(ls -A release)" ]; then
-            echo "::error::Nenhum APK foi gerado."
-            exit 1
-          fi
+          "$BT/zipalign" -f 4 \
+            mentex-unsigned.apk mentex-aligned.apk
 
-          cd release
-          zip -j ../MENTEX-V4.18-ATUALIZADO.zip *.apk
+          keytool -genkeypair \
+            -keystore mentex-test.keystore \
+            -storepass android \
+            -keypass android \
+            -alias mentex \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=MENTEX, OU=Test, O=MENTEX, L=SP, ST=SP, C=BR"
 
-      - name: Disponibilizar ZIP
+          "$BT/apksigner" sign \
+            --ks mentex-test.keystore \
+            --ks-key-alias mentex \
+            --ks-pass pass:android \
+            --key-pass pass:android \
+            --out MENTEX-V4.18-ICON-REDONDO.apk \
+            mentex-aligned.apk
+
+          "$BT/apksigner" verify \
+            MENTEX-V4.18-ICON-REDONDO.apk
+
+      - name: Criar ZIP para download
+        run: |
+          mkdir pacote
+          cp MENTEX-V4.18-ICON-REDONDO.apk pacote/
+          cd pacote
+          zip ../MENTEX-V4.18-ICON-REDONDO.zip *.apk
+
+      - name: Disponibilizar arquivos
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V4.18-ATUALIZADO
-          path: MENTEX-V4.18-ATUALIZADO.zip
+          name: MENTEX-V4.18-ICON-REDONDO
+          path: |
+            MENTEX-V4.18-ICON-REDONDO.zip
+            MENTEX-V4.18-ICON-REDONDO.apk
           if-no-files-found: error
+          
