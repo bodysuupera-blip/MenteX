@@ -24,17 +24,11 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Verificar Java
-        run: |
-          set -euo pipefail
-          java -version
-          echo "$JAVA_HOME/bin" >> "$GITHUB_PATH"
-
       - name: Instalar ferramentas
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y unzip zip wget python3
+          sudo apt-get install -y unzip zip wget python3 apksigner
 
       - name: Localizar APK e ícone
         id: localizar
@@ -51,7 +45,7 @@ jobs:
             | head -1 || true)"
 
           if [ -z "$APK" ]; then
-            echo "::error::Nenhum APK encontrado no repositório."
+            echo "::error::APK original não encontrado no repositório."
             exit 1
           fi
 
@@ -63,8 +57,8 @@ jobs:
           echo "apk=$APK" >> "$GITHUB_OUTPUT"
           echo "icon=$ICON" >> "$GITHUB_OUTPUT"
 
-          echo "APK encontrado: $APK"
-          echo "Ícone encontrado: $ICON"
+          echo "APK: $APK"
+          echo "Ícone: $ICON"
 
       - name: Instalar Apktool
         run: |
@@ -76,11 +70,11 @@ jobs:
       - name: Desmontar APK original
         run: |
           set -euo pipefail
-          java -jar "$RUNNER_TEMP/apktool.jar" \
-            d "${{ steps.localizar.outputs.apk }}" \
+          java -jar "$RUNNER_TEMP/apktool.jar" d \
+            "${{ steps.localizar.outputs.apk }}" \
             -o "$RUNNER_TEMP/mentex" -f
 
-      - name: Substituir recursos do ícone
+      - name: Atualizar ícone
         env:
           ICON: ${{ steps.localizar.outputs.icon }}
         run: |
@@ -93,43 +87,34 @@ jobs:
 
           root = Path(os.environ["RUNNER_TEMP"]) / "mentex"
           icon = Path(os.environ["ICON"])
-
-          folders = [root / "res"]
           targets = []
 
-          for base in folders:
-              if not base.exists():
+          for folder in (root / "res").glob("*"):
+              if not folder.is_dir():
+                  continue
+              if not folder.name.startswith(("mipmap", "drawable")):
                   continue
 
-              for folder in base.iterdir():
-                  if not folder.is_dir():
-                      continue
-
-                  if not folder.name.startswith(
-                      ("mipmap", "drawable")
-                  ):
-                      continue
-
-                  for name in (
-                      "ic_launcher.png",
-                      "ic_launcher_round.png",
-                      "mentex_icon.png",
-                  ):
-                      target = folder / name
-                      if target.is_file():
-                          targets.append(target)
+              for name in (
+                  "ic_launcher.png",
+                  "ic_launcher_round.png",
+                  "mentex_icon.png",
+              ):
+                  target = folder / name
+                  if target.is_file():
+                      targets.append(target)
 
           if not targets:
               raise SystemExit(
-                  "Nenhum ícone PNG conhecido foi encontrado. "
-                  "Verifique os nomes dos recursos no APK."
+                  "Ícones PNG conhecidos não encontrados. "
+                  "É necessário verificar os recursos reais do APK."
               )
 
           for target in targets:
               shutil.copyfile(icon, target)
-              print("Ícone atualizado:", target)
+              print("Atualizado:", target)
 
-          print("Total de recursos atualizados:", len(targets))
+          print("Total:", len(targets))
           PY
 
       - name: Reconstruir APK
@@ -141,23 +126,11 @@ jobs:
 
           test -s "$RUNNER_TEMP/MENTEX-reconstruido.apk"
 
-      - name: Preparar ferramentas Android
-        uses: android-actions/setup-android@v3
-
-      - name: Assinar APK
+      - name: Assinar APK sem Android SDK
         run: |
           set -euo pipefail
 
-          SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
-          BUILD_TOOLS="$(find "$SDK/build-tools" \
-            -mindepth 1 -maxdepth 1 -type d \
-            | sort -V | tail -1)"
-
-          APKSIGNER="$BUILD_TOOLS/apksigner"
-          ZIPALIGN="$BUILD_TOOLS/zipalign"
-
-          test -x "$APKSIGNER"
-          test -x "$ZIPALIGN"
+          mkdir -p resultado
 
           keytool -genkeypair \
             -keystore "$RUNNER_TEMP/mentex.keystore" \
@@ -169,21 +142,17 @@ jobs:
             -validity 10000 \
             -dname "CN=MENTEX"
 
-          mkdir -p resultado
-
-          "$ZIPALIGN" -f -v 4 \
+          jarsigner \
+            -keystore "$RUNNER_TEMP/mentex.keystore" \
+            -storepass mentex123 \
+            -keypass mentex123 \
+            -digestalg SHA-256 \
+            -sigalg SHA256withRSA \
+            -signedjar resultado/MENTEX-V4.8-icone-ampliado.apk \
             "$RUNNER_TEMP/MENTEX-reconstruido.apk" \
-            "$RUNNER_TEMP/MENTEX-alinhado.apk"
+            mentex
 
-          "$APKSIGNER" sign \
-            --ks "$RUNNER_TEMP/mentex.keystore" \
-            --ks-key-alias mentex \
-            --ks-pass pass:mentex123 \
-            --key-pass pass:mentex123 \
-            --out resultado/MENTEX-V4.8-icone-ampliado.apk \
-            "$RUNNER_TEMP/MENTEX-alinhado.apk"
-
-          "$APKSIGNER" verify --verbose \
+          jarsigner -verify \
             resultado/MENTEX-V4.8-icone-ampliado.apk
 
           test -s resultado/MENTEX-V4.8-icone-ampliado.apk
