@@ -1,89 +1,156 @@
 
-name: MENTEX - Preparar APK com ícone ampliado
+name: MENTEX V4.8 - Gerar APK com ícone ampliado
 
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
+    branches: [main]
 
 permissions:
   contents: read
 
 jobs:
-  preparar:
+  gerar-apk:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar arquivos do repositório
+      - name: Baixar repositório
         uses: actions/checkout@v4
 
-      - name: Preparar ambiente
+      - name: Instalar ferramentas
         run: |
           sudo apt-get update
-          sudo apt-get install -y unzip zip findutils
+          sudo apt-get install -y unzip zip wget openjdk-17-jdk
 
-      - name: Localizar ZIP e imagem do ícone
+      - name: Localizar APK e ícone
+        id: localizar
+        shell: bash
         run: |
           set -euo pipefail
-          echo "Arquivos encontrados:"
-          find . -maxdepth 4 -type f | head -200
-          echo "Procurando projeto Android..."
-          if find . -type f \( \
-            -name settings.gradle \
-            -o -name settings.gradle.kts \
-          \) | grep -q .; then
-            echo "Projeto Gradle localizado."
-          else
-            echo "AVISO: projeto Android completo não encontrado."
-            echo "Um APK existente não pode ser reconstruído só com este workflow."
-          fi
 
-      - name: Preparar pacote com o ícone ampliado
-        run: |
-          set -euo pipefail
-          mkdir -p resultado
-          find . -type f -iname 'mentex_icon_ampliado.png' \
-            -exec cp {} resultado/mentex_icon_ampliado.png \;
+          APK="$(find . -type f -name '*.apk' \
+            ! -path '*/build/*' | head -1 || true)"
 
-          if [ ! -f resultado/mentex_icon_ampliado.png ]; then
-            find . -type f \( -iname 'mentex_icon.png' \
-              -o -iname 'ic_launcher.png' \) \
-              | head -1 | while read -r arquivo; do
-                cp "$arquivo" resultado/mentex_icon_ampliado.png
-              done
-          fi
+          ICON="$(find . -type f \
+            \( -iname 'mentex_icon_ampliado.png' \
+            -o -iname 'mentex_icon.png' \) \
+            | head -1 || true)"
 
-          if [ -f resultado/mentex_icon_ampliado.png ]; then
-            echo "Ícone incluído no pacote."
-          else
-            echo "Ícone não encontrado. Envie a imagem para o repositório."
+          if [ -z "$APK" ]; then
+            echo "::error::Nenhum APK encontrado no repositório."
+            echo "Envie o APK original para o repositório."
             exit 1
           fi
 
-          zip -j resultado/MENTEX-icone-ampliado.zip \
-            resultado/mentex_icon_ampliado.png
-
-      - name: Compilar APK se houver projeto Android
-        run: |
-          set -euo pipefail
-          if [ -f gradlew ] && \
-             find . -maxdepth 3 -type f \
-             \( -name settings.gradle \
-             -o -name settings.gradle.kts \) | grep -q .; then
-            chmod +x gradlew
-            ./gradlew assembleDebug
-            mkdir -p resultado/apk
-            find . -type f -path '*/build/outputs/apk/*/*.apk' \
-              -exec cp {} resultado/apk/ \;
-          else
-            echo "Sem projeto Android completo: APK não compilado."
+          if [ -z "$ICON" ]; then
+            echo "::error::Imagem do ícone não encontrada."
+            echo "Envie mentex_icon_ampliado.png para o repositório."
+            exit 1
           fi
 
-      - name: Disponibilizar arquivos
+          echo "apk=$APK" >> "$GITHUB_OUTPUT"
+          echo "icon=$ICON" >> "$GITHUB_OUTPUT"
+
+      - name: Instalar Apktool
+        run: |
+          set -euo pipefail
+          wget -q https://github.com/iBotPeaches/Apktool/releases/download/v2.11.1/apktool_2.11.1.jar \
+            -O "$RUNNER_TEMP/apktool.jar"
+
+      - name: Desmontar APK original
+        run: |
+          set -euo pipefail
+          java -jar "$RUNNER_TEMP/apktool.jar" \
+            d "${{ steps.localizar.outputs.apk }}" \
+            -o "$RUNNER_TEMP/mentex" -f
+
+      - name: Substituir recursos do ícone
+        env:
+          ICON: ${{ steps.localizar.outputs.icon }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, shutil
+          from pathlib import Path
+
+          root = Path(os.environ["RUNNER_TEMP"]) / "mentex"
+          icon = Path(os.environ["ICON"])
+
+          targets = []
+          for folder in (root / "res").glob("mipmap*"):
+              if folder.is_dir():
+                  targets += list(folder.glob("ic_launcher.png"))
+                  targets += list(folder.glob("ic_launcher_round.png"))
+
+          for folder in (root / "res").glob("drawable*"):
+              if folder.is_dir():
+                  targets += list(folder.glob("mentex_icon.png"))
+
+          if not targets:
+              raise SystemExit(
+                  "Não encontrei recursos PNG conhecidos do ícone. "
+                  "É necessário identificar os nomes reais no APK."
+              )
+
+          for target in targets:
+              shutil.copyfile(icon, target)
+
+          print(f"Ícone substituído em {len(targets)} recurso(s).")
+          PY
+
+      - name: Reconstruir APK
+        run: |
+          set -euo pipefail
+          java -jar "$RUNNER_TEMP/apktool.jar" b \
+            "$RUNNER_TEMP/mentex" \
+            -o "$RUNNER_TEMP/MENTEX-reconstruido.apk"
+
+      - name: Preparar ferramentas Android
+        uses: android-actions/setup-android@v3
+
+      - name: Assinar APK
+        run: |
+          set -euo pipefail
+
+          SDK="$ANDROID_HOME/build-tools"
+          APKSIGNER="$(find "$SDK" -name apksigner \
+            -type f | sort -V | tail -1)"
+          ZIPALIGN="$(find "$SDK" -name zipalign \
+            -type f | sort -V | tail -1)"
+
+          test -n "$APKSIGNER"
+          test -n "$ZIPALIGN"
+
+          keytool -genkeypair \
+            -keystore "$RUNNER_TEMP/mentex.keystore" \
+            -storepass mentex123 \
+            -keypass mentex123 \
+            -alias mentex \
+            -keyalg RSA -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=MENTEX"
+
+          mkdir -p resultado
+
+          "$ZIPALIGN" -f -v 4 \
+            "$RUNNER_TEMP/MENTEX-reconstruido.apk" \
+            "$RUNNER_TEMP/MENTEX-alinhado.apk"
+
+          "$APKSIGNER" sign \
+            --ks "$RUNNER_TEMP/mentex.keystore" \
+            --ks-key-alias mentex \
+            --ks-pass pass:mentex123 \
+            --key-pass pass:mentex123 \
+            --out resultado/MENTEX-V4.8-icone-ampliado.apk \
+            "$RUNNER_TEMP/MENTEX-alinhado.apk"
+
+          "$APKSIGNER" verify --verbose \
+            resultado/MENTEX-V4.8-icone-ampliado.apk
+
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-resultado
-          path: resultado/
+          name: MENTEX-V4.8-APK
+          path: resultado/MENTEX-V4.8-icone-ampliado.apk
           if-no-files-found: error
           
