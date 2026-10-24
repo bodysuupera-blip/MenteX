@@ -84,8 +84,8 @@ jobs:
           side = min(w, h)
           x = (w - side) // 2
           y = (h - side) // 2
-          im = im.crop((x, y, x + side, y + side))
-          im = im.resize((1024, 1024), Image.Resampling.LANCZOS)
+          # Aumenta a arte para preencher melhor o espaço do ícone
+im = im.resize((1024, 1024), Image.Resampling.LANCZOS)
           im.save("mentex_icon_preparado.png")
           print("Novo icone preparado em 1024x1024.")
           PY
