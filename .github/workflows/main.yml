@@ -11,8 +11,12 @@ jobs:
     name: Compilar MENTEX V5.1
     runs-on: ubuntu-22.04
 
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
     steps:
-      - name: Baixar código do repositório
+      - name: Baixar código
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -21,25 +25,32 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Instalar Gradle
+      - name: Configurar Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
-      - name: Entrar na pasta do projeto
+      - name: Localizar projeto Android
         shell: bash
         run: |
-          if [ -f "settings.gradle" ]; then
+          if [ -f "settings.gradle" ] || [ -f "settings.gradle.kts" ]; then
             echo "PROJECT_DIR=." >> "$GITHUB_ENV"
-          elif [ -f "MENTEX_REFEITO_PROJETO/settings.gradle" ]; then
+          elif [ -f "MENTEX_REFEITO_PROJETO/settings.gradle" ] || [ -f "MENTEX_REFEITO_PROJETO/settings.gradle.kts" ]; then
             echo "PROJECT_DIR=MENTEX_REFEITO_PROJETO" >> "$GITHUB_ENV"
           else
-            echo "ERRO: Não encontrei settings.gradle."
+            echo "ERRO: Não encontrei o arquivo settings.gradle."
+            echo "Confira se os arquivos do projeto foram enviados ao repositório."
             exit 1
           fi
+
+      - name: Verificar Android SDK
+        shell: bash
+        run: |
+          if [ ! -d "$ANDROID_HOME/platforms" ]; then
+            echo "ERRO: Não encontrei as plataformas do Android SDK."
+            exit 1
+          fi
+          ls "$ANDROID_HOME/platforms"
 
       - name: Compilar APK
         shell: bash
@@ -47,7 +58,7 @@ jobs:
           cd "$PROJECT_DIR"
           gradle --no-daemon assembleDebug
 
-      - name: Publicar APK para baixar
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-V5.1-APK
