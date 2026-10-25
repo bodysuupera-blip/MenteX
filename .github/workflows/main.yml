@@ -1,5 +1,5 @@
 
-name: Gerar APK MENTEX V4.13
+name: MENTEX V4.14 - APK Release Assinado
 
 on:
   workflow_dispatch:
@@ -9,11 +9,10 @@ permissions:
 
 jobs:
   construir:
-    name: Compilar MENTEX V4.13
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar arquivos
+      - name: Baixar projeto
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -27,25 +26,22 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Preparar projeto V4.13
+      - name: Preparar projeto
         shell: bash
         run: |
           set -euo pipefail
+          ZIP="MENTEX-V4.14-ATUALIZADO-ASSINADO.zip"
 
-          ZIP_FILE="MENTEX-V4.13-PERGUNTA-SEM-ROLAGEM.zip"
-
-          if [ ! -f "$ZIP_FILE" ]; then
-            echo "ERRO: ZIP V4.13 não encontrado na raiz."
-            echo "Envie o arquivo $ZIP_FILE para o repositório."
+          if [ ! -f "$ZIP" ]; then
+            echo "ERRO: arquivo $ZIP não encontrado na raiz."
             exit 1
           fi
 
           mkdir -p projeto
-          unzip -oq "$ZIP_FILE" -d projeto
+          unzip -oq "$ZIP" -d projeto
 
           SETTINGS="$(find projeto -type f \
-            \( -name settings.gradle \
-            -o -name settings.gradle.kts \) \
+            \( -name settings.gradle -o -name settings.gradle.kts \) \
             -print -quit)"
 
           if [ -z "$SETTINGS" ]; then
@@ -57,18 +53,54 @@ jobs:
 
           if [ ! -f "$DIR/app/build.gradle" ] && \
              [ ! -f "$DIR/app/build.gradle.kts" ]; then
-            echo "ERRO: configuração do módulo app não encontrada."
+            echo "ERRO: módulo app não encontrado."
             exit 1
           fi
 
           echo "PROJECT_DIR=$DIR" >> "$GITHUB_ENV"
 
-      - name: Compilar APK
+      - name: Configurar assinatura
+        env:
+          KEYSTORE_BASE64: ${{ secrets.MENTEX_KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.MENTEX_KEY_ALIAS }}
+          KEYSTORE_PASSWORD: ${{ secrets.MENTEX_KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.MENTEX_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "$KEYSTORE_BASE64" ] || \
+             [ -z "$KEY_ALIAS" ] || \
+             [ -z "$KEYSTORE_PASSWORD" ] || \
+             [ -z "$KEY_PASSWORD" ]; then
+            echo "ERRO: configure os quatro Secrets MENTEX_* no GitHub."
+            exit 1
+          fi
+
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/mentex.jks"
+
+          if [ ! -s "$RUNNER_TEMP/mentex.jks" ]; then
+            echo "ERRO: arquivo de assinatura inválido."
+            exit 1
+          fi
+
+          echo "MENTEX_KEYSTORE=$RUNNER_TEMP/mentex.jks" >> "$GITHUB_ENV"
+          echo "MENTEX_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "MENTEX_STORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "MENTEX_KEY_PASSWORD_ENV=$KEY_PASSWORD" >> "$GITHUB_ENV"
+
+      - name: Compilar APK release
         shell: bash
         run: |
           set -euo pipefail
           cd "$PROJECT_DIR"
-          gradle assembleDebug --stacktrace
+
+          gradle assembleRelease \
+            -PMENTEX_KEYSTORE="$MENTEX_KEYSTORE" \
+            -PMENTEX_KEY_ALIAS="$MENTEX_ALIAS" \
+            -PMENTEX_STORE_PASSWORD="$MENTEX_STORE_PASSWORD" \
+            -PMENTEX_KEY_PASSWORD="$MENTEX_KEY_PASSWORD_ENV" \
+            --stacktrace
 
       - name: Verificar APK
         shell: bash
@@ -76,23 +108,25 @@ jobs:
           set -euo pipefail
 
           APK="$(find "$PROJECT_DIR" -type f \
-            -path '*/build/outputs/apk/debug/*.apk' \
+            -path '*/build/outputs/apk/release/*.apk' \
             -print -quit)"
 
           if [ -z "$APK" ]; then
-            echo "ERRO: APK não foi gerado."
+            echo "ERRO: APK release não encontrado."
+            echo "O projeto precisa configurar signingConfig com os parâmetros MENTEX_*."
             exit 1
           fi
 
+          "$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/apksigner" verify --verbose "$APK"
+
           mkdir -p entrega
-          cp "$APK" entrega/MENTEX-V4.13.apk
-          ls -lh entrega/MENTEX-V4.13.apk
+          cp "$APK" entrega/MENTEX-V4.14-RELEASE.apk
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V4.13-APK
-          path: entrega/MENTEX-V4.13.apk
+          name: MENTEX-V4.14-APK-RELEASE
+          path: entrega/MENTEX-V4.14-RELEASE.apk
           if-no-files-found: error
           retention-days: 14
           
