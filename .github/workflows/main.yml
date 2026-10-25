@@ -26,39 +26,33 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Localizar projeto Android
+      - name: Extrair projeto MENTEX
         shell: bash
         run: |
-          echo "Arquivos encontrados no repositório:"
-          find . -maxdepth 4 -type f \
-            \( -name "settings.gradle" \
-            -o -name "settings.gradle.kts" \
-            -o -name "build.gradle" \
-            -o -name "build.gradle.kts" \) \
-            -not -path "./.git/*" | head -100
-
-          PROJECT_SETTINGS=$(find . -type f \
-            \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
-            -not -path "./.git/*" \
-            -not -path "*/.gradle/*" \
+          ZIP_FILE=$(find . -maxdepth 2 -type f \
+            -iname 'MENTEX-V5.1-ORIGINAL-MODERNO-200-FASES.zip' \
             -print -quit)
 
-          if [ -z "$PROJECT_SETTINGS" ]; then
-            echo "ERRO: O projeto Android não está no repositório."
-            echo "Envie e extraia os arquivos do ZIP antes de executar."
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERRO: Envie o ZIP MENTEX V5.1 para a raiz do repositório."
             exit 1
           fi
 
-          PROJECT_DIR=$(dirname "$PROJECT_SETTINGS")
+          mkdir -p projeto_extraido
+          unzip -o "$ZIP_FILE" -d projeto_extraido
 
-          if [ ! -f "$PROJECT_DIR/app/build.gradle" ] && \
-             [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
-            echo "ERRO: Não encontrei app/build.gradle."
-            echo "A pasta encontrada não parece conter o módulo Android."
+          SETTINGS=$(find projeto_extraido -type f \
+            \( -name settings.gradle -o -name settings.gradle.kts \) \
+            -print -quit)
+
+          if [ -z "$SETTINGS" ]; then
+            echo "ERRO: settings.gradle não encontrado dentro do ZIP."
             exit 1
           fi
 
-          echo "Projeto localizado em: $PROJECT_DIR"
+          PROJECT_DIR=$(dirname "$SETTINGS")
+          echo "Projeto encontrado em: $PROJECT_DIR"
+
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
       - name: Compilar APK
@@ -67,10 +61,10 @@ jobs:
           cd "$PROJECT_DIR"
           gradle --no-daemon assembleDebug
 
-      - name: Publicar APK
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-V5.1-APK
-          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
+          path: projeto_extraido/**/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 7
