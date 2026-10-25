@@ -1,166 +1,58 @@
 
-name: MENTEX V4.8 - Gerar APK com ícone ampliado
+name: MENTEX - Gerar APK com rolagem corrigida
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
 
 permissions:
   contents: read
 
 jobs:
-  gerar-apk:
+  build:
+    name: Compilar MENTEX
     runs-on: ubuntu-22.04
 
+    env:
+      ANDROID_USER_HOME: ${{ runner.temp }}/android-user-home
+
     steps:
-      - name: Baixar repositório
+      - name: Baixar projeto
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Instalar ferramentas
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Instalar ferramentas Android
         run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y unzip zip wget python3 apksigner
+          sdkmanager "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
 
-      - name: Localizar APK e ícone
-        id: localizar
-        shell: bash
+      - name: Dar permissão ao Gradle
         run: |
-          set -euo pipefail
-
-          APK="$(find . -type f -name '*.apk' \
-            ! -path '*/build/*' | head -1 || true)"
-
-          ICON="$(find . -type f \
-            \( -iname 'mentex_icon_ampliado.png' \
-            -o -iname 'mentex_icon.png' \) \
-            | head -1 || true)"
-
-          if [ -z "$APK" ]; then
-            echo "::error::APK original não encontrado no repositório."
-            exit 1
+          if [ -f gradlew ]; then
+            chmod +x gradlew
           fi
 
-          if [ -z "$ICON" ]; then
-            echo "::error::Imagem do ícone não encontrada."
+      - name: Compilar APK
+        run: |
+          if [ ! -f ./gradlew ]; then
+            echo "ERRO: gradlew não encontrado na raiz."
+            echo "Coloque o projeto Android na raiz do repositório."
             exit 1
           fi
-
-          echo "apk=$APK" >> "$GITHUB_OUTPUT"
-          echo "icon=$ICON" >> "$GITHUB_OUTPUT"
-
-          echo "APK: $APK"
-          echo "Ícone: $ICON"
-
-      - name: Instalar Apktool
-        run: |
-          set -euo pipefail
-          wget -q \
-            https://github.com/iBotPeaches/Apktool/releases/download/v2.11.1/apktool_2.11.1.jar \
-            -O "$RUNNER_TEMP/apktool.jar"
-
-      - name: Desmontar APK original
-        run: |
-          set -euo pipefail
-          java -jar "$RUNNER_TEMP/apktool.jar" d \
-            "${{ steps.localizar.outputs.apk }}" \
-            -o "$RUNNER_TEMP/mentex" -f
-
-      - name: Atualizar ícone
-        env:
-          ICON: ${{ steps.localizar.outputs.icon }}
-        run: |
-          set -euo pipefail
-
-          python3 - <<'PY'
-          import os
-          import shutil
-          from pathlib import Path
-
-          root = Path(os.environ["RUNNER_TEMP"]) / "mentex"
-          icon = Path(os.environ["ICON"])
-          targets = []
-
-          for folder in (root / "res").glob("*"):
-              if not folder.is_dir():
-                  continue
-              if not folder.name.startswith(("mipmap", "drawable")):
-                  continue
-
-              for name in (
-                  "ic_launcher.png",
-                  "ic_launcher_round.png",
-                  "mentex_icon.png",
-              ):
-                  target = folder / name
-                  if target.is_file():
-                      targets.append(target)
-
-          if not targets:
-              raise SystemExit(
-                  "Ícones PNG conhecidos não encontrados. "
-                  "É necessário verificar os recursos reais do APK."
-              )
-
-          for target in targets:
-              shutil.copyfile(icon, target)
-              print("Atualizado:", target)
-
-          print("Total:", len(targets))
-          PY
-
-      - name: Reconstruir APK
-        run: |
-          set -euo pipefail
-          java -jar "$RUNNER_TEMP/apktool.jar" b \
-            "$RUNNER_TEMP/mentex" \
-            -o "$RUNNER_TEMP/MENTEX-reconstruido.apk"
-
-          test -s "$RUNNER_TEMP/MENTEX-reconstruido.apk"
-
-      - name: Assinar APK sem Android SDK
-        run: |
-          set -euo pipefail
-
-          mkdir -p resultado
-
-          keytool -genkeypair \
-            -keystore "$RUNNER_TEMP/mentex.keystore" \
-            -storepass mentex123 \
-            -keypass mentex123 \
-            -alias mentex \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -dname "CN=MENTEX"
-
-          jarsigner \
-            -keystore "$RUNNER_TEMP/mentex.keystore" \
-            -storepass mentex123 \
-            -keypass mentex123 \
-            -digestalg SHA-256 \
-            -sigalg SHA256withRSA \
-            -signedjar resultado/MENTEX-V4.8-icone-ampliado.apk \
-            "$RUNNER_TEMP/MENTEX-reconstruido.apk" \
-            mentex
-
-          jarsigner -verify \
-            resultado/MENTEX-V4.8-icone-ampliado.apk
-
-          test -s resultado/MENTEX-V4.8-icone-ampliado.apk
+          ./gradlew assembleDebug --stacktrace
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V4.8-APK
-          path: resultado/MENTEX-V4.8-icone-ampliado.apk
+          name: MENTEX-APK
+          path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           
