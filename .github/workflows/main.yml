@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   build:
-    name: Compilar MENTEX
+    name: Preparar e compilar MENTEX
     runs-on: ubuntu-22.04
 
     env:
@@ -17,7 +17,7 @@ jobs:
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
     steps:
-      - name: Baixar projeto
+      - name: Baixar repositório
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -26,7 +26,7 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Localizar SDK Manager
+      - name: Instalar ferramentas Android
         shell: bash
         run: |
           set -e
@@ -38,89 +38,89 @@ jobs:
             exit 1
           fi
 
-          echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
-
-      - name: Aceitar licenças Android
-        shell: bash
-        run: |
           yes | "$SDKMANAGER" --licenses || true
-
-      - name: Instalar pacotes Android
-        shell: bash
-        run: |
-          set -e
           "$SDKMANAGER" --install "platform-tools"
           "$SDKMANAGER" --install "platforms;android-35"
           "$SDKMANAGER" --install "build-tools;35.0.0"
 
-      - name: Localizar projeto Android
-        id: projeto
+      - name: Extrair e localizar projeto Android
         shell: bash
         run: |
           set -e
+          mkdir -p "$RUNNER_TEMP/mentex-extraido"
 
-          GRADLEW="$(find . \
-            -type f \
-            -name gradlew \
-            -not -path './.git/*' \
-            -not -path '*/build/*' \
-            -print -quit)"
+          FOUND=""
 
-          if [ -z "$GRADLEW" ]; then
-            echo "ERRO: não existe arquivo gradlew no repositório."
-            echo "Arquivos encontrados na raiz:"
-            ls -la
-            echo "Arquivos de configuração Gradle encontrados:"
-            find . -maxdepth 5 \
-              \( -name settings.gradle -o \
-                 -name settings.gradle.kts -o \
-                 -name build.gradle -o \
-                 -name build.gradle.kts \) \
-              -not -path './.git/*' -print
-            echo "Verifique se o projeto Android completo foi enviado ao GitHub."
+          for ZIP in \
+            "MENTEX_PRONTO_GITHUB_APK.zip" \
+            "MENTEX_RECONSTRUIDO_10_CORACOES_250_FASES.zip" \
+            "MENTEX_Rafael_FINAL_10_CORACOES_250_FASES_JOGO_COMPLETO_CORRIGIDO.zip" \
+            "MENTEX_Rafael_FINAL_10_CORACOES_250_FASES_JOGO_COMPLETO.zip" \
+            "MENTEX_Rafael_10_CORACOES_250_FASES_JOGO_COMPLETO.zip" \
+            *.zip
+          do
+            [ -f "$ZIP" ] || continue
+
+            DEST="$RUNNER_TEMP/mentex-extraido/$(basename "$ZIP" .zip)"
+            mkdir -p "$DEST"
+
+            echo "Verificando: $ZIP"
+
+            if ! unzip -oq "$ZIP" -d "$DEST"; then
+              echo "Não foi possível extrair $ZIP"
+              continue
+            fi
+
+            GRADLEW="$(find "$DEST" -type f -name gradlew \
+              -not -path '*/build/*' -print -quit)"
+
+            if [ -n "$GRADLEW" ]; then
+              FOUND="$GRADLEW"
+              echo "Projeto encontrado em: $FOUND"
+              break
+            fi
+          done
+
+          if [ -z "$FOUND" ]; then
+            echo "ERRO: nenhum ZIP contém o arquivo gradlew."
+            echo "O pacote pode conter somente arquivos web ou APK."
             exit 1
           fi
 
-          PROJECT_DIR="$(dirname "$GRADLEW")"
-          PROJECT_DIR="${PROJECT_DIR#./}"
+          PROJECT_DIR="$(dirname "$FOUND")"
 
-          if [ "$PROJECT_DIR" = "." ]; then
-            PROJECT_DIR=""
+          if [ ! -f "$PROJECT_DIR/settings.gradle" ] && \
+             [ ! -f "$PROJECT_DIR/settings.gradle.kts" ]; then
+            echo "ERRO: settings.gradle não encontrado em $PROJECT_DIR"
+            exit 1
+          fi
+
+          if [ ! -d "$PROJECT_DIR/app" ]; then
+            echo "ERRO: pasta app não encontrada em $PROJECT_DIR"
+            exit 1
           fi
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Diretório do projeto encontrado: ${PROJECT_DIR:-raiz}"
-
-          if [ ! -f "${PROJECT_DIR:+$PROJECT_DIR/}settings.gradle" ] && \
-             [ ! -f "${PROJECT_DIR:+$PROJECT_DIR/}settings.gradle.kts" ]; then
-            echo "ERRO: settings.gradle não encontrado junto do gradlew."
-            exit 1
-          fi
-
-          if [ ! -d "${PROJECT_DIR:+$PROJECT_DIR/}app" ]; then
-            echo "ERRO: pasta app não encontrada junto do gradlew."
-            exit 1
-          fi
 
       - name: Preparar Gradle
         shell: bash
         run: |
           set -e
-          cd "${PROJECT_DIR:-.}"
+          cd "$PROJECT_DIR"
           chmod +x ./gradlew
 
       - name: Compilar APK
         shell: bash
         run: |
           set -e
-          cd "${PROJECT_DIR:-.}"
+          cd "$PROJECT_DIR"
           ./gradlew --no-daemon assembleDebug
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-V4.9-APK
-          path: '**/app/build/outputs/apk/debug/*.apk'
+          path: ${{ runner.temp }}/mentex-extraido/**/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 7
           
