@@ -13,12 +13,8 @@ permissions:
 
 jobs:
   build:
-    name: Compilar MENTEX
+    name: Compilador MENTEX
     runs-on: ubuntu-22.04
-
-    env:
-      ANDROID_HOME: /usr/local/lib/android/sdk
-      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
     steps:
       - name: Baixar código do repositório
@@ -30,38 +26,36 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Android SDK sem pacote antigo tools
+      - name: Configurar Android SDK
         uses: android-actions/setup-android@v4
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
-          accept-android-sdk-licenses: 'yes'
+          accept-android-sdk-licenses: true
 
-      - name: Localizar projeto Android
+      - name: Verificar estrutura do projeto
         shell: bash
         run: |
           set -e
-          echo "Arquivos encontrados:"
-          find . -maxdepth 4 \
-            \( -name gradlew -o -name settings.gradle \
-            -o -name settings.gradle.kts \) -print
-
-          if [ ! -f "./gradlew" ]; then
-            echo "ERRO: gradlew não está na raiz do repositório."
-            echo "Coloque o projeto Android na raiz ou ajuste o caminho no workflow."
+          echo "Verificando projeto..."
+          if [ ! -f "gradlew" ]; then
+            echo "ERRO: gradlew não encontrado na raiz."
+            echo "O projeto Android precisa estar na raiz do repositório."
+            find . -maxdepth 4 \
+              \( -name gradlew -o -name settings.gradle \
+              -o -name settings.gradle.kts \) -print
             exit 1
           fi
 
-      - name: Permitir execução do Gradle
+      - name: Preparar Gradle
         run: chmod +x ./gradlew
 
       - name: Compilar APK
         run: ./gradlew --no-daemon assembleDebug
 
-      - name: Publicar APK para baixar
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-APK
-          path: |
-            app/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           
