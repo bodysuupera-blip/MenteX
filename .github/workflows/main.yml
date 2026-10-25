@@ -11,12 +11,8 @@ jobs:
     name: Compilar MENTEX V5.1
     runs-on: ubuntu-22.04
 
-    env:
-      ANDROID_HOME: /usr/local/lib/android/sdk
-      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-
     steps:
-      - name: Baixar código
+      - name: Baixar arquivos do repositório
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -33,24 +29,37 @@ jobs:
       - name: Localizar projeto Android
         shell: bash
         run: |
-          if [ -f "settings.gradle" ] || [ -f "settings.gradle.kts" ]; then
-            echo "PROJECT_DIR=." >> "$GITHUB_ENV"
-          elif [ -f "MENTEX_REFEITO_PROJETO/settings.gradle" ] || [ -f "MENTEX_REFEITO_PROJETO/settings.gradle.kts" ]; then
-            echo "PROJECT_DIR=MENTEX_REFEITO_PROJETO" >> "$GITHUB_ENV"
-          else
-            echo "ERRO: Não encontrei o arquivo settings.gradle."
-            echo "Confira se os arquivos do projeto foram enviados ao repositório."
+          echo "Arquivos encontrados no repositório:"
+          find . -maxdepth 4 -type f \
+            \( -name "settings.gradle" \
+            -o -name "settings.gradle.kts" \
+            -o -name "build.gradle" \
+            -o -name "build.gradle.kts" \) \
+            -not -path "./.git/*" | head -100
+
+          PROJECT_SETTINGS=$(find . -type f \
+            \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+            -not -path "./.git/*" \
+            -not -path "*/.gradle/*" \
+            -print -quit)
+
+          if [ -z "$PROJECT_SETTINGS" ]; then
+            echo "ERRO: O projeto Android não está no repositório."
+            echo "Envie e extraia os arquivos do ZIP antes de executar."
             exit 1
           fi
 
-      - name: Verificar Android SDK
-        shell: bash
-        run: |
-          if [ ! -d "$ANDROID_HOME/platforms" ]; then
-            echo "ERRO: Não encontrei as plataformas do Android SDK."
+          PROJECT_DIR=$(dirname "$PROJECT_SETTINGS")
+
+          if [ ! -f "$PROJECT_DIR/app/build.gradle" ] && \
+             [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
+            echo "ERRO: Não encontrei app/build.gradle."
+            echo "A pasta encontrada não parece conter o módulo Android."
             exit 1
           fi
-          ls "$ANDROID_HOME/platforms"
+
+          echo "Projeto localizado em: $PROJECT_DIR"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
       - name: Compilar APK
         shell: bash
@@ -58,11 +67,10 @@ jobs:
           cd "$PROJECT_DIR"
           gradle --no-daemon assembleDebug
 
-      - name: Disponibilizar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-V5.1-APK
-          path: |
-            ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 7
