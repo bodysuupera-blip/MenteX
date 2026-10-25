@@ -1,3 +1,4 @@
+
 name: MENTEX V4.9 - Gerar APK Corrigido
 
 on:
@@ -11,6 +12,10 @@ jobs:
     name: Compilar MENTEX
     runs-on: ubuntu-22.04
 
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
     steps:
       - name: Baixar projeto
         uses: actions/checkout@v4
@@ -21,21 +26,41 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Android SDK
-        uses: android-actions/setup-android@v4
-        with:
-          packages: |
-            platform-tools
-            platforms;android-35
-            build-tools;35.0.0
+      - name: Localizar SDK Manager
+        shell: bash
+        run: |
+          set -e
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" \
+            -type f -name sdkmanager | sort -V | tail -n 1)"
+
+          if [ -z "$SDKMANAGER" ]; then
+            echo "ERRO: sdkmanager não encontrado."
+            exit 1
+          fi
+
+          echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
+          echo "SDK Manager encontrado."
 
       - name: Aceitar licenças Android
-        run: yes | sdkmanager --licenses || true
-
-      - name: Verificar estrutura do projeto
+        shell: bash
         run: |
+          yes | "$SDKMANAGER" --licenses || true
+
+      - name: Instalar pacotes Android
+        shell: bash
+        run: |
+          set -e
+          "$SDKMANAGER" --install "platform-tools"
+          "$SDKMANAGER" --install "platforms;android-35"
+          "$SDKMANAGER" --install "build-tools;35.0.0"
+
+      - name: Verificar projeto
+        shell: bash
+        run: |
+          set -e
+
           if [ ! -f "./gradlew" ]; then
-            echo "ERRO: gradlew não encontrado na raiz."
+            echo "ERRO: gradlew não encontrado na raiz do projeto."
             exit 1
           fi
 
@@ -50,6 +75,8 @@ jobs:
             exit 1
           fi
 
+          echo "Estrutura do projeto verificada."
+
       - name: Preparar Gradle
         run: chmod +x ./gradlew
 
@@ -63,3 +90,4 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 7
+          
