@@ -162,4 +162,3 @@ jobs:
           name: MENTEX-APK
           path: release/MENTEX.apk
           if-no-files-found: error
-          
