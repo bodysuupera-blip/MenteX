@@ -1,5 +1,5 @@
 
-name: MENTEX - Gerar APK com rolagem corrigida
+name: MENTEX V4.9 - Gerar APK Atualizado
 
 on:
   workflow_dispatch:
@@ -11,9 +11,6 @@ jobs:
   build:
     name: Compilar MENTEX
     runs-on: ubuntu-22.04
-
-    env:
-      ANDROID_USER_HOME: ${{ runner.temp }}/android-user-home
 
     steps:
       - name: Baixar projeto
@@ -30,29 +27,41 @@ jobs:
 
       - name: Instalar ferramentas Android
         run: |
-          sdkmanager "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
+          sdkmanager "platform-tools"
+          sdkmanager "platforms;android-35"
+          sdkmanager "build-tools;35.0.0"
 
-      - name: Dar permissão ao Gradle
+      - name: Preparar Gradle
         run: |
-          if [ -f gradlew ]; then
-            chmod +x gradlew
+          if [ ! -f "./gradlew" ]; then
+            echo "ERRO: arquivo gradlew não encontrado."
+            echo "O projeto Android precisa estar na raiz."
+            exit 1
+          fi
+          chmod +x ./gradlew
+
+      - name: Verificar estrutura
+        run: |
+          if [ ! -f "settings.gradle" ] && \
+             [ ! -f "settings.gradle.kts" ]; then
+            echo "ERRO: configuração Gradle não encontrada."
+            exit 1
+          fi
+
+          if [ ! -d "app" ]; then
+            echo "ERRO: pasta app não encontrada."
+            exit 1
           fi
 
       - name: Compilar APK
         run: |
-          if [ ! -f ./gradlew ]; then
-            echo "ERRO: gradlew não encontrado na raiz."
-            echo "Coloque o projeto Android na raiz do repositório."
-            exit 1
-          fi
-          ./gradlew assembleDebug --stacktrace
+          ./gradlew --no-daemon assembleDebug
 
-      - name: Disponibilizar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-APK
+          name: MENTEX-V4.9-APK
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+          retention-days: 7
           
