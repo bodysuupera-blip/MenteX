@@ -1,4 +1,3 @@
-
 name: MENTEX V4.9 - Gerar APK
 
 on:
@@ -9,15 +8,11 @@ permissions:
 
 jobs:
   build:
-    name: Preparar e compilar MENTEX
+    name: Compilar MENTEX V4.9
     runs-on: ubuntu-22.04
 
-    env:
-      ANDROID_HOME: /usr/local/lib/android/sdk
-      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-
     steps:
-      - name: Baixar repositório
+      - name: Baixar projeto
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -26,101 +21,34 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Instalar ferramentas Android
-        shell: bash
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Instalar componentes Android
         run: |
-          set -e
-          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" \
-            -type f -name sdkmanager | sort -V | tail -n 1)"
+          yes | sdkmanager --licenses || true
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
 
-          if [ -z "$SDKMANAGER" ]; then
-            echo "ERRO: sdkmanager não encontrado."
-            exit 1
-          fi
-
-          yes | "$SDKMANAGER" --licenses || true
-          "$SDKMANAGER" --install "platform-tools"
-          "$SDKMANAGER" --install "platforms;android-35"
-          "$SDKMANAGER" --install "build-tools;35.0.0"
-
-      - name: Extrair e localizar projeto Android
-        shell: bash
+      - name: Verificar arquivos do projeto
         run: |
-          set -e
-          mkdir -p "$RUNNER_TEMP/mentex-extraido"
-
-          FOUND=""
-
-          for ZIP in \
-            "MENTEX_PRONTO_GITHUB_APK.zip" \
-            "MENTEX_RECONSTRUIDO_10_CORACOES_250_FASES.zip" \
-            "MENTEX_Rafael_FINAL_10_CORACOES_250_FASES_JOGO_COMPLETO_CORRIGIDO.zip" \
-            "MENTEX_Rafael_FINAL_10_CORACOES_250_FASES_JOGO_COMPLETO.zip" \
-            "MENTEX_Rafael_10_CORACOES_250_FASES_JOGO_COMPLETO.zip" \
-            *.zip
-          do
-            [ -f "$ZIP" ] || continue
-
-            DEST="$RUNNER_TEMP/mentex-extraido/$(basename "$ZIP" .zip)"
-            mkdir -p "$DEST"
-
-            echo "Verificando: $ZIP"
-
-            if ! unzip -oq "$ZIP" -d "$DEST"; then
-              echo "Não foi possível extrair $ZIP"
-              continue
-            fi
-
-            GRADLEW="$(find "$DEST" -type f -name gradlew \
-              -not -path '*/build/*' -print -quit)"
-
-            if [ -n "$GRADLEW" ]; then
-              FOUND="$GRADLEW"
-              echo "Projeto encontrado em: $FOUND"
-              break
-            fi
-          done
-
-          if [ -z "$FOUND" ]; then
-            echo "ERRO: nenhum ZIP contém o arquivo gradlew."
-            echo "O pacote pode conter somente arquivos web ou APK."
-            exit 1
-          fi
-
-          PROJECT_DIR="$(dirname "$FOUND")"
-
-          if [ ! -f "$PROJECT_DIR/settings.gradle" ] && \
-             [ ! -f "$PROJECT_DIR/settings.gradle.kts" ]; then
-            echo "ERRO: settings.gradle não encontrado em $PROJECT_DIR"
-            exit 1
-          fi
-
-          if [ ! -d "$PROJECT_DIR/app" ]; then
-            echo "ERRO: pasta app não encontrada em $PROJECT_DIR"
-            exit 1
-          fi
-
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-
-      - name: Preparar Gradle
-        shell: bash
-        run: |
-          set -e
-          cd "$PROJECT_DIR"
-          chmod +x ./gradlew
+          test -f settings.gradle
+          test -f build.gradle
+          test -f app/build.gradle
+          test -f app/src/main/AndroidManifest.xml
+          test -f app/src/main/assets/index.html
 
       - name: Compilar APK
-        shell: bash
-        run: |
-          set -e
-          cd "$PROJECT_DIR"
-          ./gradlew --no-daemon assembleDebug
+        run: gradle assembleDebug --stacktrace
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-V4.9-APK
-          path: ${{ runner.temp }}/mentex-extraido/**/app/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
-          retention-days: 7
-          
