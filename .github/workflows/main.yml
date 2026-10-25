@@ -1,5 +1,5 @@
 
-name: MENTEX V4.14 - Gerar APK
+name: Compilar MENTEX V4.15
 
 on:
   workflow_dispatch:
@@ -12,10 +12,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar projeto
+      - name: Baixar arquivos
         uses: actions/checkout@v4
 
-      - name: Configurar Java
+      - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -26,40 +26,31 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Extrair projeto
+      - name: Preparar projeto
         shell: bash
         run: |
           set -euo pipefail
 
-          ZIP="MENTEX-V4.14-ATUALIZADO-ASSINADO.zip"
+          ZIP_FILE="MENTEX-V4.15-INTERFACE-RENOVADA.zip"
 
-          if [ ! -f "$ZIP" ]; then
-            echo "ERRO: envie o ZIP V4.14 para a raiz do repositório."
+          if [ ! -f "$ZIP_FILE" ]; then
+            echo "ERRO: ZIP do MENTEX não encontrado na raiz do repositório."
             exit 1
           fi
 
           mkdir -p projeto
-          unzip -oq "$ZIP" -d projeto
+          unzip -oq "$ZIP_FILE" -d projeto
 
-          SETTINGS="$(find projeto -type f \
-            \( -name settings.gradle \
-            -o -name settings.gradle.kts \) \
-            -print -quit)"
+          SETTINGS=$(find projeto -type f \
+            \( -name settings.gradle -o -name settings.gradle.kts \) \
+            -print -quit)
 
           if [ -z "$SETTINGS" ]; then
             echo "ERRO: settings.gradle não encontrado."
             exit 1
           fi
 
-          DIR="$(dirname "$SETTINGS")"
-
-          if [ ! -f "$DIR/app/build.gradle" ] && \
-             [ ! -f "$DIR/app/build.gradle.kts" ]; then
-            echo "ERRO: módulo app não encontrado."
-            exit 1
-          fi
-
-          echo "PROJECT_DIR=$DIR" >> "$GITHUB_ENV"
+          echo "PROJECT_DIR=$(dirname "$SETTINGS")" >> "$GITHUB_ENV"
 
       - name: Compilar APK
         shell: bash
@@ -68,31 +59,28 @@ jobs:
           cd "$PROJECT_DIR"
           gradle assembleDebug --stacktrace
 
-      - name: Verificar APK
+      - name: Preparar APK
         shell: bash
         run: |
           set -euo pipefail
 
-          APK="$(find "$PROJECT_DIR" -type f \
+          APK=$(find "$PROJECT_DIR" -type f \
             -path '*/build/outputs/apk/debug/*.apk' \
-            -print -quit)"
+            -print -quit)
 
           if [ -z "$APK" ]; then
-            echo "ERRO: nenhum APK foi gerado."
+            echo "ERRO: APK não foi gerado."
             exit 1
           fi
 
           mkdir -p entrega
-          cp "$APK" entrega/MENTEX-V4.14.apk
+          cp "$APK" entrega/MENTEX-V4.15.apk
 
-          echo "APK pronto para baixar:"
-          ls -lh entrega/MENTEX-V4.14.apk
-
-      - name: Disponibilizar aplicativo
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V4.14-APK
-          path: entrega/MENTEX-V4.14.apk
+          name: MENTEX-V4.15-APK
+          path: entrega/MENTEX-V4.15.apk
           if-no-files-found: error
           retention-days: 14
           
