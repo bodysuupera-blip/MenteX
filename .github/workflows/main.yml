@@ -21,32 +21,29 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Localizar projeto Android
+      - name: Extrair projeto Android
         shell: bash
         run: |
           set -e
-          mkdir -p trabalho
+          mkdir -p projeto
           encontrado=""
 
           for arquivo in ./*.zip; do
             [ -f "$arquivo" ] || continue
-            mkdir -p trabalho/extraido
-            unzip -oq "$arquivo" -d trabalho/extraido
+            unzip -oq "$arquivo" -d projeto
 
-            encontrado=$(find trabalho/extraido -type f \
+            encontrado=$(find projeto -type f \
               \( -name settings.gradle -o -name settings.gradle.kts \) \
               -print -quit)
 
             if [ -n "$encontrado" ]; then
               break
             fi
-
-            rm -rf trabalho/extraido
           done
 
           if [ -z "$encontrado" ]; then
-            echo "ERRO: nenhum ZIP contém um projeto Android Gradle."
-            echo "É necessário enviar o ZIP do projeto-fonte."
+            echo "ERRO: projeto Android não encontrado."
+            echo "O APK sozinho não substitui o projeto-fonte."
             exit 1
           fi
 
@@ -55,8 +52,7 @@ jobs:
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Compilar aplicativo
-        shell: bash
+      - name: Compilar APK
         run: |
           set -e
           cd "$PROJETO"
