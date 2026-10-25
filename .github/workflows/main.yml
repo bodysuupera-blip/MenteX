@@ -1,18 +1,23 @@
 
-name: Gerar APK MENTEX V4.11
+name: Gerar APK MENTEX V4.12
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+      - principal
 
 permissions:
   contents: read
 
 jobs:
   construir:
+    name: Compilar e assinar MENTEX
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar arquivos
+      - name: Baixar arquivos do projeto
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -21,45 +26,84 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Preparar projeto
-        shell: bash
-        run: |
-          set -e
-          mkdir -p projeto
-          unzip -oq MENTEX-V4.11-ROLAGEM-RESPONSIVA.zip -d projeto
-
-          if [ ! -f projeto/settings.gradle ] && [ ! -f projeto/settings.gradle.kts ]; then
-            echo "ERRO: settings.gradle não encontrado."
-            find projeto -maxdepth 4 -type f | head -80
-            exit 1
-          fi
-
-          if [ ! -f projeto/app/src/main/AndroidManifest.xml ]; then
-            echo "ERRO: AndroidManifest.xml não encontrado."
-            exit 1
-          fi
-
-      - name: Configurar Gradle
+      - name: Configurar Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
 
-      - name: Compilar APK
+      - name: Localizar e preparar projeto
         shell: bash
         run: |
-          set -e
-          cd projeto
+          set -euo pipefail
+
+          mkdir -p projeto
+
+          ZIP_FILE="$(find . -maxdepth 1 -type f -iname '*.zip' -print -quit)"
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERRO: nenhum ZIP encontrado na raiz do repositório."
+            exit 1
+          fi
+
+          echo "ZIP encontrado: $ZIP_FILE"
+          unzip -oq "$ZIP_FILE" -d projeto
+
+          SETTINGS_FILE="$(find projeto -type f \( \
+            -name settings.gradle -o \
+            -name settings.gradle.kts \
+          \) -print -quit)"
+
+          if [ -z "$SETTINGS_FILE" ]; then
+            echo "ERRO: settings.gradle não encontrado dentro do ZIP."
+            find projeto -maxdepth 4 -type f | head -100
+            exit 1
+          fi
+
+          PROJECT_DIR="$(dirname "$SETTINGS_FILE")"
+
+          if [ ! -f "$PROJECT_DIR/app/build.gradle" ] && \
+             [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
+            echo "ERRO: arquivo Gradle do aplicativo não encontrado."
+            exit 1
+          fi
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Projeto localizado em: $PROJECT_DIR"
+
+      - name: Compilar APK assinado de teste
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd "$PROJECT_DIR"
           gradle --version
           gradle assembleDebug --stacktrace
 
-      - name: Verificar APK
+      - name: Verificar e preparar APK
         shell: bash
         run: |
-          find projeto -type f -name "*.apk"
-          test -n "$(find projeto -type f -name 'app-debug.apk' -print -quit)"
+          set -euo pipefail
 
-      - name: Baixar aplicativo
+          APK="$(find "$PROJECT_DIR" -type f \
+            -path '*/build/outputs/apk/debug/*.apk' \
+            -print -quit)"
+
+          if [ -z "$APK" ]; then
+            echo "ERRO: a compilação terminou sem gerar APK."
+            exit 1
+          fi
+
+          mkdir -p entrega
+          cp "$APK" entrega/MENTEX-V4.12-APK-ASSINADO.apk
+
+          echo "APK gerado:"
+          ls -lh entrega/MENTEX-V4.12-APK-ASSINADO.apk
+
+      - name: Disponibilizar aplicativo para baixar
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V4.11-APK
-          path: projeto/app/build/outputs/apk/debug/app-debug.apk
+          name: MENTEX-V4.12-APK-ASSINADO
+          path: entrega/MENTEX-V4.12-APK-ASSINADO.apk
           if-no-files-found: error
+          retention-days: 14
           
