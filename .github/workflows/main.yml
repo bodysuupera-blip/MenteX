@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar arquivos do repositório
+      - name: Baixar arquivos
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -21,10 +21,10 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Gradle 8.7
+      - name: Configurar Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.7'
+          gradle-version: '8.9'
 
       - name: Extrair projeto MENTEX
         shell: bash
@@ -34,7 +34,7 @@ jobs:
             -print -quit)
 
           if [ -z "$ZIP_FILE" ]; then
-            echo "ERRO: Envie o ZIP MENTEX V5.1 para a raiz do repositório."
+            echo "ERRO: ZIP do MENTEX não encontrado."
             exit 1
           fi
 
@@ -43,16 +43,16 @@ jobs:
 
           SETTINGS=$(find projeto_extraido -type f \
             \( -name settings.gradle -o -name settings.gradle.kts \) \
+            -not -path '*/.gradle/*' \
             -print -quit)
 
           if [ -z "$SETTINGS" ]; then
-            echo "ERRO: settings.gradle não encontrado dentro do ZIP."
+            echo "ERRO: settings.gradle não encontrado."
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$SETTINGS")
-          echo "Projeto encontrado em: $PROJECT_DIR"
-
+          echo "Projeto localizado: $PROJECT_DIR"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
       - name: Compilar APK
@@ -61,7 +61,7 @@ jobs:
           cd "$PROJECT_DIR"
           gradle --no-daemon assembleDebug
 
-      - name: Disponibilizar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-V5.1-APK
