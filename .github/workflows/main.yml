@@ -1,4 +1,3 @@
-
 name: MENTEX V4.9 - Gerar APK Corrigido
 
 on:
@@ -22,18 +21,18 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Preparar Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: |
+            platform-tools
+            platforms;android-35
+            build-tools;35.0.0
 
-      - name: Instalar componentes Android
-        run: |
-          yes | sdkmanager --licenses || true
-          sdkmanager --install \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
+      - name: Aceitar licenças Android
+        run: yes | sdkmanager --licenses || true
 
-      - name: Verificar projeto
+      - name: Verificar estrutura do projeto
         run: |
           if [ ! -f "./gradlew" ]; then
             echo "ERRO: gradlew não encontrado na raiz."
@@ -54,14 +53,13 @@ jobs:
       - name: Preparar Gradle
         run: chmod +x ./gradlew
 
-      - name: Gerar APK
+      - name: Compilar APK
         run: ./gradlew --no-daemon assembleDebug
 
-      - name: Disponibilizar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-V4.9-APK
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 7
-          
