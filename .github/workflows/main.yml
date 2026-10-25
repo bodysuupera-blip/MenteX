@@ -32,7 +32,7 @@ jobs:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
           accept-android-sdk-licenses: true
 
-      - name: Localizar projeto Android
+      - name: Localizar projeto MENTEX
         shell: bash
         run: |
           set -euo pipefail
@@ -41,106 +41,120 @@ jobs:
 
           SETTINGS="$(find . \
             -type d -name .git -prune -o \
-            -type f \( -name settings.gradle -o -name settings.gradle.kts \) \
+            -type f \( -name settings.gradle \
+            -o -name settings.gradle.kts \) \
             -print -quit)"
 
           if [ -n "$SETTINGS" ]; then
             ROOT="$(dirname "$SETTINGS")"
           else
-            echo "Projeto não encontrado nas pastas. Procurando ZIPs..."
+            echo "Procurando projeto dentro dos ZIPs..."
 
             mkdir -p "$RUNNER_TEMP/mentex-extraido"
 
             while IFS= read -r ZIP; do
               [ -n "$ZIP" ] || continue
 
-              echo "Verificando: $ZIP"
-
               DEST="$RUNNER_TEMP/mentex-extraido/$(basename "$ZIP" .zip)"
               mkdir -p "$DEST"
               unzip -oq "$ZIP" -d "$DEST"
 
               SETTINGS="$(find "$DEST" \
-                -type f \( -name settings.gradle -o -name settings.gradle.kts \) \
+                -type f \( -name settings.gradle \
+                -o -name settings.gradle.kts \) \
                 -print -quit)"
 
               if [ -n "$SETTINGS" ]; then
                 ROOT="$(dirname "$SETTINGS")"
                 break
               fi
-            done < <(find . -maxdepth 3 -type f -iname 'MENTEX*.zip' \
-              -not -path './.git/*' | sort)
-
+            done < <(
+              find . -maxdepth 4 -type f -iname '*.zip' \
+                -not -path './.git/*' | sort
+            )
           fi
 
           if [ -z "$ROOT" ]; then
-            echo "ERRO: nenhum projeto Android foi encontrado."
-            echo "O repositório precisa conter o projeto ou um ZIP com ele."
-            find . -maxdepth 4 -type f \
-              -not -path './.git/*' | sort | head -200
-            exit 1
-          fi
-
-          echo "Projeto encontrado em: $ROOT"
-
-          if [ ! -f "$ROOT/build.gradle" ] && \
-             [ ! -f "$ROOT/build.gradle.kts" ]; then
-            echo "ERRO: build.gradle não encontrado na pasta do projeto."
+            echo "ERRO: projeto Android não encontrado."
+            echo "Confira se o projeto ou ZIP está no repositório."
             exit 1
           fi
 
           if [ ! -d "$ROOT/app" ]; then
-            echo "ERRO: pasta app não encontrada em $ROOT."
+            echo "ERRO: pasta app não encontrada em $ROOT"
             exit 1
           fi
 
+          echo "Projeto localizado: $ROOT"
           echo "MENTEX_ROOT=$ROOT" >> "$GITHUB_ENV"
 
-      - name: Configurar Gradle
+      - name: Configurar Gradle 8.9
         shell: bash
         run: |
           set -euo pipefail
 
-          if [ -f "$MENTEX_ROOT/gradlew" ]; then
+          if [ -f "$MENTEX_ROOT/gradle/wrapper/gradle-wrapper.properties" ] \
+            && [ -f "$MENTEX_ROOT/gradlew" ]; then
+
+            PROPERTIES="$MENTEX_ROOT/gradle/wrapper/gradle-wrapper.properties"
+
             chmod +x "$MENTEX_ROOT/gradlew"
+
+            if grep -q '^distributionUrl=' "$PROPERTIES"; then
+              sed -i \
+                's#^distributionUrl=.*#distributionUrl=https\\://services.gradle.org/distributions/gradle-8.9-bin.zip#' \
+                "$PROPERTIES"
+            else
+              echo "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.9-bin.zip" >> "$PROPERTIES"
+            fi
+
           else
-            echo "Gradle Wrapper ausente. Instalando Gradle 8.7..."
+            echo "Instalando Gradle 8.9..."
+
             cd "$RUNNER_TEMP"
+
             curl -fL \
-              https://services.gradle.org/distributions/gradle-8.7-bin.zip \
-              -o gradle-8.7-bin.zip
-            unzip -oq gradle-8.7-bin.zip
-            echo "$RUNNER_TEMP/gradle-8.7/bin" >> "$GITHUB_PATH"
+              https://services.gradle.org/distributions/gradle-8.9-bin.zip \
+              -o gradle-8.9-bin.zip
+
+            unzip -oq gradle-8.9-bin.zip
+
+            echo "$RUNNER_TEMP/gradle-8.9/bin" >> "$GITHUB_PATH"
           fi
 
-      - name: Compilar APK
+      - name: Compilar aplicativo
         shell: bash
         run: |
           set -euo pipefail
+
           cd "$MENTEX_ROOT"
 
           if [ -f "./gradlew" ]; then
+            ./gradlew --no-daemon --version
             ./gradlew --no-daemon assembleDebug
           else
+            gradle --no-daemon --version
             gradle --no-daemon assembleDebug
           fi
 
-      - name: Localizar APK gerado
+      - name: Preparar APK
         shell: bash
         run: |
           set -euo pipefail
 
-          APK="$(find "$MENTEX_ROOT" -type f \
-            -path '*/build/outputs/apk/*/*.apk' -print -quit)"
+          APK="$(find "$MENTEX_ROOT" \
+            -type f -path '*/build/outputs/apk/*/*.apk' \
+            -print -quit)"
 
           if [ -z "$APK" ]; then
-            echo "ERRO: a compilação terminou sem gerar APK."
+            echo "ERRO: APK não foi encontrado após a compilação."
             exit 1
           fi
 
           mkdir -p release
           cp "$APK" release/MENTEX.apk
-          echo "APK pronto: release/MENTEX.apk"
+
+          echo "APK preparado com sucesso."
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
