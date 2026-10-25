@@ -21,28 +21,45 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Extrair projeto
+      - name: Preparar projeto
+        shell: bash
         run: |
           set -e
-          mkdir projeto
+          mkdir -p projeto
           unzip -oq MENTEX-V4.11-ROLAGEM-RESPONSIVA.zip -d projeto
 
-          test -f projeto/settings.gradle || \
-          test -f projeto/settings.gradle.kts
+          if [ ! -f projeto/settings.gradle ] && [ ! -f projeto/settings.gradle.kts ]; then
+            echo "ERRO: settings.gradle não encontrado."
+            find projeto -maxdepth 4 -type f | head -80
+            exit 1
+          fi
+
+          if [ ! -f projeto/app/src/main/AndroidManifest.xml ]; then
+            echo "ERRO: AndroidManifest.xml não encontrado."
+            exit 1
+          fi
 
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
 
       - name: Compilar APK
+        shell: bash
         run: |
           set -e
           cd projeto
-          gradle assembleDebug
+          gradle --version
+          gradle assembleDebug --stacktrace
 
-      - name: Publicar APK assinado
+      - name: Verificar APK
+        shell: bash
+        run: |
+          find projeto -type f -name "*.apk"
+          test -n "$(find projeto -type f -name 'app-debug.apk' -print -quit)"
+
+      - name: Baixar aplicativo
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-V4.11-APK
-          path: projeto/app/build/outputs/apk/debug/*.apk
+          path: projeto/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           
