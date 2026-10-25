@@ -1,5 +1,5 @@
 
-name: MENTEX V4.9 - Gerar APK Atualizado
+name: MENTEX V4.9 - Gerar APK Corrigido
 
 on:
   workflow_dispatch:
@@ -22,29 +22,27 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Android SDK
+      - name: Preparar Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Instalar ferramentas Android
+      - name: Instalar componentes Android
         run: |
-          sdkmanager "platform-tools"
-          sdkmanager "platforms;android-35"
-          sdkmanager "build-tools;35.0.0"
+          yes | sdkmanager --licenses || true
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
 
-      - name: Preparar Gradle
+      - name: Verificar projeto
         run: |
           if [ ! -f "./gradlew" ]; then
-            echo "ERRO: arquivo gradlew não encontrado."
-            echo "O projeto Android precisa estar na raiz."
+            echo "ERRO: gradlew não encontrado na raiz."
             exit 1
           fi
-          chmod +x ./gradlew
 
-      - name: Verificar estrutura
-        run: |
           if [ ! -f "settings.gradle" ] && \
              [ ! -f "settings.gradle.kts" ]; then
-            echo "ERRO: configuração Gradle não encontrada."
+            echo "ERRO: settings.gradle não encontrado."
             exit 1
           fi
 
@@ -53,11 +51,13 @@ jobs:
             exit 1
           fi
 
-      - name: Compilar APK
-        run: |
-          ./gradlew --no-daemon assembleDebug
+      - name: Preparar Gradle
+        run: chmod +x ./gradlew
 
-      - name: Publicar APK
+      - name: Gerar APK
+        run: ./gradlew --no-daemon assembleDebug
+
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-V4.9-APK
