@@ -1,5 +1,5 @@
 
-name: Gerar APK MENTEX V4.10
+name: Gerar APK MENTEX V4.11
 
 on:
   workflow_dispatch:
@@ -21,52 +21,28 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Extrair projeto V4.10
-        shell: bash
+      - name: Extrair projeto
         run: |
           set -e
+          mkdir projeto
+          unzip -oq MENTEX-V4.11-ROLAGEM-RESPONSIVA.zip -d projeto
 
-          ZIP="MENTEX-V4.10-TELA-AJUSTADA.zip"
-
-          if [ ! -f "$ZIP" ]; then
-            echo "ERRO: envie o ZIP V4.10 para o repositório."
-            exit 1
-          fi
-
-          mkdir -p projeto
-          unzip -oq "$ZIP" -d projeto
-
-          GRADLE_FILE=$(find projeto -type f \
-            \( -name settings.gradle -o -name settings.gradle.kts \) \
-            -print -quit)
-
-          if [ -z "$GRADLE_FILE" ]; then
-            echo "ERRO: projeto Android Gradle não encontrado."
-            exit 1
-          fi
-
-          echo "PROJETO=$(dirname "$GRADLE_FILE")" >> "$GITHUB_ENV"
+          test -f projeto/settings.gradle || \
+          test -f projeto/settings.gradle.kts
 
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
 
       - name: Compilar APK
-        shell: bash
         run: |
           set -e
-          cd "$PROJETO"
+          cd projeto
+          gradle assembleDebug
 
-          if [ -f gradlew ]; then
-            chmod +x gradlew
-            ./gradlew assembleDebug
-          else
-            gradle assembleDebug
-          fi
-
-      - name: Disponibilizar APK
+      - name: Publicar APK assinado
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V4.10-APK
-          path: '**/build/outputs/apk/debug/*.apk'
+          name: MENTEX-V4.11-APK
+          path: projeto/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           
