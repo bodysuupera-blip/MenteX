@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   build:
-    name: Atualizar rolagem e reconstruir APK
+    name: Reconstruir MENTEX
     runs-on: ubuntu-22.04
 
     steps:
@@ -21,18 +21,43 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Preparar Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: |
-            platform-tools
-            platforms;android-35
-            build-tools;35.0.0
+      - name: Preparar Android SDK sem setup-android
+        run: |
+          set -eu
+
+          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" \
+            -type f -name sdkmanager 2>/dev/null | head -n 1)
+
+          if [ -z "$SDKMANAGER" ]; then
+            echo "ERRO: sdkmanager não encontrado."
+            exit 1
+          fi
+
+          echo "SDK Manager: $SDKMANAGER"
+
+          set +e
+          yes | "$SDKMANAGER" \
+            --sdk_root="$ANDROID_HOME" --licenses
+          LICENSE_STATUS=$?
+          set -e
+
+          echo "Resultado da etapa de licenças: $LICENSE_STATUS"
+
+          "$SDKMANAGER" --sdk_root="$ANDROID_HOME" \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
+
+          echo "$ANDROID_HOME/build-tools/35.0.0" >> "$GITHUB_PATH"
 
       - name: Localizar APK original
         id: original
         run: |
-          set -euo pipefail
+          set -eu
 
           APK=$(find . -maxdepth 4 -type f -iname '*.apk' \
             ! -name '*rolagem.apk' \
@@ -42,7 +67,8 @@ jobs:
             ! -name '*unsigned.apk' | head -n 1)
 
           if [ -z "$APK" ]; then
-            echo "ERRO: envie o APK original para a raiz do repositório."
+            echo "ERRO: APK original não encontrado."
+            echo "Envie o APK original para a raiz do repositório."
             exit 1
           fi
 
@@ -61,16 +87,16 @@ jobs:
             "${{ steps.original.outputs.path }}" \
             -o mentex-decoded -f
 
-      - name: Corrigir rolagem do Jogador e Perfil
+      - name: Atualizar rolagem do Perfil
         run: |
           python3 - <<'PY'
           from pathlib import Path
 
           path = Path("mentex-decoded/assets/www/index.html")
 
-          if not path.exists():
+          if not path.is_file():
               raise SystemExit(
-                  "ERRO: assets/www/index.html não foi encontrado."
+                  "ERRO: interface assets/www/index.html não encontrada."
               )
 
           html = path.read_text(encoding="utf-8")
@@ -86,47 +112,22 @@ jobs:
           }
 
           body {
-            position: relative !important;
             touch-action: pan-y !important;
           }
 
-          .app {
-            min-height: 100vh !important;
+          #profile:not(.hidden) {
             height: auto !important;
             max-height: none !important;
-            overflow: visible !important;
+            overflow-y: visible !important;
+            overflow-x: hidden !important;
             padding-bottom: 120px !important;
-          }
-
-          #profile:not(.hidden),
-          #game:not(.hidden) {
-            position: relative !important;
-            inset: auto !important;
-            width: 100% !important;
-            height: auto !important;
-            min-height: 100vh !important;
-            max-height: none !important;
-            overflow: visible !important;
-            padding-bottom: 120px !important;
-            touch-action: pan-y !important;
-          }
-
-          #game:not(.hidden) {
-            display: flex !important;
-            flex-direction: column !important;
-          }
-
-          #game:not(.hidden) * {
-            flex-shrink: 0;
           }
           </style>
           """
 
           if "mentex-scroll-update" not in html:
               if "</head>" in html:
-                  html = html.replace(
-                      "</head>", css + "\n</head>", 1
-                  )
+                  html = html.replace("</head>", css + "\n</head>", 1)
               else:
                   html = css + "\n" + html
 
@@ -138,16 +139,16 @@ jobs:
         run: |
           java -jar apktool.jar b mentex-decoded \
             -o MENTEX-reconstruido.apk
-
           test -s MENTEX-reconstruido.apk
 
       - name: Alinhar APK
         run: |
-          zipalign -f -v 4 \
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" \
+            -f -v 4 \
             MENTEX-reconstruido.apk \
             MENTEX-alinhado.apk
 
-      - name: Criar chave de assinatura
+      - name: Criar chave temporária
         run: |
           keytool -genkeypair \
             -keystore mentex-temp.jks \
@@ -161,15 +162,15 @@ jobs:
 
       - name: Assinar e verificar APK
         run: |
-          apksigner sign \
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
             --ks mentex-temp.jks \
             --ks-pass pass:mentex123 \
             --key-pass pass:mentex123 \
             --out MENTEX-Jogador-Perfil-rolagem.apk \
             MENTEX-alinhado.apk
 
-          apksigner verify --verbose \
-            MENTEX-Jogador-Perfil-rolagem.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify \
+            --verbose MENTEX-Jogador-Perfil-rolagem.apk
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
