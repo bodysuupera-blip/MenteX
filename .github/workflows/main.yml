@@ -1,5 +1,5 @@
 
-name: MENTEX V4.16 - Corrigir Rolagem e Gerar APK
+name: MENTEX V4.16 - Diagnosticar Projeto
 
 on:
   workflow_dispatch:
@@ -8,99 +8,47 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    name: Compilar APK do MENTEX
+  diagnostico:
+    name: Verificar arquivos do MENTEX
     runs-on: ubuntu-22.04
 
     steps:
       - name: Baixar repositório
         uses: actions/checkout@v4
 
-      - name: Configurar Java
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Instalar ferramentas
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y unzip findutils
-
-      - name: Localizar e extrair projeto Android
+      - name: Examinar ZIP de Jogador e Perfil
         shell: bash
         run: |
-          set -euo pipefail
+          set -eu
 
-          mkdir -p "$RUNNER_TEMP/mentex-projetos"
+          ZIP="MENTEX_ANDROID_FINAL_PERFIL_JOGADOR_RANKING_BUILD_CORRIGIDO.zip"
 
-          FOUND=""
-
-          while IFS= read -r -d '' ZIP; do
-            echo "Verificando: $ZIP"
-
-            DEST="$RUNNER_TEMP/mentex-projetos/$(basename "$ZIP" .zip)"
-            mkdir -p "$DEST"
-
-            if ! unzip -oq "$ZIP" -d "$DEST"; then
-              echo "ZIP inválido; ignorando."
-              continue
-            fi
-
-            while IFS= read -r -d '' WRAPPER; do
-              DIR="$(dirname "$WRAPPER")"
-
-              if { [ -f "$DIR/settings.gradle" ] || \
-                   [ -f "$DIR/settings.gradle.kts" ]; } && \
-                 { [ -f "$DIR/app/build.gradle" ] || \
-                   [ -f "$DIR/app/build.gradle.kts" ]; }; then
-                FOUND="$DIR"
-                break 2
-              fi
-            done < <(find "$DEST" -type f -name gradlew -print0)
-
-          done < <(find . -maxdepth 1 -type f -iname '*.zip' -print0)
-
-          if [ -z "$FOUND" ]; then
-            echo "::error::Nenhum ZIP continha um projeto Android completo com gradlew, settings.gradle e app/build.gradle."
+          if [ ! -f "$ZIP" ]; then
+            echo "::error::ZIP não encontrado: $ZIP"
+            echo "Arquivos ZIP disponíveis:"
+            find . -maxdepth 1 -type f -iname '*.zip'
             exit 1
           fi
 
-          echo "Projeto encontrado em: $FOUND"
-          echo "PROJECT_DIR=$FOUND" >> "$GITHUB_ENV"
-          chmod +x "$FOUND/gradlew"
+          echo "===== CONTEÚDO DO ZIP ====="
+          unzip -l "$ZIP" | head -250
 
-      - name: Compilar APK
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd "$PROJECT_DIR"
-          ./gradlew clean assembleDebug --stacktrace
+          mkdir -p "$RUNNER_TEMP/mentex-diagnostico"
+          unzip -oq "$ZIP" -d "$RUNNER_TEMP/mentex-diagnostico"
 
-      - name: Localizar APK gerado
-        shell: bash
-        run: |
-          set -euo pipefail
+          echo "===== ARQUIVOS IMPORTANTES ====="
+          find "$RUNNER_TEMP/mentex-diagnostico" \
+            -type f \( \
+              -name 'gradlew' -o \
+              -name 'settings.gradle' -o \
+              -name 'settings.gradle.kts' -o \
+              -name 'build.gradle' -o \
+              -name 'build.gradle.kts' -o \
+              -name 'AndroidManifest.xml' -o \
+              -name 'index.html' -o \
+              -name '*.css' -o \
+              -name 'package.json' \
+            \) -print | head -250
 
-          mkdir -p "$GITHUB_WORKSPACE/dist"
-
-          APK="$(find "$PROJECT_DIR" \
-            -type f \
-            -path '*/build/outputs/apk/debug/*.apk' \
-            -print -quit)"
-
-          if [ -z "$APK" ]; then
-            echo "::error::A compilação terminou sem gerar APK."
-            exit 1
-          fi
-
-          cp "$APK" "$GITHUB_WORKSPACE/dist/MENTEX-V4.16-ROLAGEM.apk"
-          ls -lh "$GITHUB_WORKSPACE/dist/"
-
-      - name: Disponibilizar APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: MENTEX-V4.16-ROLAGEM-APK
-          path: dist/MENTEX-V4.16-ROLAGEM.apk
-          if-no-files-found: error
+          echo "===== FIM DO DIAGNÓSTICO ====="
           
