@@ -13,63 +13,91 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar projeto
+      - name: Baixar repositório
         uses: actions/checkout@v4
 
-      - name: Configurar Java 17
+      - name: Configurar Java
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.7'
+      - name: Instalar ferramentas
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unzip findutils
 
-      - name: Verificar projeto Android
+      - name: Localizar e extrair projeto Android
         shell: bash
         run: |
           set -euo pipefail
 
-          if [ ! -f "./gradlew" ]; then
-            echo "::error::Arquivo gradlew não encontrado na raiz."
-            echo "O repositório precisa conter o projeto Android completo."
-            find . -maxdepth 3 -type f | sort | head -200
+          mkdir -p "$RUNNER_TEMP/mentex-projetos"
+
+          FOUND=""
+
+          while IFS= read -r -d '' ZIP; do
+            echo "Verificando: $ZIP"
+
+            DEST="$RUNNER_TEMP/mentex-projetos/$(basename "$ZIP" .zip)"
+            mkdir -p "$DEST"
+
+            if ! unzip -oq "$ZIP" -d "$DEST"; then
+              echo "ZIP inválido; ignorando."
+              continue
+            fi
+
+            while IFS= read -r -d '' WRAPPER; do
+              DIR="$(dirname "$WRAPPER")"
+
+              if { [ -f "$DIR/settings.gradle" ] || \
+                   [ -f "$DIR/settings.gradle.kts" ]; } && \
+                 { [ -f "$DIR/app/build.gradle" ] || \
+                   [ -f "$DIR/app/build.gradle.kts" ]; }; then
+                FOUND="$DIR"
+                break 2
+              fi
+            done < <(find "$DEST" -type f -name gradlew -print0)
+
+          done < <(find . -maxdepth 1 -type f -iname '*.zip' -print0)
+
+          if [ -z "$FOUND" ]; then
+            echo "::error::Nenhum ZIP continha um projeto Android completo com gradlew, settings.gradle e app/build.gradle."
             exit 1
           fi
 
-          if [ ! -f "settings.gradle" ] && \
-             [ ! -f "settings.gradle.kts" ]; then
-            echo "::error::settings.gradle não encontrado."
-            exit 1
-          fi
-
-          chmod +x ./gradlew
+          echo "Projeto encontrado em: $FOUND"
+          echo "PROJECT_DIR=$FOUND" >> "$GITHUB_ENV"
+          chmod +x "$FOUND/gradlew"
 
       - name: Compilar APK
-        run: ./gradlew clean assembleDebug --stacktrace
-
-      - name: Preparar APK
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p dist
+          cd "$PROJECT_DIR"
+          ./gradlew clean assembleDebug --stacktrace
 
-          APK=$(find . -type f \
-            -path "*/build/outputs/apk/debug/*.apk" \
-            -not -path "*/build/intermediates/*" \
-            | head -n 1)
+      - name: Localizar APK gerado
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+
+          APK="$(find "$PROJECT_DIR" \
+            -type f \
+            -path '*/build/outputs/apk/debug/*.apk' \
+            -print -quit)"
 
           if [ -z "$APK" ]; then
-            echo "::error::Nenhum APK foi gerado."
+            echo "::error::A compilação terminou sem gerar APK."
             exit 1
           fi
 
-          cp "$APK" dist/MENTEX-V4.16-ROLAGEM.apk
-          ls -lh dist/
+          cp "$APK" "$GITHUB_WORKSPACE/dist/MENTEX-V4.16-ROLAGEM.apk"
+          ls -lh "$GITHUB_WORKSPACE/dist/"
 
-      - name: Publicar APK
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-V4.16-ROLAGEM-APK
