@@ -1,5 +1,5 @@
 
-name: MENTEX V4.16 - Diagnosticar Projeto
+name: MENTEX V4.16 - Diagnosticar e Publicar Arquivos
 
 on:
   workflow_dispatch:
@@ -9,46 +9,100 @@ permissions:
 
 jobs:
   diagnostico:
-    name: Verificar arquivos do MENTEX
+    name: Examinar ZIP e Criar Artefato
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar repositório
+      - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Examinar ZIP de Jogador e Perfil
+      - name: Instalar ferramenta ZIP
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unzip zip
+
+      - name: Examinar ZIP do MENTEX
         shell: bash
         run: |
           set -eu
 
           ZIP="MENTEX_ANDROID_FINAL_PERFIL_JOGADOR_RANKING_BUILD_CORRIGIDO.zip"
+          SAIDA="$RUNNER_TEMP/mentex-diagnostico"
+
+          mkdir -p "$SAIDA/relatorio" "$SAIDA/zip-extraido"
+
+          echo "===== ZIPS DISPONIVEIS ====="
+          find . -maxdepth 1 -type f -iname '*.zip' -print \
+            | tee "$SAIDA/relatorio/zips-disponiveis.txt"
 
           if [ ! -f "$ZIP" ]; then
-            echo "::error::ZIP não encontrado: $ZIP"
-            echo "Arquivos ZIP disponíveis:"
-            find . -maxdepth 1 -type f -iname '*.zip'
-            exit 1
+            echo "O ZIP esperado nao foi encontrado." \
+              | tee "$SAIDA/relatorio/erro.txt"
+
+            echo "===== LISTA DE ARQUIVOS DO REPOSITORIO ====="
+            find . -maxdepth 3 -type f -not -path './.git/*' -print \
+              > "$SAIDA/relatorio/arquivos-repositorio.txt"
+
+          else
+            echo "===== CONTEUDO DO ZIP ====="
+            unzip -l "$ZIP" \
+              | tee "$SAIDA/relatorio/conteudo-zip.txt"
+
+            unzip -oq "$ZIP" -d "$SAIDA/zip-extraido"
+
+            echo "===== ARQUIVOS IMPORTANTES ====="
+            find "$SAIDA/zip-extraido" -type f \
+              \( \
+                -name 'gradlew' -o \
+                -name 'settings.gradle' -o \
+                -name 'settings.gradle.kts' -o \
+                -name 'build.gradle' -o \
+                -name 'build.gradle.kts' -o \
+                -name 'AndroidManifest.xml' -o \
+                -name 'index.html' -o \
+                -name 'package.json' -o \
+                -name '*.apk' \
+              \) -print \
+              | tee "$SAIDA/relatorio/arquivos-importantes.txt"
+
+            echo "===== RESUMO ====="
+            if find "$SAIDA/zip-extraido" -type f \
+              \( -name 'gradlew' -o -name 'settings.gradle' \
+              -o -name 'settings.gradle.kts' \) \
+              | grep -q .; then
+              echo "Foram encontrados possiveis arquivos de projeto Gradle."
+            else
+              echo "Nao foi encontrado wrapper ou arquivo settings do Gradle."
+              echo "Este fluxo e de diagnostico; ainda nao compilou um APK."
+            fi
           fi
 
-          echo "===== CONTEÚDO DO ZIP ====="
-          unzip -l "$ZIP" | head -250
+          echo "Diagnostico concluido." \
+            | tee "$SAIDA/relatorio/resultado.txt"
 
-          mkdir -p "$RUNNER_TEMP/mentex-diagnostico"
-          unzip -oq "$ZIP" -d "$RUNNER_TEMP/mentex-diagnostico"
+      - name: Criar pacote do relatorio
+        if: always()
+        shell: bash
+        run: |
+          set -eu
 
-          echo "===== ARQUIVOS IMPORTANTES ====="
-          find "$RUNNER_TEMP/mentex-diagnostico" \
-            -type f \( \
-              -name 'gradlew' -o \
-              -name 'settings.gradle' -o \
-              -name 'settings.gradle.kts' -o \
-              -name 'build.gradle' -o \
-              -name 'build.gradle.kts' -o \
-              -name 'AndroidManifest.xml' -o \
-              -name 'index.html' -o \
-              -name '*.css' -o \
-              -name 'package.json' \
-            \) -print | head -250
+          SAIDA="$RUNNER_TEMP/mentex-diagnostico"
+          mkdir -p "$SAIDA/relatorio"
 
-          echo "===== FIM DO DIAGNÓSTICO ====="
+          if [ -z "$(find "$SAIDA/relatorio" -type f -print -quit)" ]; then
+            echo "Nenhum relatorio foi gerado." \
+              > "$SAIDA/relatorio/resultado.txt"
+          fi
+
+          cd "$SAIDA"
+          zip -qr "$RUNNER_TEMP/MENTEX-RELATORIO.zip" relatorio
+
+      - name: Publicar artefato para download
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MENTEX-RELATORIO-DIAGNOSTICO
+          path: ${{ runner.temp }}/MENTEX-RELATORIO.zip
+          if-no-files-found: error
+          retention-days: 7
           
