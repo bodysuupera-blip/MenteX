@@ -1,4 +1,3 @@
-
 name: MENTEX - Reconstruir APK
 
 on:
@@ -9,10 +8,11 @@ permissions:
 
 jobs:
   build:
+    name: Reconstruir aplicativo
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar projeto
+      - name: Baixar arquivos do repositório
         uses: actions/checkout@v4
 
       - name: Configurar Java
@@ -22,10 +22,10 @@ jobs:
           java-version: '17'
 
       - name: Preparar Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Instalar ferramentas Android
         run: |
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+          yes | sdkmanager --licenses
           sdkmanager "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
@@ -33,77 +33,91 @@ jobs:
       - name: Localizar APK original
         id: original
         run: |
-          APK=$(find . -maxdepth 3 -type f -iname '*.apk' \
+          APK=$(find . -maxdepth 4 -type f -iname '*.apk' \
             ! -name '*atualizado*' \
-            ! -name '*rebuild*' | head -n 1)
+            ! -name '*reconstruido*' \
+            ! -name '*alinhado*' \
+            ! -name '*unsigned*' | head -n 1)
 
           if [ -z "$APK" ]; then
-            echo "APK original não encontrado."
+            echo "ERRO: nenhum APK original foi encontrado no repositório."
+            echo "Envie o APK original para o repositório e execute novamente."
             exit 1
           fi
 
+          echo "APK encontrado: $APK"
           echo "path=$APK" >> "$GITHUB_OUTPUT"
 
       - name: Baixar Apktool
         run: |
           curl -fL \
-            https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar \
+            "https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar" \
             -o apktool.jar
 
-      - name: Decodificar aplicativo
+      - name: Decodificar APK original
         run: |
           java -jar apktool.jar d \
             "${{ steps.original.outputs.path }}" \
             -o mentex-decoded \
             -f
 
-      - name: Atualizar interface
+      - name: Atualizar rolagem da interface
         run: |
           HTML="mentex-decoded/assets/www/index.html"
 
           if [ ! -f "$HTML" ]; then
-            echo "Interface HTML não encontrada."
+            echo "ERRO: assets/www/index.html não foi encontrado."
+            echo "Não foi possível localizar a interface HTML do aplicativo."
             exit 1
           fi
 
           python3 - "$HTML" <<'PY'
           import sys
 
-          p = sys.argv[1]
-          with open(p, encoding="utf-8") as f:
-              html = f.read()
+          path = sys.argv[1]
+
+          with open(path, "r", encoding="utf-8") as file:
+              html = file.read()
 
           css = """
           <style id="mentex-scroll-update">
-          html, body {
+          html {
             min-height: 100% !important;
             height: auto !important;
-            overflow-x: hidden !important;
             overflow-y: auto !important;
-            -webkit-overflow-scrolling: touch !important;
+            overflow-x: hidden !important;
           }
 
           body {
+            min-height: 100% !important;
+            height: auto !important;
+            overflow-y: auto !important;
+            overflow-x: hidden !important;
+            -webkit-overflow-scrolling: touch !important;
             touch-action: pan-y !important;
           }
 
           #profile:not(.hidden) {
             height: auto !important;
+            min-height: 100% !important;
             max-height: none !important;
-            overflow: visible !important;
+            overflow-y: visible !important;
+            overflow-x: hidden !important;
             padding-bottom: 100px !important;
-            touch-action: pan-y !important;
           }
           </style>
           """
 
           if "mentex-scroll-update" not in html:
-              if "</head>" not in html:
-                  raise SystemExit("Tag </head> não encontrada.")
-              html = html.replace("</head>", css + "\n</head>", 1)
+              if "</head>" in html:
+                  html = html.replace("</head>", css + "\n</head>", 1)
+              else:
+                  html = css + "\n" + html
 
-          with open(p, "w", encoding="utf-8") as f:
-              f.write(html)
+          with open(path, "w", encoding="utf-8") as file:
+              file.write(html)
+
+          print("CSS de rolagem inserido.")
           PY
 
       - name: Reconstruir APK
@@ -111,13 +125,16 @@ jobs:
           java -jar apktool.jar b mentex-decoded \
             -o MENTEX-reconstruido.apk
 
+          test -s MENTEX-reconstruido.apk
+
       - name: Alinhar APK
         run: |
           "$ANDROID_HOME/build-tools/35.0.0/zipalign" \
-            -f -v 4 MENTEX-reconstruido.apk \
+            -f -v 4 \
+            MENTEX-reconstruido.apk \
             MENTEX-alinhado.apk
 
-      - name: Criar chave temporária
+      - name: Criar chave de assinatura
         run: |
           keytool -genkeypair \
             -keystore mentex-temp.jks \
@@ -129,7 +146,7 @@ jobs:
             -validity 10000 \
             -dname "CN=MENTEX, O=MENTEX, C=BR"
 
-      - name: Assinar APK
+      - name: Assinar e verificar APK
         run: |
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
             --ks mentex-temp.jks \
@@ -141,10 +158,11 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify \
             --verbose MENTEX-atualizado.apk
 
-      - name: Disponibilizar aplicativo
+          test -s MENTEX-atualizado.apk
+
+      - name: Disponibilizar APK para download
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-APK
           path: MENTEX-atualizado.apk
           if-no-files-found: error
-          
