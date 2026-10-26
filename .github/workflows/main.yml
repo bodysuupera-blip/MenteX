@@ -1,56 +1,67 @@
 
-name: MENTEX - Atualizar Jogador e Perfil
+name: MENTEX - Gerar APK Atualizado
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - ".github/workflows/main.yml"
 
 permissions:
   contents: read
 
 jobs:
-  atualizar-mentex:
+  build:
     runs-on: ubuntu-22.04
 
     steps:
       - name: Baixar repositório
         uses: actions/checkout@v4
 
-      - name: Preparar ferramentas
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y unzip zip
+      - name: Configurar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
 
-      - name: Localizar APK
-        id: apk
+      - name: Instalar ferramentas
+        run: sudo apt-get update && sudo apt-get install -y unzip zip
+
+      - name: Localizar APK original
+        id: original
+        shell: bash
         run: |
-          APK=$(find . -type f -iname "*.apk" | head -n 1)
+          APK=$(find . -type f -iname '*.apk' \
+            ! -name '*atualizado*' \
+            ! -name '*assinado*' | head -n 1)
+
           if [ -z "$APK" ]; then
-            echo "Nenhum APK encontrado no repositório."
+            echo "ERRO: coloque o APK original no repositório."
             exit 1
           fi
-          echo "arquivo=$APK" >> "$GITHUB_OUTPUT"
-          echo "APK encontrado: $APK"
 
-      - name: Extrair arquivos do APK
+          echo "path=$APK" >> "$GITHUB_OUTPUT"
+
+      - name: Extrair APK
         run: |
           mkdir -p trabalho
-          unzip -q "${{ steps.apk.outputs.arquivo }}" -d trabalho
+          unzip -q "${{ steps.original.outputs.path }}" -d trabalho
 
-      - name: Aplicar rolagem
+      - name: Atualizar rolagem do perfil e ranking
         run: |
-          HTML=$(find trabalho -type f -path "*/assets/www/index.html" | head -n 1)
+          HTML="trabalho/assets/www/index.html"
 
-          if [ -z "$HTML" ]; then
-            echo "index.html não encontrado em assets/www."
-            echo "Este APK pode não usar uma interface HTML."
+          if [ ! -f "$HTML" ]; then
+            echo "ERRO: assets/www/index.html não encontrado."
             exit 1
           fi
 
-          cat > /tmp/mentex-scroll.html <<'EOF'
-          <style id="mentex-jogador-perfil-scroll">
+          python3 - "$HTML" <<'PY'
+          import sys
+
+          p = sys.argv[1]
+          with open(p, encoding="utf-8") as f:
+              html = f.read()
+
+          css = """
+          <style id="mentex-scroll-update">
           html, body {
             min-height: 100% !important;
             height: auto !important;
@@ -58,57 +69,77 @@ jobs:
             overflow-y: auto !important;
             -webkit-overflow-scrolling: touch !important;
           }
-
           body {
             touch-action: pan-y !important;
           }
-
-          #profile:not(.hidden),
-          #player:not(.hidden),
-          #ranking:not(.hidden) {
+          #profile, #ranking {
             height: auto !important;
+            min-height: 100vh;
             max-height: none !important;
             overflow: visible !important;
             padding-bottom: 100px !important;
             touch-action: pan-y !important;
           }
-
           #game:not(.hidden) {
             position: fixed !important;
             inset: 0 !important;
             height: 100vh !important;
-            height: 100dvh !important;
             overflow: hidden !important;
           }
           </style>
-          EOF
+          """
 
-          if ! grep -q "mentex-jogador-perfil-scroll" "$HTML"; then
-            python3 - "$HTML" <<'PY'
-          import sys
-          p = sys.argv[1]
-          with open(p, encoding="utf-8") as f:
-              html = f.read()
-          with open("/tmp/mentex-scroll.html", encoding="utf-8") as f:
-              css = f.read()
-          if "</head>" in html:
-              html = html.replace("</head>", css + "\n</head>", 1)
-          else:
-              html = css + "\n" + html
+          if "mentex-scroll-update" not in html:
+              if "</head>" in html:
+                  html = html.replace("</head>", css + "\n</head>", 1)
+              else:
+                  raise SystemExit("Não foi encontrada a tag </head>.")
+
           with open(p, "w", encoding="utf-8") as f:
               f.write(html)
           PY
-          fi
 
-      - name: Criar pacote atualizado
+      - name: Reempacotar APK
         run: |
-          cd trabalho
-          zip -qr "$GITHUB_WORKSPACE/MENTEX-arquivos-atualizados.zip" .
+          rm -f trabalho/META-INF/*.SF
+          rm -f trabalho/META-INF/*.RSA
+          rm -f trabalho/META-INF/*.DSA
+          rm -f trabalho/META-INF/*.EC
+          rm -f trabalho/META-INF/MANIFEST.MF
 
-      - name: Disponibilizar arquivos
+          cd trabalho
+          zip -qr ../MENTEX-rebuild-unsigned.apk .
+          cd ..
+
+      - name: Criar chave de assinatura
+        run: |
+          keytool -genkeypair -v \
+            -keystore mentex-release.jks \
+            -storepass mentex123 \
+            -keypass mentex123 \
+            -alias mentex \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=MENTEX, OU=App, O=MENTEX, L=Brasil, ST=SP, C=BR"
+
+      - name: Assinar APK
+        run: |
+          jarsigner \
+            -keystore mentex-release.jks \
+            -storepass mentex123 \
+            -keypass mentex123 \
+            -digestalg SHA-256 \
+            -sigalg SHA256withRSA \
+            -signedjar MENTEX-atualizado.apk \
+            MENTEX-rebuild-unsigned.apk mentex
+
+          jarsigner -verify MENTEX-atualizado.apk
+
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-arquivos-atualizados
-          path: MENTEX-arquivos-atualizados.zip
+          name: MENTEX-APK-atualizado
+          path: MENTEX-atualizado.apk
           if-no-files-found: error
           
