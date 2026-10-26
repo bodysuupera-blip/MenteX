@@ -1,246 +1,114 @@
-name: MENTEX V5.1 - Corrigir Tela e Gerar APK
+
+name: MENTEX - Atualizar Jogador e Perfil
 
 on:
-workflow_dispatch:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/main.yml"
 
 permissions:
-contents: read
+  contents: read
 
 jobs:
-build:
-name: Compilar MENTEX V5.1
-runs-on: ubuntu-22.04
+  atualizar-mentex:
+    runs-on: ubuntu-22.04
 
-steps:
-  - name: Baixar arquivos
-    uses: actions/checkout@v4
+    steps:
+      - name: Baixar repositório
+        uses: actions/checkout@v4
 
-  - name: Configurar Java 17
-    uses: actions/setup-java@v4
-    with:
-      distribution: temurin
-      java-version: '17'
+      - name: Preparar ferramentas
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unzip zip
 
-  - name: Configurar Gradle 8.9
-    uses: gradle/actions/setup-gradle@v4
-    with:
-      gradle-version: '8.9'
+      - name: Localizar APK
+        id: apk
+        run: |
+          APK=$(find . -type f -iname "*.apk" | head -n 1)
+          if [ -z "$APK" ]; then
+            echo "Nenhum APK encontrado no repositório."
+            exit 1
+          fi
+          echo "arquivo=$APK" >> "$GITHUB_OUTPUT"
+          echo "APK encontrado: $APK"
 
-  - name: Preparar Android SDK
-    uses: android-actions/setup-android@v3
+      - name: Extrair arquivos do APK
+        run: |
+          mkdir -p trabalho
+          unzip -q "${{ steps.apk.outputs.arquivo }}" -d trabalho
 
-  - name: Instalar componentes Android
-    shell: bash
-    run: |
-      set -e
-      sdkmanager --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
-      yes | sdkmanager --licenses >/dev/null || true
+      - name: Aplicar rolagem
+        run: |
+          HTML=$(find trabalho -type f -path "*/assets/www/index.html" | head -n 1)
 
-  - name: Extrair projeto MENTEX
-    shell: bash
-    run: |
-      set -e
+          if [ -z "$HTML" ]; then
+            echo "index.html não encontrado em assets/www."
+            echo "Este APK pode não usar uma interface HTML."
+            exit 1
+          fi
 
-      ZIP_FILE=$(find . -maxdepth 3 -type f \
-        -iname 'MENTEX-V5.1-ORIGINAL-MODERNO-200-FASES.zip' \
-        -print -quit)
+          cat > /tmp/mentex-scroll.html <<'EOF'
+          <style id="mentex-jogador-perfil-scroll">
+          html, body {
+            min-height: 100% !important;
+            height: auto !important;
+            overflow-x: hidden !important;
+            overflow-y: auto !important;
+            -webkit-overflow-scrolling: touch !important;
+          }
 
-      if [ -z "$ZIP_FILE" ]; then
-        echo "ERRO: Não encontrei MENTEX-V5.1-ORIGINAL-MODERNO-200-FASES.zip na raiz do repositório."
-        exit 1
-      fi
+          body {
+            touch-action: pan-y !important;
+          }
 
-      mkdir -p projeto_extraido
-      unzip -o "$ZIP_FILE" -d projeto_extraido
+          #profile:not(.hidden),
+          #player:not(.hidden),
+          #ranking:not(.hidden) {
+            height: auto !important;
+            max-height: none !important;
+            overflow: visible !important;
+            padding-bottom: 100px !important;
+            touch-action: pan-y !important;
+          }
 
-      SETTINGS=$(find projeto_extraido -type f \
-        \( -name settings.gradle -o -name settings.gradle.kts \) \
-        -not -path '*/.gradle/*' \
-        -print -quit)
+          #game:not(.hidden) {
+            position: fixed !important;
+            inset: 0 !important;
+            height: 100vh !important;
+            height: 100dvh !important;
+            overflow: hidden !important;
+          }
+          </style>
+          EOF
 
-      if [ -z "$SETTINGS" ]; then
-        echo "ERRO: settings.gradle não encontrado dentro do ZIP."
-        exit 1
-      fi
+          if ! grep -q "mentex-jogador-perfil-scroll" "$HTML"; then
+            python3 - "$HTML" <<'PY'
+          import sys
+          p = sys.argv[1]
+          with open(p, encoding="utf-8") as f:
+              html = f.read()
+          with open("/tmp/mentex-scroll.html", encoding="utf-8") as f:
+              css = f.read()
+          if "</head>" in html:
+              html = html.replace("</head>", css + "\n</head>", 1)
+          else:
+              html = css + "\n" + html
+          with open(p, "w", encoding="utf-8") as f:
+              f.write(html)
+          PY
+          fi
 
-      PROJECT_DIR=$(dirname "$SETTINGS")
-      echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-      echo "Projeto encontrado em: $PROJECT_DIR"
+      - name: Criar pacote atualizado
+        run: |
+          cd trabalho
+          zip -qr "$GITHUB_WORKSPACE/MENTEX-arquivos-atualizados.zip" .
 
-  - name: Ajustar interface para celular
-    shell: bash
-    run: |
-      set -e
-
-      HTML="$PROJECT_DIR/app/src/main/assets/index.html"
-
-      if [ ! -f "$HTML" ]; then
-        echo "ERRO: Não encontrei app/src/main/assets/index.html."
-        exit 1
-      fi
-
-      python3 - "$HTML" <<'PY'
-      import sys
-      from pathlib import Path
-
-      p = Path(sys.argv[1])
-      html = p.read_text(encoding="utf-8")
-
-      css = """
-      /* Ajuste responsivo para telas pequenas */
-      *, *::before, *::after {
-        box-sizing: border-box;
-      }
-
-      html, body {
-        width: 100%;
-        max-width: 100%;
-        margin: 0;
-        padding: 0;
-        overflow-x: hidden;
-      }
-
-      body {
-        min-height: 100vh;
-        min-height: 100dvh;
-      }
-
-      .app {
-        width: 100% !important;
-        max-width: 560px !important;
-        margin: 0 auto !important;
-        padding: 6px 8px 10px !important;
-      }
-
-      .top {
-        flex-wrap: wrap;
-        gap: 5px;
-        margin-bottom: 7px;
-      }
-
-      .brand, .stats {
-        min-width: 0;
-      }
-
-      .stats {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 4px;
-      }
-
-      .logo {
-        font-size: clamp(21px, 6vw, 30px);
-        letter-spacing: 1px;
-      }
-
-      .pill {
-        padding: 5px 6px;
-        font-size: clamp(10px, 2.8vw, 12px);
-      }
-
-      img {
-        max-width: 100%;
-      }
-
-      button {
-        min-width: 0;
-        max-width: 100%;
-        overflow-wrap: anywhere;
-      }
-
-      .brain-intro {
-        gap: 7px;
-        margin: 6px 0;
-        padding: 6px;
-      }
-
-      .brain-intro img {
-        width: clamp(60px, 20vw, 90px);
-        height: clamp(55px, 19vw, 75px);
-        object-fit: contain;
-      }
-
-      .speech {
-        min-width: 0;
-        overflow-wrap: anywhere;
-        font-size: clamp(12px, 3.5vw, 15px);
-      }
-
-      .opening {
-        padding: 10px;
-        overflow-y: auto;
-      }
-
-      .opening-card {
-        width: 100%;
-        max-width: 420px;
-        padding: clamp(10px, 4vw, 18px);
-      }
-
-      .opening-card img {
-        width: min(42vw, 150px);
-        height: auto;
-        max-height: 100px;
-        object-fit: contain;
-      }
-
-      .opening-card h1 {
-        font-size: clamp(21px, 6vw, 27px);
-      }
-
-      @media (max-height: 700px) {
-        .app {
-          padding-top: 3px !important;
-          padding-bottom: 5px !important;
-        }
-
-        .top {
-          margin-bottom: 4px;
-        }
-
-        .brain-intro {
-          margin: 4px 0;
-          padding: 4px;
-        }
-
-        .brain-intro img {
-          height: 52px;
-        }
-
-        .opening-card {
-          padding: 9px;
-        }
-
-        .opening-card img {
-          max-height: 75px;
-        }
-      }
-      """
-
-      if "</style>" in html:
-          html = html.replace("</style>", css + "\n</style>", 1)
-      elif "</head>" in html:
-          html = html.replace(
-              "</head>", "<style>\n" + css + "\n</style>\n</head>", 1
-          )
-      else:
-          raise SystemExit("ERRO: Não encontrei </style> ou </head>.")
-
-      p.write_text(html, encoding="utf-8")
-      print("Interface ajustada:", p)
-      PY
-
-  - name: Compilar APK
-    shell: bash
-    run: |
-      set -e
-      cd "$PROJECT_DIR"
-      gradle --no-daemon assembleDebug
-
-  - name: Publicar APK
-    uses: actions/upload-artifact@v4
-    with:
-      name: MENTEX-V5.1-TELA-CORRIGIDA
-      path: projeto_extraido/**/app/build/outputs/apk/debug/*.apk
-      if-no-files-found: error
-      retention-days: 7
+      - name: Disponibilizar arquivos
+        uses: actions/upload-artifact@v4
+        with:
+          name: MENTEX-arquivos-atualizados
+          path: MENTEX-arquivos-atualizados.zip
+          if-no-files-found: error
+          
