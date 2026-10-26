@@ -1,5 +1,5 @@
 
-name: MENTEX - Gerar APK Atualizado
+name: MENTEX - Reconstruir APK
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar repositório
+      - name: Baixar projeto
         uses: actions/checkout@v4
 
       - name: Configurar Java
@@ -21,35 +21,48 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Instalar ferramentas
-        run: sudo apt-get update && sudo apt-get install -y unzip zip
+      - name: Preparar Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Instalar ferramentas Android
+        run: |
+          sdkmanager "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
 
       - name: Localizar APK original
         id: original
-        shell: bash
         run: |
-          APK=$(find . -type f -iname '*.apk' \
+          APK=$(find . -maxdepth 3 -type f -iname '*.apk' \
             ! -name '*atualizado*' \
-            ! -name '*assinado*' | head -n 1)
+            ! -name '*rebuild*' | head -n 1)
 
           if [ -z "$APK" ]; then
-            echo "ERRO: coloque o APK original no repositório."
+            echo "APK original não encontrado."
             exit 1
           fi
 
           echo "path=$APK" >> "$GITHUB_OUTPUT"
 
-      - name: Extrair APK
+      - name: Baixar Apktool
         run: |
-          mkdir -p trabalho
-          unzip -q "${{ steps.original.outputs.path }}" -d trabalho
+          curl -fL \
+            https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar \
+            -o apktool.jar
 
-      - name: Atualizar rolagem do perfil e ranking
+      - name: Decodificar aplicativo
         run: |
-          HTML="trabalho/assets/www/index.html"
+          java -jar apktool.jar d \
+            "${{ steps.original.outputs.path }}" \
+            -o mentex-decoded \
+            -f
+
+      - name: Atualizar interface
+        run: |
+          HTML="mentex-decoded/assets/www/index.html"
 
           if [ ! -f "$HTML" ]; then
-            echo "ERRO: assets/www/index.html não encontrado."
+            echo "Interface HTML não encontrada."
             exit 1
           fi
 
@@ -69,77 +82,69 @@ jobs:
             overflow-y: auto !important;
             -webkit-overflow-scrolling: touch !important;
           }
+
           body {
             touch-action: pan-y !important;
           }
-          #profile, #ranking {
+
+          #profile:not(.hidden) {
             height: auto !important;
-            min-height: 100vh;
             max-height: none !important;
             overflow: visible !important;
             padding-bottom: 100px !important;
             touch-action: pan-y !important;
           }
-          #game:not(.hidden) {
-            position: fixed !important;
-            inset: 0 !important;
-            height: 100vh !important;
-            overflow: hidden !important;
-          }
           </style>
           """
 
           if "mentex-scroll-update" not in html:
-              if "</head>" in html:
-                  html = html.replace("</head>", css + "\n</head>", 1)
-              else:
-                  raise SystemExit("Não foi encontrada a tag </head>.")
+              if "</head>" not in html:
+                  raise SystemExit("Tag </head> não encontrada.")
+              html = html.replace("</head>", css + "\n</head>", 1)
 
           with open(p, "w", encoding="utf-8") as f:
               f.write(html)
           PY
 
-      - name: Reempacotar APK
+      - name: Reconstruir APK
         run: |
-          rm -f trabalho/META-INF/*.SF
-          rm -f trabalho/META-INF/*.RSA
-          rm -f trabalho/META-INF/*.DSA
-          rm -f trabalho/META-INF/*.EC
-          rm -f trabalho/META-INF/MANIFEST.MF
+          java -jar apktool.jar b mentex-decoded \
+            -o MENTEX-reconstruido.apk
 
-          cd trabalho
-          zip -qr ../MENTEX-rebuild-unsigned.apk .
-          cd ..
-
-      - name: Criar chave de assinatura
+      - name: Alinhar APK
         run: |
-          keytool -genkeypair -v \
-            -keystore mentex-release.jks \
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" \
+            -f -v 4 MENTEX-reconstruido.apk \
+            MENTEX-alinhado.apk
+
+      - name: Criar chave temporária
+        run: |
+          keytool -genkeypair \
+            -keystore mentex-temp.jks \
             -storepass mentex123 \
             -keypass mentex123 \
             -alias mentex \
             -keyalg RSA \
             -keysize 2048 \
             -validity 10000 \
-            -dname "CN=MENTEX, OU=App, O=MENTEX, L=Brasil, ST=SP, C=BR"
+            -dname "CN=MENTEX, O=MENTEX, C=BR"
 
       - name: Assinar APK
         run: |
-          jarsigner \
-            -keystore mentex-release.jks \
-            -storepass mentex123 \
-            -keypass mentex123 \
-            -digestalg SHA-256 \
-            -sigalg SHA256withRSA \
-            -signedjar MENTEX-atualizado.apk \
-            MENTEX-rebuild-unsigned.apk mentex
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
+            --ks mentex-temp.jks \
+            --ks-pass pass:mentex123 \
+            --key-pass pass:mentex123 \
+            --out MENTEX-atualizado.apk \
+            MENTEX-alinhado.apk
 
-          jarsigner -verify MENTEX-atualizado.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify \
+            --verbose MENTEX-atualizado.apk
 
-      - name: Disponibilizar APK
+      - name: Disponibilizar aplicativo
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-APK-atualizado
+          name: MENTEX-APK
           path: MENTEX-atualizado.apk
           if-no-files-found: error
           
