@@ -1,4 +1,4 @@
-name: MENTEX - Gerar ZIP Corrigido
+name: MENTEX - Gerar APK Atualizado
 
 on:
   workflow_dispatch:
@@ -17,26 +17,24 @@ jobs:
       - name: Instalar ferramentas
         run: |
           sudo apt-get update
-          sudo apt-get install -y unzip zip apksigner
+          sudo apt-get install -y unzip zip apksigner aapt
 
-      - name: Localizar APK
+      - name: Localizar APK original
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p output
-
           APK="$(find . -type f -iname '*.apk' \
             ! -path './output/*' | head -n 1)"
 
           if [ -z "$APK" ]; then
-            echo "ERRO: APK original nao encontrado."
+            echo "ERRO: coloque o APK original na raiz do repositorio."
             exit 1
           fi
 
           cp "$APK" /tmp/original.apk
+          mkdir -p output
 
-      - name: Extrair e corrigir
-        shell: bash
+      - name: Extrair APK
         run: |
           set -euo pipefail
           mkdir -p /tmp/mentex
@@ -47,13 +45,20 @@ jobs:
             -path '*/assets/www/index.html' | head -n 1)"
 
           if [ -z "$HTML" ]; then
-            echo "ERRO: HTML nao encontrado no APK."
+            echo "ERRO: este APK nao contem assets/www/index.html."
+            echo "Nao e possivel aplicar esta correcao automaticamente."
             exit 1
           fi
 
+          echo "$HTML" > /tmp/html-path.txt
+
+      - name: Corrigir rolagem Jogador e Perfil
+        run: |
+          set -euo pipefail
+          HTML="$(cat /tmp/html-path.txt)"
+
           python3 - "$HTML" <<'PY'
           import sys
-
           p = sys.argv[1]
           with open(p, encoding="utf-8") as f:
               s = f.read()
@@ -69,10 +74,12 @@ jobs:
             min-height: 100vh !important;
             overflow-y: auto !important;
             -webkit-overflow-scrolling: touch !important;
+            touch-action: pan-y !important;
           }
           .app:has(#home:not(.hidden)),
           .app:has(#profile:not(.hidden)) {
             height: auto !important;
+            min-height: 100vh !important;
             overflow: visible !important;
             padding-bottom: 40px !important;
           }
@@ -95,6 +102,11 @@ jobs:
               f.write(s)
           PY
 
+      - name: Reempacotar APK
+        run: |
+          set -euo pipefail
+          cd /tmp/mentex
+
           rm -rf META-INF
           find . -type f \( -iname '*.RSA' -o -iname '*.SF' \
             -o -iname '*.DSA' -o -iname '*.EC' \) -delete
@@ -104,7 +116,7 @@ jobs:
       - name: Criar chave de assinatura
         run: |
           keytool -genkeypair -noprompt \
-            -keystore /tmp/mentex.jks \
+            -keystore "$RUNNER_TEMP/mentex.jks" \
             -storepass mentex123 \
             -keypass mentex123 \
             -alias mentex \
@@ -112,31 +124,34 @@ jobs:
             -validity 10000 \
             -dname "CN=MENTEX,O=MENTEX,C=BR"
 
-      - name: Assinar e gerar ZIP
+      - name: Assinar e validar APK
         run: |
           set -euo pipefail
 
           apksigner sign \
-            --ks /tmp/mentex.jks \
+            --ks "$RUNNER_TEMP/mentex.jks" \
             --ks-key-alias mentex \
             --ks-pass pass:mentex123 \
             --key-pass pass:mentex123 \
-            --out output/MENTEX-CORRIGIDO.apk \
+            --out output/MENTEX-ATUALIZADO.apk \
             /tmp/mentex-unsigned.apk
 
-          apksigner verify output/MENTEX-CORRIGIDO.apk
+          apksigner verify --verbose output/MENTEX-ATUALIZADO.apk
+          aapt dump badging output/MENTEX-ATUALIZADO.apk
 
+      - name: Gerar ZIP
+        run: |
+          set -euo pipefail
           cd output
-          zip MENTEX-CORRIGIDO.zip MENTEX-CORRIGIDO.apk
+          zip MENTEX-ATUALIZADO.zip MENTEX-ATUALIZADO.apk
+          test -s MENTEX-ATUALIZADO.apk
+          test -s MENTEX-ATUALIZADO.zip
 
-          test -s MENTEX-CORRIGIDO.zip
-          ls -lh MENTEX-CORRIGIDO.*
-
-      - name: Publicar APK e ZIP
+      - name: Disponibilizar arquivos
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-CORRIGIDO
+          name: MENTEX-ATUALIZADO
           path: |
-            output/MENTEX-CORRIGIDO.apk
-            output/MENTEX-CORRIGIDO.zip
+            output/MENTEX-ATUALIZADO.apk
+            output/MENTEX-ATUALIZADO.zip
           if-no-files-found: error
