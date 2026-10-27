@@ -1,5 +1,4 @@
-
-name: MENTEX V4.16 - Diagnosticar e Publicar Arquivos
+name: MENTEX - Gerar ZIP Corrigido
 
 on:
   workflow_dispatch:
@@ -8,101 +7,136 @@ permissions:
   contents: read
 
 jobs:
-  diagnostico:
-    name: Examinar ZIP e Criar Artefato
+  build:
     runs-on: ubuntu-22.04
 
     steps:
       - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Instalar ferramenta ZIP
+      - name: Instalar ferramentas
         run: |
           sudo apt-get update
-          sudo apt-get install -y unzip zip
+          sudo apt-get install -y unzip zip apksigner
 
-      - name: Examinar ZIP do MENTEX
+      - name: Localizar APK
         shell: bash
         run: |
-          set -eu
+          set -euo pipefail
+          mkdir -p output
 
-          ZIP="MENTEX_ANDROID_FINAL_PERFIL_JOGADOR_RANKING_BUILD_CORRIGIDO.zip"
-          SAIDA="$RUNNER_TEMP/mentex-diagnostico"
+          APK="$(find . -type f -iname '*.apk' \
+            ! -path './output/*' | head -n 1)"
 
-          mkdir -p "$SAIDA/relatorio" "$SAIDA/zip-extraido"
-
-          echo "===== ZIPS DISPONIVEIS ====="
-          find . -maxdepth 1 -type f -iname '*.zip' -print \
-            | tee "$SAIDA/relatorio/zips-disponiveis.txt"
-
-          if [ ! -f "$ZIP" ]; then
-            echo "O ZIP esperado nao foi encontrado." \
-              | tee "$SAIDA/relatorio/erro.txt"
-
-            echo "===== LISTA DE ARQUIVOS DO REPOSITORIO ====="
-            find . -maxdepth 3 -type f -not -path './.git/*' -print \
-              > "$SAIDA/relatorio/arquivos-repositorio.txt"
-
-          else
-            echo "===== CONTEUDO DO ZIP ====="
-            unzip -l "$ZIP" \
-              | tee "$SAIDA/relatorio/conteudo-zip.txt"
-
-            unzip -oq "$ZIP" -d "$SAIDA/zip-extraido"
-
-            echo "===== ARQUIVOS IMPORTANTES ====="
-            find "$SAIDA/zip-extraido" -type f \
-              \( \
-                -name 'gradlew' -o \
-                -name 'settings.gradle' -o \
-                -name 'settings.gradle.kts' -o \
-                -name 'build.gradle' -o \
-                -name 'build.gradle.kts' -o \
-                -name 'AndroidManifest.xml' -o \
-                -name 'index.html' -o \
-                -name 'package.json' -o \
-                -name '*.apk' \
-              \) -print \
-              | tee "$SAIDA/relatorio/arquivos-importantes.txt"
-
-            echo "===== RESUMO ====="
-            if find "$SAIDA/zip-extraido" -type f \
-              \( -name 'gradlew' -o -name 'settings.gradle' \
-              -o -name 'settings.gradle.kts' \) \
-              | grep -q .; then
-              echo "Foram encontrados possiveis arquivos de projeto Gradle."
-            else
-              echo "Nao foi encontrado wrapper ou arquivo settings do Gradle."
-              echo "Este fluxo e de diagnostico; ainda nao compilou um APK."
-            fi
+          if [ -z "$APK" ]; then
+            echo "ERRO: APK original nao encontrado."
+            exit 1
           fi
 
-          echo "Diagnostico concluido." \
-            | tee "$SAIDA/relatorio/resultado.txt"
+          cp "$APK" /tmp/original.apk
 
-      - name: Criar pacote do relatorio
-        if: always()
+      - name: Extrair e corrigir
         shell: bash
         run: |
-          set -eu
+          set -euo pipefail
+          mkdir -p /tmp/mentex
+          cd /tmp/mentex
+          unzip -q /tmp/original.apk
 
-          SAIDA="$RUNNER_TEMP/mentex-diagnostico"
-          mkdir -p "$SAIDA/relatorio"
+          HTML="$(find . -type f \
+            -path '*/assets/www/index.html' | head -n 1)"
 
-          if [ -z "$(find "$SAIDA/relatorio" -type f -print -quit)" ]; then
-            echo "Nenhum relatorio foi gerado." \
-              > "$SAIDA/relatorio/resultado.txt"
+          if [ -z "$HTML" ]; then
+            echo "ERRO: HTML nao encontrado no APK."
+            exit 1
           fi
 
-          cd "$SAIDA"
-          zip -qr "$RUNNER_TEMP/MENTEX-RELATORIO.zip" relatorio
+          python3 - "$HTML" <<'PY'
+          import sys
 
-      - name: Publicar artefato para download
-        if: always()
+          p = sys.argv[1]
+          with open(p, encoding="utf-8") as f:
+              s = f.read()
+
+          css = """
+          <style id="mentex-scroll-fix">
+          html, body {
+            overflow-x: hidden !important;
+          }
+          body:has(#home:not(.hidden)),
+          body:has(#profile:not(.hidden)) {
+            height: auto !important;
+            min-height: 100vh !important;
+            overflow-y: auto !important;
+            -webkit-overflow-scrolling: touch !important;
+          }
+          .app:has(#home:not(.hidden)),
+          .app:has(#profile:not(.hidden)) {
+            height: auto !important;
+            overflow: visible !important;
+            padding-bottom: 40px !important;
+          }
+          #home:not(.hidden),
+          #profile:not(.hidden) {
+            height: auto !important;
+            max-height: none !important;
+            overflow: visible !important;
+            padding-bottom: 32px !important;
+          }
+          </style>
+          """
+
+          if "mentex-scroll-fix" not in s:
+              if "</head>" not in s:
+                  raise SystemExit("ERRO: tag </head> nao encontrada.")
+              s = s.replace("</head>", css + "\n</head>", 1)
+
+          with open(p, "w", encoding="utf-8") as f:
+              f.write(s)
+          PY
+
+          rm -rf META-INF
+          find . -type f \( -iname '*.RSA' -o -iname '*.SF' \
+            -o -iname '*.DSA' -o -iname '*.EC' \) -delete
+
+          zip -qr /tmp/mentex-unsigned.apk .
+
+      - name: Criar chave de assinatura
+        run: |
+          keytool -genkeypair -noprompt \
+            -keystore /tmp/mentex.jks \
+            -storepass mentex123 \
+            -keypass mentex123 \
+            -alias mentex \
+            -keyalg RSA -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=MENTEX,O=MENTEX,C=BR"
+
+      - name: Assinar e gerar ZIP
+        run: |
+          set -euo pipefail
+
+          apksigner sign \
+            --ks /tmp/mentex.jks \
+            --ks-key-alias mentex \
+            --ks-pass pass:mentex123 \
+            --key-pass pass:mentex123 \
+            --out output/MENTEX-CORRIGIDO.apk \
+            /tmp/mentex-unsigned.apk
+
+          apksigner verify output/MENTEX-CORRIGIDO.apk
+
+          cd output
+          zip MENTEX-CORRIGIDO.zip MENTEX-CORRIGIDO.apk
+
+          test -s MENTEX-CORRIGIDO.zip
+          ls -lh MENTEX-CORRIGIDO.*
+
+      - name: Publicar APK e ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-RELATORIO-DIAGNOSTICO
-          path: ${{ runner.temp }}/MENTEX-RELATORIO.zip
+          name: MENTEX-CORRIGIDO
+          path: |
+            output/MENTEX-CORRIGIDO.apk
+            output/MENTEX-CORRIGIDO.zip
           if-no-files-found: error
-          retention-days: 7
-          
