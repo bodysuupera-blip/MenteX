@@ -1,4 +1,5 @@
-name: MENTEX - Corrigir Rolagem
+
+name: MENTEX - Gerar APK
 
 on:
   workflow_dispatch:
@@ -8,150 +9,61 @@ permissions:
 
 jobs:
   build:
+    name: Compilar MENTEX
     runs-on: ubuntu-22.04
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Baixar repositório
+        uses: actions/checkout@v4
 
-      - name: Instalar ferramentas
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y unzip zip apksigner
+      - name: Configurar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
 
-      - name: Localizar APK original
+      - name: Localizar projeto Android
         shell: bash
         run: |
-          set -euo pipefail
-          APK="$(find "$GITHUB_WORKSPACE" -type f \
-            -iname '*.apk' ! -path '*/output/*' | head -n 1)"
+          set -Eeuo pipefail
 
-          if [ -z "$APK" ]; then
-            echo "ERRO: coloque o APK original no repositorio."
+          PROJECT=""
+
+          while IFS= read -r FILE; do
+            DIR="$(dirname "$FILE")"
+
+            if [[ -f "$DIR/settings.gradle" || \
+                  -f "$DIR/settings.gradle.kts" ]]; then
+              PROJECT="$DIR"
+              break
+            fi
+          done < <(
+            find "$GITHUB_WORKSPACE" \
+              -type f -name gradlew \
+              -not -path '*/.git/*'
+          )
+
+          if [[ -z "$PROJECT" ]]; then
+            echo "::error::Projeto Android original não encontrado."
+            echo "É necessário incluir gradlew e os arquivos Gradle."
             exit 1
           fi
 
-          cp "$APK" "$RUNNER_TEMP/original.apk"
+          echo "PROJECT_DIR=$PROJECT" >> "$GITHUB_ENV"
 
-      - name: Extrair APK e localizar HTML
+      - name: Compilar aplicativo
         shell: bash
         run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/mentex"
-          unzip -q "$RUNNER_TEMP/original.apk" \
-            -d "$RUNNER_TEMP/mentex"
+          set -Eeuo pipefail
+          cd "$PROJECT_DIR"
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleDebug
 
-          HTML="$RUNNER_TEMP/mentex/assets/www/index.html"
-
-          if [ ! -f "$HTML" ]; then
-            echo "ERRO: HTML nao encontrado."
-            find "$RUNNER_TEMP/mentex" -type f | head -n 60
-            exit 1
-          fi
-
-          echo "HTML_PATH=$HTML" >> "$GITHUB_ENV"
-
-      - name: Corrigir rolagem
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          python3 - "$HTML_PATH" <<'PY'
-          import sys
-
-          path = sys.argv[1]
-          with open(path, encoding="utf-8") as f:
-              html = f.read()
-
-          css = """
-          <style id="mentex-player-profile-scroll-fix">
-          html, body {
-            width: 100%;
-            min-height: 100%;
-            overflow-x: hidden !important;
-          }
-
-          body:has(#home:not(.hidden)),
-          body:has(#profile:not(.hidden)) {
-            height: auto !important;
-            min-height: 100vh !important;
-            overflow-y: auto !important;
-            -webkit-overflow-scrolling: touch !important;
-          }
-
-          #home:not(.hidden),
-          #profile:not(.hidden) {
-            height: auto !important;
-            min-height: 0 !important;
-            max-height: none !important;
-            overflow: visible !important;
-            padding-bottom: calc(40px + env(safe-area-inset-bottom)) !important;
-          }
-
-          #game:not(.hidden) {
-            position: fixed !important;
-            inset: 0 !important;
-            overflow: hidden !important;
-          }
-          </style>
-          """
-
-          if "mentex-player-profile-scroll-fix" not in html:
-              html = html.replace("</head>", css + "\n</head>", 1)
-
-          with open(path, "w", encoding="utf-8") as f:
-              f.write(html)
-
-          print("Rolagem corrigida no HTML.")
-          PY
-
-      - name: Reempacotar APK
-        run: |
-          set -euo pipefail
-          cd "$RUNNER_TEMP/mentex"
-          rm -rf META-INF
-          find . -type f \( -iname '*.RSA' -o -iname '*.SF' \
-            -o -iname '*.DSA' -o -iname '*.EC' \) -delete
-          zip -qr "$RUNNER_TEMP/mentex-unsigned.apk" .
-
-      - name: Criar chave
-        run: |
-          keytool -genkeypair -noprompt \
-            -keystore "$RUNNER_TEMP/mentex.jks" \
-            -storepass mentex123 \
-            -keypass mentex123 \
-            -alias mentex \
-            -keyalg RSA -keysize 2048 \
-            -validity 10000 \
-            -dname "CN=MENTEX,O=MENTEX,C=BR"
-
-      - name: Assinar APK
-        run: |
-          set -euo pipefail
-          mkdir -p "$GITHUB_WORKSPACE/output"
-
-          apksigner sign \
-            --ks "$RUNNER_TEMP/mentex.jks" \
-            --ks-key-alias mentex \
-            --ks-pass pass:mentex123 \
-            --key-pass pass:mentex123 \
-            --out "$GITHUB_WORKSPACE/output/MENTEX-CORRIGIDO.apk" \
-            "$RUNNER_TEMP/mentex-unsigned.apk"
-
-          apksigner verify --verbose \
-            "$GITHUB_WORKSPACE/output/MENTEX-CORRIGIDO.apk"
-
-      - name: Gerar ZIP
-        run: |
-          set -euo pipefail
-          cd "$GITHUB_WORKSPACE/output"
-          zip MENTEX-CORRIGIDO.zip MENTEX-CORRIGIDO.apk
-          ls -lh MENTEX-CORRIGIDO.*
-
-      - name: Publicar arquivos
+      - name: Enviar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-CORRIGIDO
-          path: |
-            output/MENTEX-CORRIGIDO.apk
-            output/MENTEX-CORRIGIDO.zip
+          name: MENTEX-APK
+          path: '**/build/outputs/apk/debug/*.apk'
           if-no-files-found: error
+          retention-days: 7
+          
