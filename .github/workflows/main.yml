@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   build:
-    name: Compilar MENTEX 4.13
+    name: Preparar MENTEX 4.13
     runs-on: ubuntu-22.04
 
     steps:
@@ -22,95 +22,107 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Preparar projeto MENTEX
+      - name: Localizar projeto ou APK
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          mkdir -p /tmp/mentex-projetos
+          mkdir -p /tmp/mentex /tmp/mentex-apk
+          mkdir -p "$GITHUB_WORKSPACE/saida"
 
-          while IFS= read -r -d '' arquivo; do
-            nome="$(basename "$arquivo" .zip)"
-            destino="/tmp/mentex-projetos/$nome"
-            mkdir -p "$destino"
-            unzip -oq "$arquivo" -d "$destino"
-          done < <(
-            find . -maxdepth 4 -type f -iname '*.zip' \
-              -not -path './.git/*' -print0
-          )
+          echo "Procurando ZIPs do MENTEX..."
 
+          # Priorizar o ZIP ajustado, se estiver no repositório.
+          ZIP="$(find . -maxdepth 4 -type f \
+            -iname 'MENTEX-V4.13-AJUSTADO-ROLAGEM.zip' \
+            -not -path './.git/*' | head -1 || true)"
+
+          if [[ -z "$ZIP" ]]; then
+            ZIP="$(find . -maxdepth 4 -type f \
+              -iname 'MENTEX-V4.13-APK.zip' \
+              -not -path './.git/*' | head -1 || true)"
+          fi
+
+          if [[ -n "$ZIP" ]]; then
+            echo "ZIP encontrado: $ZIP"
+            unzip -oq "$ZIP" -d /tmp/mentex-apk
+          fi
+
+          # Procurar um APK diretamente no repositório ou no ZIP.
+          APK="$(find /tmp/mentex-apk . \
+            -type f -iname '*.apk' \
+            -not -path './.git/*' \
+            | head -1 || true)"
+
+          # Procurar projeto-fonte Android com Wrapper.
           PROJETO=""
 
           while IFS= read -r -d '' arquivo; do
             pasta="$(dirname "$arquivo")"
 
-            if [[ -f "$pasta/app/build.gradle" ||
-                  -f "$pasta/app/build.gradle.kts" ]]; then
+            if [[ -f "$pasta/gradlew" &&
+                  -f "$pasta/gradle/wrapper/gradle-wrapper.properties" &&
+                  ( -f "$pasta/app/build.gradle" ||
+                    -f "$pasta/app/build.gradle.kts" ) ]]; then
               PROJETO="$pasta"
               break
             fi
           done < <(
-            find /tmp/mentex-projetos . \
-              -type f \( -name settings.gradle \
+            find . /tmp/mentex -type f \
+              \( -name settings.gradle \
               -o -name settings.gradle.kts \) \
               -not -path '*/.git/*' -print0
           )
 
-          if [[ -z "$PROJETO" ]]; then
-            echo "::error::Projeto Android completo não encontrado."
-            echo "O ZIP precisa conter o código-fonte Android."
+          if [[ -n "$PROJETO" ]]; then
+            echo "Projeto Android completo encontrado: $PROJETO"
+            echo "MODO=compilar" >> "$GITHUB_ENV"
+            echo "PROJETO=$PROJETO" >> "$GITHUB_ENV"
+          elif [[ -n "$APK" && -f "$APK" ]]; then
+            echo "Projeto-fonte não encontrado."
+            echo "Será disponibilizado o APK existente: $APK"
+            cp "$APK" "$GITHUB_WORKSPACE/saida/MENTEX-V4.13.apk"
+            echo "MODO=apk_existente" >> "$GITHUB_ENV"
+          else
+            echo "::error::Não encontrei projeto Android nem APK."
+            echo "Envie o ZIP do MENTEX para a raiz do repositório."
             exit 1
           fi
 
-          echo "Projeto encontrado: $PROJETO"
-          echo "PROJETO=$PROJETO" >> "$GITHUB_ENV"
-
-      - name: Verificar Gradle Wrapper
+      - name: Compilar projeto Android
+        if: env.MODO == 'compilar'
         shell: bash
         run: |
           set -Eeuo pipefail
           cd "$PROJETO"
-
-          if [[ ! -f gradlew ||
-                ! -f gradle/wrapper/gradle-wrapper.properties ]]; then
-            echo "::error::Gradle Wrapper ausente no projeto."
-            echo "É necessário restaurar gradlew e gradle/wrapper."
-            exit 1
-          fi
-
           chmod +x gradlew
-
-      - name: Compilar APK
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          cd "$PROJETO"
           ./gradlew --no-daemon assembleDebug
 
-      - name: Localizar APK
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          mkdir -p "$GITHUB_WORKSPACE/apk-gerado"
-
-          APK="$(find "$PROJETO" -type f \
+          APK="$(find . -type f \
             -path '*/build/outputs/apk/debug/*.apk' \
-            | head -1)"
+            | head -1 || true)"
 
           if [[ -z "$APK" ]]; then
-            echo "::error::APK não encontrado após a compilação."
+            echo "::error::A compilação não gerou APK."
             exit 1
           fi
 
-          cp "$APK" "$GITHUB_WORKSPACE/apk-gerado/MENTEX-V4.13.apk"
-          ls -lh "$GITHUB_WORKSPACE/apk-gerado/MENTEX-V4.13.apk"
+          cp "$APK" "$GITHUB_WORKSPACE/saida/MENTEX-V4.13.apk"
+
+      - name: Informar modo de execução
+        shell: bash
+        run: |
+          if [[ "$MODO" == "apk_existente" ]]; then
+            echo "::notice::O artefato contém o APK existente. Nenhuma recompilação ou alteração no jogo foi realizada."
+          else
+            echo "APK compilado a partir do projeto Android."
+          fi
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-APK
-          path: apk-gerado/MENTEX-V4.13.apk
+          name: MENTEX-V4.13-APK
+          path: saida/MENTEX-V4.13.apk
           if-no-files-found: error
           retention-days: 14
           
