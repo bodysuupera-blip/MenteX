@@ -25,37 +25,48 @@ jobs:
 
       - name: Localizar arquivos
         run: |
-          APK=$(find . -type f -iname "*.apk" | grep -v "unsigned" | head -1)
+          set -e
+
+          APK=$(find . -type f -iname "*.apk" \
+            ! -iname "*unsigned*" \
+            ! -iname "*aligned*" | head -1)
 
           if [ -z "$APK" ]; then
             echo "ERRO: APK não encontrado"
             exit 1
           fi
 
-          cp "$APK" base.apk
+          echo "APK encontrado: $APK"
+
+          if [ "$APK" != "./base.apk" ]; then
+            cp "$APK" base.apk
+          fi
 
           ICON=$(find . -type f -iname "mentex_icon.png" | head -1)
-
-          if [ -z "$ICON" ]; then
-            ICON=$(find . -type f -iname "*.png" | head -1)
-          fi
 
           if [ -z "$ICON" ]; then
             echo "ERRO: Ícone não encontrado"
             exit 1
           fi
 
-          cp "$ICON" mentex_icon.png
+          if [ "$ICON" != "./mentex_icon.png" ]; then
+            cp "$ICON" mentex_icon.png
+          fi
 
-          IMG=$(find . -type f \( -iname "*.jpg" -o -iname "*.jpeg" \) | head -1)
+          IMG=$(find . -type f \
+            \( -iname "*.jpg" -o -iname "*.jpeg" \) \
+            | head -1)
 
           if [ -n "$IMG" ]; then
-            cp "$IMG" opening_first.jpg
+            if [ "$IMG" != "./opening_first.jpg" ]; then
+              cp "$IMG" opening_first.jpg
+            fi
           else
+            echo "Imagem JPG não encontrada. Usando ícone como alternativa."
             cp mentex_icon.png opening_first.png
           fi
 
-          echo "Arquivos preparados"
+          echo "Arquivos preparados!"
 
       - name: Instalar APKTool
         run: |
@@ -76,7 +87,7 @@ jobs:
           p = "projeto/assets/www/index.html"
 
           if not os.path.exists(p):
-              raise Exception("Não foi encontrado o arquivo index.html")
+              raise Exception("index.html não encontrado")
 
           with open(p, encoding="utf-8") as f:
               h = f.read()
@@ -190,19 +201,12 @@ jobs:
           with open(p, "w", encoding="utf-8") as f:
               f.write(h)
 
-          os.makedirs("projeto/assets/www", exist_ok=True)
+          destino = "projeto/assets/www"
+          os.makedirs(destino, exist_ok=True)
 
-          if os.path.exists("opening_first.jpg"):
-              shutil.copy(
-                  "opening_first.jpg",
-                  "projeto/assets/www/opening_first.jpg"
-              )
-
-          if os.path.exists("opening_first.png"):
-              shutil.copy(
-                  "opening_first.png",
-                  "projeto/assets/www/opening_first.png"
-              )
+          for nome in ("opening_first.jpg", "opening_first.png"):
+              if os.path.exists(nome):
+                  shutil.copy2(nome, destino + "/" + nome)
 
           print("MENTEX V5.1 atualizado!")
           PY
@@ -223,7 +227,7 @@ jobs:
             -validity 10000 \
             -dname "CN=MENTEX,O=MENTEX,C=BR"
 
-      - name: Preparar Android SDK
+      - name: Configurar Android SDK
         uses: android-actions/setup-android@v3
 
       - name: Alinhar e assinar
