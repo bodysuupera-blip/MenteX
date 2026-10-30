@@ -1,5 +1,5 @@
 
-name: MENTEX V4.6.6 - Gerar APK
+name: MENTEX V5.0 - Gerar APK
 
 on:
   workflow_dispatch:
@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   build:
-    name: Compilar MENTEX
+    name: Compilar MENTEX 5.0
     runs-on: ubuntu-22.04
 
     steps:
@@ -26,80 +26,77 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       - name: Instalar Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Verificar arquivos do projeto
-        run: |
-          echo "Arquivos encontrados:"
-          ls -la
-          echo "Procurando Gradle..."
-          find . -maxdepth 5 \( -name gradlew -o -name build.gradle -o -name build.gradle.kts -o -name settings.gradle -o -name settings.gradle.kts \) -print
+      - name: Instalar Cordova
+        run: npm install -g cordova
 
-      - name: Instalar SDK
-        run: |
-          sdkmanager "platform-tools"
-          sdkmanager "platforms;android-35"
-          sdkmanager "build-tools;35.0.0"
-
-      - name: Localizar projeto
-        id: projeto
+      - name: Preparar arquivos do MENTEX
         shell: bash
         run: |
-          GRADLEW=$(find . -type f -name gradlew | head -n 1)
+          set -e
 
-          if [ -n "$GRADLEW" ]; then
-            DIR=$(dirname "$GRADLEW")
-            chmod +x "$GRADLEW"
-            echo "comando=$GRADLEW" >> "$GITHUB_OUTPUT"
-            echo "diretorio=$DIR" >> "$GITHUB_OUTPUT"
-            echo "wrapper=true" >> "$GITHUB_OUTPUT"
-            exit 0
+          if [ ! -f "mentex-package/www/index.html" ]; then
+            ZIP=$(find . -maxdepth 2 -name "MENTEX-5.0-Nova-Plataforma.zip" | head -n 1)
+
+            if [ -z "$ZIP" ]; then
+              echo "ZIP do MENTEX não encontrado!"
+              exit 1
+            fi
+
+            mkdir -p extracted
+            unzip -o "$ZIP" -d extracted
           fi
 
-          BUILD=$(find . -type f \( -name build.gradle -o -name build.gradle.kts \) | head -n 1)
+          WWW=$(find . -type f -path "*/www/index.html" | head -n 1)
 
-          if [ -z "$BUILD" ]; then
-            echo "ERRO: Código-fonte Android não encontrado."
+          if [ -z "$WWW" ]; then
+            echo "index.html não encontrado!"
             exit 1
           fi
 
-          DIR=$(dirname "$BUILD")
-          echo "diretorio=$DIR" >> "$GITHUB_OUTPUT"
-          echo "wrapper=false" >> "$GITHUB_OUTPUT"
+          echo "WWW=$(dirname "$WWW")" >> "$GITHUB_ENV"
 
-      - name: Configurar Gradle 8.7
-        if: steps.projeto.outputs.wrapper == 'false'
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.7'
-
-      - name: Compilar APK
+      - name: Criar projeto Android
         run: |
-          cd "${{ steps.projeto.outputs.diretorio }}"
+          cordova create mentex-build br.com.mentex.app MENTEX
 
-          if [ "${{ steps.projeto.outputs.wrapper }}" = "true" ]; then
-            "${{ github.workspace }}/${{ steps.projeto.outputs.comando }}" assembleDebug --no-daemon
-          else
-            gradle assembleDebug --no-daemon
-          fi
+          rm -rf mentex-build/www
+          cp -r "$WWW" mentex-build/www
+
+          cd mentex-build
+
+          cordova platform add android@14.0.1
+
+      - name: Compilar MENTEX APK
+        run: |
+          cd mentex-build
+          cordova build android --debug
 
       - name: Preparar APK
         run: |
           mkdir -p apk-final
-          APK=$(find . -type f -path "*/build/outputs/apk/*/*.apk" | head -n 1)
+
+          APK=$(find mentex-build/platforms/android \
+            -type f -name "*debug.apk" | head -n 1)
 
           if [ -z "$APK" ]; then
             echo "APK não encontrado!"
             exit 1
           fi
 
-          cp "$APK" apk-final/MENTEX-V4.6.6.apk
+          cp "$APK" apk-final/MENTEX-V5.0.apk
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V4.6.6-APK
-          path: apk-final/MENTEX-V4.6.6.apk
+          name: MENTEX-V5.0-APK
+          path: apk-final/MENTEX-V5.0.apk
           retention-days: 7
           
