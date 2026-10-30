@@ -13,6 +13,10 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 30
 
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
     steps:
       - name: Baixar repositório
         uses: actions/checkout@v4
@@ -23,31 +27,46 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Android SDK e aceitar licenças
-        uses: android-actions/setup-android@v3
-
-      - name: Aceitar licenças Android automaticamente
+      - name: Configurar Android SDK sem ação interativa
         run: |
-          yes | sdkmanager --licenses || true
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
+          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "$ANDROID_HOME/build-tools/35.0.0" >> $GITHUB_PATH
+
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+
+          if [ ! -f "$SDKMANAGER" ]; then
+            SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | sort -V | tail -1)
+          fi
+
+          if [ -z "$SDKMANAGER" ]; then
+            echo "ERRO: sdkmanager não encontrado."
+            exit 1
+          fi
+
+          echo "SDKMANAGER=$SDKMANAGER" >> $GITHUB_ENV
+
+      - name: Aceitar licenças e instalar ferramentas
+        run: |
+          set +o pipefail
+          yes | "$SDKMANAGER" --licenses || true
+          "$SDKMANAGER" --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Baixar APKTool
         run: |
           curl -L https://github.com/iBotPeaches/Apktool/releases/download/v2.11.1/apktool_2.11.1.jar -o apktool.jar
 
-      - name: Localizar APK MENTEX V5.0 correto
+      - name: Localizar APK compatível
         run: |
           python3 - <<'PY'
-          import zipfile, glob, shutil, os, sys
+          import zipfile, glob, shutil, sys
 
-          arquivos = glob.glob("**/*.apk", recursive=True)
           candidatos = []
 
-          for arquivo in arquivos:
+          for arquivo in glob.glob("**/*.apk", recursive=True):
               try:
                   with zipfile.ZipFile(arquivo) as z:
-                      nomes = z.namelist()
-                      if "assets/www/index.html" in nomes:
+                      if "assets/www/index.html" in z.namelist():
                           candidatos.append(arquivo)
                           print("APK compatível:", arquivo)
               except Exception:
@@ -66,19 +85,13 @@ jobs:
         run: |
           java -jar apktool.jar d base.apk -o projeto -f
 
-      - name: Verificar arquivos do aplicativo
+      - name: Conferir arquivos
         run: |
           test -f projeto/assets/www/index.html || {
             echo "ERRO: index.html não encontrado."
             exit 1
           }
-
-          echo "Estrutura do aplicativo encontrada."
-
-      - name: Preparar APK
-        run: |
-          mkdir -p saida
-          cp -r projeto saida/projeto
+          echo "Arquivos do MENTEX encontrados."
 
       - name: Gerar APK
         run: |
@@ -87,7 +100,6 @@ jobs:
       - name: Criar chave de assinatura
         run: |
           keytool -genkeypair \
-            -v \
             -keystore mentex.jks \
             -alias mentex \
             -keyalg RSA \
@@ -99,9 +111,7 @@ jobs:
 
       - name: Alinhar e assinar APK
         run: |
-          zipalign -f -v 4 \
-            MENTEX-V5.1-unsigned.apk \
-            MENTEX-V5.1-aligned.apk
+          zipalign -f -v 4 MENTEX-V5.1-unsigned.apk MENTEX-V5.1-aligned.apk
 
           apksigner sign \
             --ks mentex.jks \
