@@ -9,9 +9,9 @@ permissions:
 
 jobs:
   build:
-    name: Compilar MENTEX V5.1
+    name: Atualizar MENTEX V5.1
     runs-on: ubuntu-22.04
-    timeout-minutes: 20
+    timeout-minutes: 25
 
     steps:
       - name: Baixar projeto
@@ -23,83 +23,89 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Localizar arquivos
-        run: |
-          set -e
-
-          APK=$(find . -type f -iname "*.apk" \
-            ! -iname "*unsigned*" \
-            ! -iname "*aligned*" | head -1)
-
-          if [ -z "$APK" ]; then
-            echo "ERRO: APK não encontrado"
-            exit 1
-          fi
-
-          echo "APK encontrado: $APK"
-
-          if [ "$APK" != "./base.apk" ]; then
-            cp "$APK" base.apk
-          fi
-
-          ICON=$(find . -type f -iname "mentex_icon.png" | head -1)
-
-          if [ -z "$ICON" ]; then
-            echo "ERRO: Ícone não encontrado"
-            exit 1
-          fi
-
-          if [ "$ICON" != "./mentex_icon.png" ]; then
-            cp "$ICON" mentex_icon.png
-          fi
-
-          IMG=$(find . -type f \
-            \( -iname "*.jpg" -o -iname "*.jpeg" \) \
-            | head -1)
-
-          if [ -n "$IMG" ]; then
-            if [ "$IMG" != "./opening_first.jpg" ]; then
-              cp "$IMG" opening_first.jpg
-            fi
-          else
-            echo "Imagem JPG não encontrada. Usando ícone como alternativa."
-            cp mentex_icon.png opening_first.png
-          fi
-
-          echo "Arquivos preparados!"
-
       - name: Instalar APKTool
         run: |
           curl -fL \
           https://github.com/iBotPeaches/Apktool/releases/download/v2.11.1/apktool_2.11.1.jar \
           -o apktool.jar
 
+      - name: Encontrar APK compatível
+        run: |
+          python3 - <<'PY'
+          import zipfile
+          import glob
+          import os
+
+          candidatos = glob.glob("**/*.apk", recursive=True)
+          candidatos = [
+              x for x in candidatos
+              if "unsigned" not in x.lower()
+              and "aligned" not in x.lower()
+          ]
+
+          escolhidos = []
+
+          for apk in candidatos:
+              try:
+                  with zipfile.ZipFile(apk) as z:
+                      nomes = z.namelist()
+                      paginas = [
+                          n for n in nomes
+                          if n.endswith("/index.html")
+                          and n.startswith("assets/")
+                      ]
+
+                      if paginas and "assets/www/index.html" in paginas:
+                          prioridade = 0 if "v5.0" in apk.lower() else 1
+                          escolhidos.append((prioridade, apk))
+                          print("APK compatível:", apk)
+              except Exception:
+                  pass
+
+          if not escolhidos:
+              raise Exception(
+                  "Nenhum APK com assets/www/index.html encontrado. "
+                  "Adicione o MENTEX V5.0 ao repositório."
+              )
+
+          escolhidos.sort()
+          apk = escolhidos[0][1]
+
+          import shutil
+          shutil.copy2(apk, "base.apk")
+
+          print("APK selecionado:", apk)
+          PY
+
       - name: Extrair aplicativo
         run: |
           java -jar apktool.jar d -f base.apk -o projeto
 
-      - name: Atualizar MENTEX
+      - name: Atualizar tela e compartilhamento
         run: |
           python3 - <<'PY'
           import os
           import shutil
 
-          p = "projeto/assets/www/index.html"
+          raiz = "projeto/assets/www"
+          arquivo = raiz + "/index.html"
 
-          if not os.path.exists(p):
-              raise Exception("index.html não encontrado")
+          if not os.path.isfile(arquivo):
+              raise Exception("index.html não encontrado após extração")
 
-          with open(p, encoding="utf-8") as f:
+          with open(arquivo, encoding="utf-8") as f:
               h = f.read()
 
-          inicio = h.index('<div id="opening"')
-          fim = h.index('<audio id="introMusic"', inicio)
+          inicio = h.find('<div id="opening"')
+          audio = h.find('<audio id="introMusic"', inicio)
+
+          if inicio < 0 or audio < 0:
+              raise Exception("Estrutura da tela inicial incompatível")
 
           tela = """
           <div id="opening" class="opening mentex-v51">
             <img src="opening_first.jpg"
                  class="welcome-image"
-                 onerror="this.src='opening_first.png'"
                  alt="Bem-vindo ao MENTEX">
 
             <button class="welcome-button"
@@ -109,7 +115,7 @@ jobs:
           </div>
           """
 
-          h = h[:inicio] + tela + h[fim:]
+          h = h[:inicio] + tela + h[audio:]
 
           css = """
           <style id="mentex-v51">
@@ -119,8 +125,8 @@ jobs:
             width:100%!important;
             height:100%!important;
             height:100dvh!important;
-            margin:0!important;
             padding:0!important;
+            margin:0!important;
             overflow:hidden!important;
             background:#031a53!important;
             z-index:99999!important;
@@ -146,6 +152,7 @@ jobs:
           }
 
           .share-mentex {
+            display:block!important;
             width:100%!important;
             padding:14px!important;
             margin:12px 0!important;
@@ -162,7 +169,7 @@ jobs:
           marcador = '<button class="secondary home-ad"'
 
           if marcador not in h:
-              raise Exception("Local do botão de compartilhamento não encontrado")
+              raise Exception("Botão original da tela inicial não encontrado")
 
           botao = """
           <button class="secondary share-mentex"
@@ -171,7 +178,8 @@ jobs:
           </button>
           """
 
-          h = h.replace(marcador, botao + marcador, 1)
+          if "function shareMentex()" not in h:
+              h = h.replace(marcador, botao + marcador, 1)
 
           js = """
           function shareMentex() {
@@ -198,17 +206,21 @@ jobs:
 
           h = h[:pos] + js + h[pos:]
 
-          with open(p, "w", encoding="utf-8") as f:
+          with open(arquivo, "w", encoding="utf-8") as f:
               f.write(h)
 
-          destino = "projeto/assets/www"
-          os.makedirs(destino, exist_ok=True)
+          imagem = "opening_first.jpg"
 
-          for nome in ("opening_first.jpg", "opening_first.png"):
-              if os.path.exists(nome):
-                  shutil.copy2(nome, destino + "/" + nome)
+          if not os.path.isfile(raiz + "/" + imagem):
+              if os.path.isfile("opening_first.jpg"):
+                  shutil.copy2("opening_first.jpg", raiz + "/" + imagem)
+              else:
+                  raise Exception(
+                      "Imagem opening_first.jpg ausente. "
+                      "Coloque a imagem de boas-vindas no repositório."
+                  )
 
-          print("MENTEX V5.1 atualizado!")
+          print("Tela inicial e compartilhamento atualizados!")
           PY
 
       - name: Reconstruir APK
@@ -227,10 +239,10 @@ jobs:
             -validity 10000 \
             -dname "CN=MENTEX,O=MENTEX,C=BR"
 
-      - name: Configurar Android SDK
+      - name: Configurar Android
         uses: android-actions/setup-android@v3
 
-      - name: Alinhar e assinar
+      - name: Alinhar e assinar APK
         run: |
           sdkmanager "build-tools;35.0.0"
 
@@ -250,7 +262,7 @@ jobs:
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V5.1-FINAL
+          name: MENTEX-V5.1
           path: MENTEX-V5.1.apk
           if-no-files-found: error
           
