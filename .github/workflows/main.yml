@@ -1,19 +1,15 @@
 
-name: MENTEX V5.0 - Gerar APK
+name: MENTEX V5.1 - Gerar APK
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-      - master
 
 permissions:
   contents: read
 
 jobs:
   build:
-    name: Compilar MENTEX 5.0
+    name: Compilar MENTEX V5.1
     runs-on: ubuntu-22.04
 
     steps:
@@ -21,89 +17,218 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
       - name: Configurar Android SDK
-        uses: android-actions/setup-android@v4
-        with:
-          packages: 'platform-tools'
-          accept-android-sdk-licenses: true
-          log-accepted-android-sdk-licenses: false
+        uses: android-actions/setup-android@v3
 
-      - name: Instalar componentes Android
+      - name: Instalar ferramentas
         run: |
-          sdkmanager "platforms;android-35"
-          sdkmanager "build-tools;35.0.0"
+          sdkmanager "platform-tools" "build-tools;35.0.0"
+          echo "$ANDROID_HOME/build-tools/35.0.0" >> $GITHUB_PATH
 
-      - name: Instalar Cordova
-        run: npm install -g cordova
-
-      - name: Extrair arquivos MENTEX
-        shell: bash
+      - name: Verificar arquivos
         run: |
-          set -e
+          test -f MENTEX-V5.0.apk
+          test -f opening_first.jpg
+          test -f mentex_icon.png
 
-          mkdir -p extracted
+      - name: Instalar APKTool
+        run: |
+          curl -L https://github.com/iBotPeaches/Apktool/releases/download/v2.11.1/apktool_2.11.1.jar -o apktool.jar
+          echo '#!/bin/bash
+          java -jar "$GITHUB_WORKSPACE/apktool.jar" "$@"' > apktool
+          chmod +x apktool
 
-          ZIP=$(find . -maxdepth 3 \
-            -name "MENTEX-5.0-Nova-Plataforma.zip" | head -n 1)
+      - name: Extrair aplicativo
+        run: |
+          ./apktool d -f MENTEX-V5.0.apk -o projeto
 
-          if [ -n "$ZIP" ]; then
-            unzip -o "$ZIP" -d extracted
+      - name: Aplicar atualização V5.1
+        run: |
+          python3 - <<'PY'
+          import os, shutil
+
+          base = "projeto/assets/www"
+          arquivo = base + "/index.html"
+
+          with open(arquivo, encoding="utf-8") as f:
+              html = f.read()
+
+          inicio = html.index('<div id="opening" class="opening">')
+          fim = html.index('</div><audio id="introMusic"', inicio) + 6
+
+          nova_tela = """
+          <div id="opening" class="opening welcome-fullscreen">
+            <img class="welcome-art"
+                 src="opening_first.jpg"
+                 alt="Bem-vindo ao MENTEX">
+            <button class="welcome-start-hit"
+                    type="button"
+                    onclick="enterGame()"
+                    aria-label="Começar o jogo"></button>
+          </div>
+          """
+
+          html = html[:inicio] + nova_tela + html[fim:]
+
+          marcador = '<button class="secondary home-ad" onclick="watchAd()">'
+
+          botao = """
+          <button class="secondary share-game-btn"
+          onclick="shareMentex()">
+          📲 COMPARTILHAR MENTEX PELO WHATSAPP
+          </button>
+          """
+
+          if 'shareMentex()' not in html:
+              if marcador not in html:
+                  raise Exception("Botão de compartilhamento não encontrado")
+              html = html.replace(marcador, botao + marcador, 1)
+
+          estilo = """
+          <style id="mentex-v51">
+          .welcome-fullscreen {
+            position:fixed!important;
+            inset:0!important;
+            width:100%!important;
+            height:100%!important;
+            height:100dvh!important;
+            padding:0!important;
+            margin:0!important;
+            overflow:hidden!important;
+            background:#031a53!important;
+            z-index:9999!important;
+          }
+          .welcome-art {
+            position:absolute!important;
+            inset:0!important;
+            width:100%!important;
+            height:100%!important;
+            object-fit:fill!important;
+          }
+          .welcome-start-hit {
+            position:absolute!important;
+            left:19%!important;
+            bottom:5.3%!important;
+            width:62%!important;
+            height:8.5%!important;
+            border:0!important;
+            border-radius:28px!important;
+            background:transparent!important;
+            cursor:pointer!important;
+          }
+          .share-game-btn {
+            width:100%!important;
+            margin-top:10px!important;
+            background:#079447!important;
+            color:white!important;
+            border:2px solid #8affb8!important;
+            border-radius:16px!important;
+            padding:13px!important;
+            font-weight:bold!important;
+          }
+          </style>
+          """
+
+          html = html.replace("</head>", estilo + "</head>", 1)
+
+          js = """
+          function shareMentex() {
+            const mensagem =
+              '🧠 Conheça o MENTEX! Desafie sua mente e exercite seu cérebro!';
+
+            const link =
+              'https://wa.me/?text=' +
+              encodeURIComponent(mensagem);
+
+            if (navigator.share) {
+              navigator.share({
+                title: 'MENTEX',
+                text: mensagem
+              }).catch(function(){});
+            } else {
+              window.open(link, '_system');
+            }
+          }
+          """
+
+          if 'function shareMentex()' not in html:
+              pos = html.rfind("</script>")
+              if pos < 0:
+                  raise Exception("Script principal não encontrado")
+              html = html[:pos] + js + html[pos:]
+
+          with open(arquivo, "w", encoding="utf-8") as f:
+              f.write(html)
+
+          shutil.copy(
+              "opening_first.jpg",
+              base + "/opening_first.jpg"
+          )
+
+          # Atualizar imagens do ícone do aplicativo
+          for raiz, dirs, arquivos in os.walk("projeto/res"):
+              for nome in arquivos:
+                  if nome in ("ic_launcher.png", "ic_launcher_round.png"):
+                      destino = os.path.join(raiz, nome)
+                      shutil.copy("mentex_icon.png", destino)
+
+          print("MENTEX V5.1 atualizado!")
+          PY
+
+      - name: Reconstruir APK
+        run: |
+          ./apktool b projeto -o MENTEX-V5.1-unsigned.apk
+
+      - name: Preparar assinatura
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > mentex.jks
+            echo "ALIAS=$KEY_ALIAS" >> $GITHUB_ENV
+            echo "STOREPASS=$KEYSTORE_PASSWORD" >> $GITHUB_ENV
+            echo "KEYPASS=$KEY_PASSWORD" >> $GITHUB_ENV
+          else
+            keytool -genkeypair -v \
+              -keystore mentex.jks \
+              -alias mentex \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass mentex123 \
+              -keypass mentex123 \
+              -dname "CN=MENTEX,O=MENTEX,C=BR"
+            echo "ALIAS=mentex" >> $GITHUB_ENV
+            echo "STOREPASS=mentex123" >> $GITHUB_ENV
+            echo "KEYPASS=mentex123" >> $GITHUB_ENV
           fi
 
-          WWW=$(find . -type f \
-            -path "*/www/index.html" | head -n 1)
-
-          if [ -z "$WWW" ]; then
-            echo "ERRO: www/index.html não encontrado!"
-            exit 1
-          fi
-
-          echo "WWW=$(dirname "$WWW")" >> "$GITHUB_ENV"
-
-      - name: Criar projeto Android
+      - name: Assinar APK
         run: |
-          cordova create mentex-build br.com.mentex.app MENTEX
+          apksigner sign \
+            --ks mentex.jks \
+            --ks-key-alias "$ALIAS" \
+            --ks-pass "pass:$STOREPASS" \
+            --key-pass "pass:$KEYPASS" \
+            --out MENTEX-V5.1.apk \
+            MENTEX-V5.1-unsigned.apk
 
-          rm -rf mentex-build/www
-          cp -r "$WWW" mentex-build/www
-
-          cd mentex-build
-          cordova platform add android@14.0.1
-
-      - name: Compilar APK
+      - name: Verificar APK
         run: |
-          cd mentex-build
-          cordova build android --debug
-
-      - name: Preparar APK
-        run: |
-          set -e
-          mkdir -p apk-final
-
-          APK=$(find mentex-build/platforms/android \
-            -type f -name "*debug.apk" | head -n 1)
-
-          if [ -z "$APK" ]; then
-            echo "ERRO: APK não encontrado!"
-            exit 1
-          fi
-
-          cp "$APK" apk-final/MENTEX-V5.0.apk
+          apksigner verify --verbose MENTEX-V5.1.apk
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V5.0-APK
-          path: apk-final/MENTEX-V5.0.apk
-          retention-days: 7
+          name: MENTEX-V5.1-APK
+          path: MENTEX-V5.1.apk
+          if-no-files-found: error
           
