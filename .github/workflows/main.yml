@@ -9,12 +9,12 @@ permissions:
 
 jobs:
   build:
-    name: Atualizar MENTEX V5.1
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    name: Compilar MENTEX V5.1
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
 
     steps:
-      - name: Baixar arquivos
+      - name: Baixar projeto
         uses: actions/checkout@v4
 
       - name: Configurar Java
@@ -23,237 +23,213 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Verificar arquivos necessários
+      - name: Localizar APK e imagens
         run: |
-          test -f MENTEX-V5.0.apk
-          test -f opening_first.jpg
-          test -f mentex_icon.png
-          echo "Arquivos encontrados!"
+          echo "Procurando APK..."
+          APK=$(find . -type f -iname "*.apk" | head -n 1)
 
-      - name: Atualizar arquivos internos do MENTEX
+          if [ -z "$APK" ]; then
+            echo "ERRO: Coloque o APK V5.0 no repositório."
+            exit 1
+          fi
+
+          echo "APK encontrado: $APK"
+          cp "$APK" base.apk
+
+          echo "Procurando imagens..."
+          find . -type f | grep -Ei '\.(jpg|jpeg|png)$' || true
+
+          IMG=$(find . -type f -iname "opening_first.jpg" | head -n 1)
+          ICON=$(find . -type f -iname "mentex_icon.png" | head -n 1)
+
+          if [ -z "$IMG" ] || [ -z "$ICON" ]; then
+            echo "ERRO: Faltam as imagens de atualização."
+            exit 1
+          fi
+
+          cp "$IMG" opening_first.jpg
+          cp "$ICON" mentex_icon.png
+
+      - name: Instalar APKTool
+        run: |
+          curl -fL \
+          https://github.com/iBotPeaches/Apktool/releases/download/v2.11.1/apktool_2.11.1.jar \
+          -o apktool.jar
+
+      - name: Extrair aplicativo
+        run: |
+          java -jar apktool.jar d -f base.apk -o projeto
+
+      - name: Atualizar MENTEX
         run: |
           python3 - <<'PY'
-          import zipfile
-          import os
-          import shutil
+          import os, shutil
 
-          apk = "MENTEX-V5.0.apk"
-          saida = "MENTEX-V5.1-unsigned.apk"
+          p = "projeto/assets/www/index.html"
 
-          with zipfile.ZipFile(apk, "r") as origem:
-              arquivos = {
-                  item.filename: (item, origem.read(item.filename))
-                  for item in origem.infolist()
-              }
+          if not os.path.isfile(p):
+              raise Exception("Arquivo principal do MENTEX não encontrado")
 
-          caminho = "assets/www/index.html"
+          with open(p, encoding="utf-8") as f:
+              h = f.read()
 
-          if caminho not in arquivos:
-              raise Exception("index.html não encontrado no APK")
+          inicio = h.index('<div id="opening"')
+          fim = h.index('<audio id="introMusic"', inicio)
 
-          info, dados = arquivos[caminho]
-          html = dados.decode("utf-8")
-
-          inicio = html.index('<div id="opening"')
-          audio = html.index('<audio id="introMusic"', inicio)
-
-          nova_tela = """
-          <div id="opening" class="opening mentex-v51">
-            <img class="mentex-welcome"
-                 src="opening_first.jpg"
+          tela = """
+          <div id="opening" class="opening mentex-welcome">
+            <img src="opening_first.jpg"
+                 class="welcome-image"
                  alt="Bem-vindo ao MENTEX">
 
-            <button class="mentex-start"
+            <button class="welcome-button"
                     onclick="enterGame()"
-                    aria-label="Começar o MENTEX">
+                    aria-label="Começar">
             </button>
           </div>
           """
 
-          html = html[:inicio] + nova_tela + html[audio:]
+          h = h[:inicio] + tela + h[fim:]
 
           css = """
-          <style id="mentex-v51-style">
-          .mentex-v51 {
+          <style id="mentex-v51">
+          .mentex-welcome {
             position:fixed!important;
             inset:0!important;
             width:100%!important;
             height:100%!important;
             height:100dvh!important;
-            padding:0!important;
             margin:0!important;
+            padding:0!important;
             overflow:hidden!important;
             background:#031a53!important;
             z-index:99999!important;
           }
-
-          .mentex-welcome {
+          .welcome-image {
             position:absolute!important;
             inset:0!important;
             width:100%!important;
             height:100%!important;
             object-fit:fill!important;
           }
-
-          .mentex-start {
+          .welcome-button {
             position:absolute!important;
             left:19%!important;
-            bottom:6.5%!important;
+            bottom:5%!important;
             width:62%!important;
-            height:6.3%!important;
+            height:9%!important;
+            background:transparent!important;
             border:0!important;
             border-radius:30px!important;
-            background:transparent!important;
-            cursor:pointer!important;
           }
-
-          .share-game-btn {
+          .share-mentex {
             display:block!important;
             width:100%!important;
             padding:14px!important;
-            margin-top:12px!important;
-            border-radius:16px!important;
-            background:linear-gradient(135deg,#16d66c,#087d43)!important;
+            margin:12px 0!important;
+            background:#079447!important;
             color:white!important;
-            font-weight:900!important;
+            border-radius:15px!important;
+            font-weight:bold!important;
           }
           </style>
           """
 
-          html = html.replace("</head>", css + "</head>", 1)
+          h = h.replace("</head>", css + "</head>", 1)
 
           botao = """
-          <button class="secondary share-game-btn"
-                  onclick="shareMentex()">
-            📲 COMPARTILHAR MENTEX PELO WHATSAPP
+          <button class="secondary share-mentex"
+          onclick="shareMentex()">
+          📲 COMPARTILHAR PELO WHATSAPP
           </button>
           """
 
           marcador = '<button class="secondary home-ad"'
 
-          if marcador not in html:
-              raise Exception("Não foi encontrado o local do botão na tela inicial")
+          if marcador not in h:
+              raise Exception("Local do botão de compartilhamento não encontrado")
 
-          html = html.replace(marcador, botao + marcador, 1)
+          h = h.replace(marcador, botao + marcador, 1)
 
-          javascript = """
+          js = """
           function shareMentex() {
-            const mensagem =
-              '🧠 Conheça o MENTEX! Desafie sua mente, exercite seu cérebro e divirta-se!';
+            const msg =
+              '🧠 Venha jogar MENTEX! Desafie seu cérebro!';
 
-            const whatsapp =
+            const url =
               'https://wa.me/?text=' +
-              encodeURIComponent(mensagem);
+              encodeURIComponent(msg);
 
             if (navigator.share) {
               navigator.share({
                 title: 'MENTEX',
-                text: mensagem
+                text: msg
               }).catch(function() {
-                window.open(whatsapp, '_system');
+                window.location.href = url;
               });
             } else {
-              window.open(whatsapp, '_system');
+              window.location.href = url;
             }
           }
           """
 
-          posicao = html.rfind("</script>")
+          pos = h.rfind("</script>")
+          if pos < 0:
+              raise Exception("Script principal não encontrado")
 
-          if posicao < 0:
-              raise Exception("Script do aplicativo não encontrado")
+          h = h[:pos] + js + h[pos:]
 
-          html = html[:posicao] + javascript + html[posicao:]
+          with open(p, "w", encoding="utf-8") as f:
+              f.write(h)
 
-          arquivos[caminho] = (info, html.encode("utf-8"))
-
-          arquivos["assets/www/opening_first.jpg"] = (
-              None,
-              open("opening_first.jpg", "rb").read()
+          shutil.copy(
+              "opening_first.jpg",
+              "projeto/assets/www/opening_first.jpg"
           )
 
-          icone = open("mentex_icon.png", "rb").read()
-
-          for nome, (info, dados) in list(arquivos.items()):
-              if nome == "assets/www/mentex_icon.png":
-                  arquivos[nome] = (info, icone)
-
-              elif nome.startswith("res/mipmap-") and nome.endswith(
-                  ("/ic_launcher.png", "/ic_launcher_round.png",
-                   "/ic_launcher_foreground.png")
-              ):
-                  arquivos[nome] = (info, icone)
-
-          with zipfile.ZipFile(saida, "w") as destino:
-              for nome, (info, dados) in arquivos.items():
-
-                  if nome.upper().startswith("META-INF/") and nome.upper().endswith(
-                      (".RSA", ".DSA", ".EC", ".SF")
-                  ):
-                      continue
-
-                  if info is None:
-                      destino.writestr(nome, dados)
-                  else:
-                      destino.writestr(info, dados)
-
-          print("Atualização interna concluída!")
-          print("Arquivo MENTEX V5.1 preparado!")
+          print("Atualização V5.1 aplicada!")
           PY
 
-      - name: Preparar assinatura
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+      - name: Reconstruir aplicativo
         run: |
-          if [ -n "$KEYSTORE_BASE64" ]; then
-            echo "$KEYSTORE_BASE64" | base64 -d > mentex.jks
-            ALIAS="$KEY_ALIAS"
-            STOREPASS="$KEYSTORE_PASSWORD"
-            KEYPASS="$KEY_PASSWORD"
-          else
-            keytool -genkeypair -v \
-              -keystore mentex.jks \
-              -alias mentex \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -storepass mentex123 \
-              -keypass mentex123 \
-              -dname "CN=MENTEX,O=MENTEX,C=BR"
+          java -jar apktool.jar b projeto -o MENTEX-unsigned.apk
 
-            ALIAS=mentex
-            STOREPASS=mentex123
-            KEYPASS=mentex123
-          fi
-
-          echo "ALIAS=$ALIAS" >> $GITHUB_ENV
-          echo "STOREPASS=$STOREPASS" >> $GITHUB_ENV
-          echo "KEYPASS=$KEYPASS" >> $GITHUB_ENV
-
-      - name: Assinar aplicativo
+      - name: Configurar assinatura
         run: |
-          jarsigner \
-            -keystore mentex.jks \
-            -storepass "$STOREPASS" \
-            -keypass "$KEYPASS" \
-            -sigalg SHA256withRSA \
-            -digestalg SHA-256 \
-            -signedjar MENTEX-V5.1.apk \
-            MENTEX-V5.1-unsigned.apk \
-            "$ALIAS"
+          keytool -genkeypair \
+          -keystore mentex.jks \
+          -storepass mentex123 \
+          -keypass mentex123 \
+          -alias mentex \
+          -keyalg RSA \
+          -keysize 2048 \
+          -validity 10000 \
+          -dname "CN=MENTEX,O=MENTEX,C=BR"
 
-      - name: Verificar assinatura
+      - name: Preparar Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Assinar APK
         run: |
-          jarsigner -verify -verbose MENTEX-V5.1.apk
-          test -s MENTEX-V5.1.apk
+          sdkmanager "build-tools;35.0.0"
+
+          $ANDROID_HOME/build-tools/35.0.0/zipalign \
+          -f -p 4 MENTEX-unsigned.apk MENTEX-aligned.apk
+
+          $ANDROID_HOME/build-tools/35.0.0/apksigner sign \
+          --ks mentex.jks \
+          --ks-key-alias mentex \
+          --ks-pass pass:mentex123 \
+          --key-pass pass:mentex123 \
+          --out MENTEX-V5.1.apk \
+          MENTEX-aligned.apk
+
+          $ANDROID_HOME/build-tools/35.0.0/apksigner verify MENTEX-V5.1.apk
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V5.1-FINAL
+          name: MENTEX-V5.1
           path: MENTEX-V5.1.apk
           if-no-files-found: error
           
