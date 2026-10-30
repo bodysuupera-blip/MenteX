@@ -31,33 +31,42 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Aceitar licenças Android
+        shell: bash
+        run: |
+          set +e
+          yes | sdkmanager --licenses
+          RESULT=$?
+          set -e
+          echo "Licenças Android processadas."
+          sdkmanager --version
+
       - name: Instalar Android SDK
-        uses: android-actions/setup-android@v3
+        run: |
+          sdkmanager "platform-tools"
+          sdkmanager "platforms;android-35"
+          sdkmanager "build-tools;35.0.0"
 
       - name: Instalar Cordova
         run: npm install -g cordova
 
-      - name: Preparar arquivos do MENTEX
+      - name: Extrair arquivos MENTEX
         shell: bash
         run: |
           set -e
 
-          if [ ! -f "mentex-package/www/index.html" ]; then
-            ZIP=$(find . -maxdepth 2 -name "MENTEX-5.0-Nova-Plataforma.zip" | head -n 1)
+          mkdir -p extracted
 
-            if [ -z "$ZIP" ]; then
-              echo "ZIP do MENTEX não encontrado!"
-              exit 1
-            fi
+          ZIP=$(find . -maxdepth 3 -name "MENTEX-5.0-Nova-Plataforma.zip" | head -n 1)
 
-            mkdir -p extracted
+          if [ -n "$ZIP" ]; then
             unzip -o "$ZIP" -d extracted
           fi
 
           WWW=$(find . -type f -path "*/www/index.html" | head -n 1)
 
           if [ -z "$WWW" ]; then
-            echo "index.html não encontrado!"
+            echo "ERRO: www/index.html não encontrado."
             exit 1
           fi
 
@@ -71,23 +80,24 @@ jobs:
           cp -r "$WWW" mentex-build/www
 
           cd mentex-build
-
           cordova platform add android@14.0.1
 
-      - name: Compilar MENTEX APK
+      - name: Compilar APK
         run: |
           cd mentex-build
           cordova build android --debug
 
       - name: Preparar APK
         run: |
+          set -e
+
           mkdir -p apk-final
 
           APK=$(find mentex-build/platforms/android \
             -type f -name "*debug.apk" | head -n 1)
 
           if [ -z "$APK" ]; then
-            echo "APK não encontrado!"
+            echo "ERRO: APK não foi gerado."
             exit 1
           fi
 
