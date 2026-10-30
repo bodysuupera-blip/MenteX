@@ -31,17 +31,17 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v3
+
       - name: Aceitar licenças Android
         shell: bash
         run: |
-          set +e
+          set +o pipefail
           yes | sdkmanager --licenses
-          RESULT=$?
-          set -e
-          echo "Licenças Android processadas."
-          sdkmanager --version
+          set -o pipefail
 
-      - name: Instalar Android SDK
+      - name: Instalar componentes Android
         run: |
           sdkmanager "platform-tools"
           sdkmanager "platforms;android-35"
@@ -57,16 +57,18 @@ jobs:
 
           mkdir -p extracted
 
-          ZIP=$(find . -maxdepth 3 -name "MENTEX-5.0-Nova-Plataforma.zip" | head -n 1)
+          ZIP=$(find . -maxdepth 3 \
+            -name "MENTEX-5.0-Nova-Plataforma.zip" | head -n 1)
 
           if [ -n "$ZIP" ]; then
             unzip -o "$ZIP" -d extracted
           fi
 
-          WWW=$(find . -type f -path "*/www/index.html" | head -n 1)
+          WWW=$(find . -type f \
+            -path "*/www/index.html" | head -n 1)
 
           if [ -z "$WWW" ]; then
-            echo "ERRO: www/index.html não encontrado."
+            echo "ERRO: arquivos www/index.html não encontrados."
             exit 1
           fi
 
@@ -90,14 +92,13 @@ jobs:
       - name: Preparar APK
         run: |
           set -e
-
           mkdir -p apk-final
 
           APK=$(find mentex-build/platforms/android \
             -type f -name "*debug.apk" | head -n 1)
 
           if [ -z "$APK" ]; then
-            echo "ERRO: APK não foi gerado."
+            echo "APK não encontrado!"
             exit 1
           fi
 
