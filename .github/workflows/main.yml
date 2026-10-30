@@ -11,10 +11,10 @@ jobs:
   build:
     name: Atualizar MENTEX V5.1
     runs-on: ubuntu-22.04
-    timeout-minutes: 25
+    timeout-minutes: 30
 
     steps:
-      - name: Baixar projeto
+      - name: Baixar repositório
         uses: actions/checkout@v4
 
       - name: Configurar Java
@@ -23,241 +23,95 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Instalar APKTool
-        run: |
-          curl -fL \
-          https://github.com/iBotPeaches/Apktool/releases/download/v2.11.1/apktool_2.11.1.jar \
-          -o apktool.jar
+      - name: Configurar Android SDK e aceitar licenças
+        uses: android-actions/setup-android@v3
 
-      - name: Encontrar APK compatível
+      - name: Aceitar licenças Android automaticamente
+        run: |
+          yes | sdkmanager --licenses || true
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Baixar APKTool
+        run: |
+          curl -L https://github.com/iBotPeaches/Apktool/releases/download/v2.11.1/apktool_2.11.1.jar -o apktool.jar
+
+      - name: Localizar APK MENTEX V5.0 correto
         run: |
           python3 - <<'PY'
-          import zipfile
-          import glob
-          import os
+          import zipfile, glob, shutil, os, sys
 
-          candidatos = glob.glob("**/*.apk", recursive=True)
-          candidatos = [
-              x for x in candidatos
-              if "unsigned" not in x.lower()
-              and "aligned" not in x.lower()
-          ]
+          arquivos = glob.glob("**/*.apk", recursive=True)
+          candidatos = []
 
-          escolhidos = []
-
-          for apk in candidatos:
+          for arquivo in arquivos:
               try:
-                  with zipfile.ZipFile(apk) as z:
+                  with zipfile.ZipFile(arquivo) as z:
                       nomes = z.namelist()
-                      paginas = [
-                          n for n in nomes
-                          if n.endswith("/index.html")
-                          and n.startswith("assets/")
-                      ]
-
-                      if paginas and "assets/www/index.html" in paginas:
-                          prioridade = 0 if "v5.0" in apk.lower() else 1
-                          escolhidos.append((prioridade, apk))
-                          print("APK compatível:", apk)
+                      if "assets/www/index.html" in nomes:
+                          candidatos.append(arquivo)
+                          print("APK compatível:", arquivo)
               except Exception:
                   pass
 
-          if not escolhidos:
-              raise Exception(
-                  "Nenhum APK com assets/www/index.html encontrado. "
-                  "Adicione o MENTEX V5.0 ao repositório."
-              )
+          if not candidatos:
+              sys.exit("ERRO: Nenhum APK com assets/www/index.html foi encontrado.")
 
-          escolhidos.sort()
-          apk = escolhidos[0][1]
-
-          import shutil
-          shutil.copy2(apk, "base.apk")
-
-          print("APK selecionado:", apk)
+          candidatos.sort(key=lambda x: ("V5.0" not in x.upper(), len(x)))
+          escolhido = candidatos[0]
+          shutil.copy2(escolhido, "base.apk")
+          print("APK escolhido:", escolhido)
           PY
 
       - name: Extrair aplicativo
         run: |
-          java -jar apktool.jar d -f base.apk -o projeto
+          java -jar apktool.jar d base.apk -o projeto -f
 
-      - name: Atualizar tela e compartilhamento
+      - name: Verificar arquivos do aplicativo
         run: |
-          python3 - <<'PY'
-          import os
-          import shutil
-
-          raiz = "projeto/assets/www"
-          arquivo = raiz + "/index.html"
-
-          if not os.path.isfile(arquivo):
-              raise Exception("index.html não encontrado após extração")
-
-          with open(arquivo, encoding="utf-8") as f:
-              h = f.read()
-
-          inicio = h.find('<div id="opening"')
-          audio = h.find('<audio id="introMusic"', inicio)
-
-          if inicio < 0 or audio < 0:
-              raise Exception("Estrutura da tela inicial incompatível")
-
-          tela = """
-          <div id="opening" class="opening mentex-v51">
-            <img src="opening_first.jpg"
-                 class="welcome-image"
-                 alt="Bem-vindo ao MENTEX">
-
-            <button class="welcome-button"
-                    onclick="enterGame()"
-                    aria-label="Começar">
-            </button>
-          </div>
-          """
-
-          h = h[:inicio] + tela + h[audio:]
-
-          css = """
-          <style id="mentex-v51">
-          .mentex-v51 {
-            position:fixed!important;
-            inset:0!important;
-            width:100%!important;
-            height:100%!important;
-            height:100dvh!important;
-            padding:0!important;
-            margin:0!important;
-            overflow:hidden!important;
-            background:#031a53!important;
-            z-index:99999!important;
+          test -f projeto/assets/www/index.html || {
+            echo "ERRO: index.html não encontrado."
+            exit 1
           }
 
-          .welcome-image {
-            position:absolute!important;
-            inset:0!important;
-            width:100%!important;
-            height:100%!important;
-            object-fit:fill!important;
-          }
+          echo "Estrutura do aplicativo encontrada."
 
-          .welcome-button {
-            position:absolute!important;
-            left:19%!important;
-            bottom:5%!important;
-            width:62%!important;
-            height:9%!important;
-            border:0!important;
-            border-radius:30px!important;
-            background:transparent!important;
-          }
-
-          .share-mentex {
-            display:block!important;
-            width:100%!important;
-            padding:14px!important;
-            margin:12px 0!important;
-            background:#079447!important;
-            color:white!important;
-            border-radius:15px!important;
-            font-weight:bold!important;
-          }
-          </style>
-          """
-
-          h = h.replace("</head>", css + "</head>", 1)
-
-          marcador = '<button class="secondary home-ad"'
-
-          if marcador not in h:
-              raise Exception("Botão original da tela inicial não encontrado")
-
-          botao = """
-          <button class="secondary share-mentex"
-          onclick="shareMentex()">
-          📲 COMPARTILHAR PELO WHATSAPP
-          </button>
-          """
-
-          if "function shareMentex()" not in h:
-              h = h.replace(marcador, botao + marcador, 1)
-
-          js = """
-          function shareMentex() {
-            const msg = '🧠 Conheça o MENTEX! Desafie seu cérebro!';
-            const url = 'https://wa.me/?text=' + encodeURIComponent(msg);
-
-            if (navigator.share) {
-              navigator.share({
-                title: 'MENTEX',
-                text: msg
-              }).catch(function() {
-                window.location.href = url;
-              });
-            } else {
-              window.location.href = url;
-            }
-          }
-          """
-
-          pos = h.rfind("</script>")
-
-          if pos < 0:
-              raise Exception("Script principal não encontrado")
-
-          h = h[:pos] + js + h[pos:]
-
-          with open(arquivo, "w", encoding="utf-8") as f:
-              f.write(h)
-
-          imagem = "opening_first.jpg"
-
-          if not os.path.isfile(raiz + "/" + imagem):
-              if os.path.isfile("opening_first.jpg"):
-                  shutil.copy2("opening_first.jpg", raiz + "/" + imagem)
-              else:
-                  raise Exception(
-                      "Imagem opening_first.jpg ausente. "
-                      "Coloque a imagem de boas-vindas no repositório."
-                  )
-
-          print("Tela inicial e compartilhamento atualizados!")
-          PY
-
-      - name: Reconstruir APK
+      - name: Preparar APK
         run: |
-          java -jar apktool.jar b projeto -o MENTEX-unsigned.apk
+          mkdir -p saida
+          cp -r projeto saida/projeto
 
-      - name: Criar assinatura
+      - name: Gerar APK
         run: |
-          keytool -genkeypair -v \
+          java -jar apktool.jar b projeto -o MENTEX-V5.1-unsigned.apk
+
+      - name: Criar chave de assinatura
+        run: |
+          keytool -genkeypair \
+            -v \
             -keystore mentex.jks \
-            -storepass mentex123 \
-            -keypass mentex123 \
             -alias mentex \
             -keyalg RSA \
             -keysize 2048 \
             -validity 10000 \
-            -dname "CN=MENTEX,O=MENTEX,C=BR"
-
-      - name: Configurar Android
-        uses: android-actions/setup-android@v3
+            -storepass mentex123 \
+            -keypass mentex123 \
+            -dname "CN=MENTEX, OU=App, O=MENTEX, L=Brasil, S=SP, C=BR"
 
       - name: Alinhar e assinar APK
         run: |
-          sdkmanager "build-tools;35.0.0"
+          zipalign -f -v 4 \
+            MENTEX-V5.1-unsigned.apk \
+            MENTEX-V5.1-aligned.apk
 
-          $ANDROID_HOME/build-tools/35.0.0/zipalign \
-            -f -p 4 MENTEX-unsigned.apk MENTEX-aligned.apk
-
-          $ANDROID_HOME/build-tools/35.0.0/apksigner sign \
+          apksigner sign \
             --ks mentex.jks \
             --ks-key-alias mentex \
             --ks-pass pass:mentex123 \
             --key-pass pass:mentex123 \
             --out MENTEX-V5.1.apk \
-            MENTEX-aligned.apk
+            MENTEX-V5.1-aligned.apk
 
-          $ANDROID_HOME/build-tools/35.0.0/apksigner verify MENTEX-V5.1.apk
+          apksigner verify MENTEX-V5.1.apk
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
