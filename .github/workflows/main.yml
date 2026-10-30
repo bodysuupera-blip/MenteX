@@ -23,32 +23,39 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Localizar APK e imagens
+      - name: Localizar arquivos
         run: |
-          echo "Procurando APK..."
-          APK=$(find . -type f -iname "*.apk" | head -n 1)
+          APK=$(find . -type f -iname "*.apk" | grep -v "unsigned" | head -1)
 
           if [ -z "$APK" ]; then
-            echo "ERRO: Coloque o APK V5.0 no repositório."
+            echo "ERRO: APK não encontrado"
             exit 1
           fi
 
-          echo "APK encontrado: $APK"
           cp "$APK" base.apk
 
-          echo "Procurando imagens..."
-          find . -type f | grep -Ei '\.(jpg|jpeg|png)$' || true
+          ICON=$(find . -type f -iname "mentex_icon.png" | head -1)
 
-          IMG=$(find . -type f -iname "opening_first.jpg" | head -n 1)
-          ICON=$(find . -type f -iname "mentex_icon.png" | head -n 1)
+          if [ -z "$ICON" ]; then
+            ICON=$(find . -type f -iname "*.png" | head -1)
+          fi
 
-          if [ -z "$IMG" ] || [ -z "$ICON" ]; then
-            echo "ERRO: Faltam as imagens de atualização."
+          if [ -z "$ICON" ]; then
+            echo "ERRO: Ícone não encontrado"
             exit 1
           fi
 
-          cp "$IMG" opening_first.jpg
           cp "$ICON" mentex_icon.png
+
+          IMG=$(find . -type f \( -iname "*.jpg" -o -iname "*.jpeg" \) | head -1)
+
+          if [ -n "$IMG" ]; then
+            cp "$IMG" opening_first.jpg
+          else
+            cp mentex_icon.png opening_first.png
+          fi
+
+          echo "Arquivos preparados"
 
       - name: Instalar APKTool
         run: |
@@ -63,12 +70,13 @@ jobs:
       - name: Atualizar MENTEX
         run: |
           python3 - <<'PY'
-          import os, shutil
+          import os
+          import shutil
 
           p = "projeto/assets/www/index.html"
 
-          if not os.path.isfile(p):
-              raise Exception("Arquivo principal do MENTEX não encontrado")
+          if not os.path.exists(p):
+              raise Exception("Não foi encontrado o arquivo index.html")
 
           with open(p, encoding="utf-8") as f:
               h = f.read()
@@ -77,9 +85,10 @@ jobs:
           fim = h.index('<audio id="introMusic"', inicio)
 
           tela = """
-          <div id="opening" class="opening mentex-welcome">
+          <div id="opening" class="opening mentex-v51">
             <img src="opening_first.jpg"
                  class="welcome-image"
+                 onerror="this.src='opening_first.png'"
                  alt="Bem-vindo ao MENTEX">
 
             <button class="welcome-button"
@@ -93,7 +102,7 @@ jobs:
 
           css = """
           <style id="mentex-v51">
-          .mentex-welcome {
+          .mentex-v51 {
             position:fixed!important;
             inset:0!important;
             width:100%!important;
@@ -105,6 +114,7 @@ jobs:
             background:#031a53!important;
             z-index:99999!important;
           }
+
           .welcome-image {
             position:absolute!important;
             inset:0!important;
@@ -112,18 +122,19 @@ jobs:
             height:100%!important;
             object-fit:fill!important;
           }
+
           .welcome-button {
             position:absolute!important;
             left:19%!important;
             bottom:5%!important;
             width:62%!important;
             height:9%!important;
-            background:transparent!important;
             border:0!important;
             border-radius:30px!important;
+            background:transparent!important;
           }
+
           .share-mentex {
-            display:block!important;
             width:100%!important;
             padding:14px!important;
             margin:12px 0!important;
@@ -137,6 +148,11 @@ jobs:
 
           h = h.replace("</head>", css + "</head>", 1)
 
+          marcador = '<button class="secondary home-ad"'
+
+          if marcador not in h:
+              raise Exception("Local do botão de compartilhamento não encontrado")
+
           botao = """
           <button class="secondary share-mentex"
           onclick="shareMentex()">
@@ -144,21 +160,12 @@ jobs:
           </button>
           """
 
-          marcador = '<button class="secondary home-ad"'
-
-          if marcador not in h:
-              raise Exception("Local do botão de compartilhamento não encontrado")
-
           h = h.replace(marcador, botao + marcador, 1)
 
           js = """
           function shareMentex() {
-            const msg =
-              '🧠 Venha jogar MENTEX! Desafie seu cérebro!';
-
-            const url =
-              'https://wa.me/?text=' +
-              encodeURIComponent(msg);
+            const msg = '🧠 Conheça o MENTEX! Desafie seu cérebro!';
+            const url = 'https://wa.me/?text=' + encodeURIComponent(msg);
 
             if (navigator.share) {
               navigator.share({
@@ -174,6 +181,7 @@ jobs:
           """
 
           pos = h.rfind("</script>")
+
           if pos < 0:
               raise Exception("Script principal não encontrado")
 
@@ -182,54 +190,63 @@ jobs:
           with open(p, "w", encoding="utf-8") as f:
               f.write(h)
 
-          shutil.copy(
-              "opening_first.jpg",
-              "projeto/assets/www/opening_first.jpg"
-          )
+          os.makedirs("projeto/assets/www", exist_ok=True)
 
-          print("Atualização V5.1 aplicada!")
+          if os.path.exists("opening_first.jpg"):
+              shutil.copy(
+                  "opening_first.jpg",
+                  "projeto/assets/www/opening_first.jpg"
+              )
+
+          if os.path.exists("opening_first.png"):
+              shutil.copy(
+                  "opening_first.png",
+                  "projeto/assets/www/opening_first.png"
+              )
+
+          print("MENTEX V5.1 atualizado!")
           PY
 
-      - name: Reconstruir aplicativo
+      - name: Reconstruir APK
         run: |
           java -jar apktool.jar b projeto -o MENTEX-unsigned.apk
 
-      - name: Configurar assinatura
+      - name: Criar assinatura
         run: |
-          keytool -genkeypair \
-          -keystore mentex.jks \
-          -storepass mentex123 \
-          -keypass mentex123 \
-          -alias mentex \
-          -keyalg RSA \
-          -keysize 2048 \
-          -validity 10000 \
-          -dname "CN=MENTEX,O=MENTEX,C=BR"
+          keytool -genkeypair -v \
+            -keystore mentex.jks \
+            -storepass mentex123 \
+            -keypass mentex123 \
+            -alias mentex \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=MENTEX,O=MENTEX,C=BR"
 
       - name: Preparar Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Assinar APK
+      - name: Alinhar e assinar
         run: |
           sdkmanager "build-tools;35.0.0"
 
           $ANDROID_HOME/build-tools/35.0.0/zipalign \
-          -f -p 4 MENTEX-unsigned.apk MENTEX-aligned.apk
+            -f -p 4 MENTEX-unsigned.apk MENTEX-aligned.apk
 
           $ANDROID_HOME/build-tools/35.0.0/apksigner sign \
-          --ks mentex.jks \
-          --ks-key-alias mentex \
-          --ks-pass pass:mentex123 \
-          --key-pass pass:mentex123 \
-          --out MENTEX-V5.1.apk \
-          MENTEX-aligned.apk
+            --ks mentex.jks \
+            --ks-key-alias mentex \
+            --ks-pass pass:mentex123 \
+            --key-pass pass:mentex123 \
+            --out MENTEX-V5.1.apk \
+            MENTEX-aligned.apk
 
           $ANDROID_HOME/build-tools/35.0.0/apksigner verify MENTEX-V5.1.apk
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V5.1
+          name: MENTEX-V5.1-FINAL
           path: MENTEX-V5.1.apk
           if-no-files-found: error
           
