@@ -9,89 +9,72 @@ permissions:
 
 jobs:
   build:
-    name: Compilar MENTEX V5.1
-    runs-on: ubuntu-22.04
+    name: Atualizar MENTEX V5.1
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
-      - name: Baixar projeto
+      - name: Baixar arquivos
         uses: actions/checkout@v4
 
-      - name: Configurar Java 17
+      - name: Configurar Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Instalar ferramentas
-        run: |
-          sdkmanager "platform-tools" "build-tools;35.0.0"
-          echo "$ANDROID_HOME/build-tools/35.0.0" >> $GITHUB_PATH
-
-      - name: Verificar arquivos
+      - name: Verificar arquivos necessários
         run: |
           test -f MENTEX-V5.0.apk
           test -f opening_first.jpg
           test -f mentex_icon.png
+          echo "Arquivos encontrados!"
 
-      - name: Instalar APKTool
-        run: |
-          curl -L https://github.com/iBotPeaches/Apktool/releases/download/v2.11.1/apktool_2.11.1.jar -o apktool.jar
-          echo '#!/bin/bash
-          java -jar "$GITHUB_WORKSPACE/apktool.jar" "$@"' > apktool
-          chmod +x apktool
-
-      - name: Extrair aplicativo
-        run: |
-          ./apktool d -f MENTEX-V5.0.apk -o projeto
-
-      - name: Aplicar atualização V5.1
+      - name: Atualizar arquivos internos do MENTEX
         run: |
           python3 - <<'PY'
-          import os, shutil
+          import zipfile
+          import os
+          import shutil
 
-          base = "projeto/assets/www"
-          arquivo = base + "/index.html"
+          apk = "MENTEX-V5.0.apk"
+          saida = "MENTEX-V5.1-unsigned.apk"
 
-          with open(arquivo, encoding="utf-8") as f:
-              html = f.read()
+          with zipfile.ZipFile(apk, "r") as origem:
+              arquivos = {
+                  item.filename: (item, origem.read(item.filename))
+                  for item in origem.infolist()
+              }
 
-          inicio = html.index('<div id="opening" class="opening">')
-          fim = html.index('</div><audio id="introMusic"', inicio) + 6
+          caminho = "assets/www/index.html"
+
+          if caminho not in arquivos:
+              raise Exception("index.html não encontrado no APK")
+
+          info, dados = arquivos[caminho]
+          html = dados.decode("utf-8")
+
+          inicio = html.index('<div id="opening"')
+          audio = html.index('<audio id="introMusic"', inicio)
 
           nova_tela = """
-          <div id="opening" class="opening welcome-fullscreen">
-            <img class="welcome-art"
+          <div id="opening" class="opening mentex-v51">
+            <img class="mentex-welcome"
                  src="opening_first.jpg"
                  alt="Bem-vindo ao MENTEX">
-            <button class="welcome-start-hit"
-                    type="button"
+
+            <button class="mentex-start"
                     onclick="enterGame()"
-                    aria-label="Começar o jogo"></button>
+                    aria-label="Começar o MENTEX">
+            </button>
           </div>
           """
 
-          html = html[:inicio] + nova_tela + html[fim:]
+          html = html[:inicio] + nova_tela + html[audio:]
 
-          marcador = '<button class="secondary home-ad" onclick="watchAd()">'
-
-          botao = """
-          <button class="secondary share-game-btn"
-          onclick="shareMentex()">
-          📲 COMPARTILHAR MENTEX PELO WHATSAPP
-          </button>
-          """
-
-          if 'shareMentex()' not in html:
-              if marcador not in html:
-                  raise Exception("Botão de compartilhamento não encontrado")
-              html = html.replace(marcador, botao + marcador, 1)
-
-          estilo = """
-          <style id="mentex-v51">
-          .welcome-fullscreen {
+          css = """
+          <style id="mentex-v51-style">
+          .mentex-v51 {
             position:fixed!important;
             inset:0!important;
             width:100%!important;
@@ -101,47 +84,64 @@ jobs:
             margin:0!important;
             overflow:hidden!important;
             background:#031a53!important;
-            z-index:9999!important;
+            z-index:99999!important;
           }
-          .welcome-art {
+
+          .mentex-welcome {
             position:absolute!important;
             inset:0!important;
             width:100%!important;
             height:100%!important;
             object-fit:fill!important;
           }
-          .welcome-start-hit {
+
+          .mentex-start {
             position:absolute!important;
             left:19%!important;
-            bottom:5.3%!important;
+            bottom:6.5%!important;
             width:62%!important;
-            height:8.5%!important;
+            height:6.3%!important;
             border:0!important;
-            border-radius:28px!important;
+            border-radius:30px!important;
             background:transparent!important;
             cursor:pointer!important;
           }
+
           .share-game-btn {
+            display:block!important;
             width:100%!important;
-            margin-top:10px!important;
-            background:#079447!important;
-            color:white!important;
-            border:2px solid #8affb8!important;
+            padding:14px!important;
+            margin-top:12px!important;
             border-radius:16px!important;
-            padding:13px!important;
-            font-weight:bold!important;
+            background:linear-gradient(135deg,#16d66c,#087d43)!important;
+            color:white!important;
+            font-weight:900!important;
           }
           </style>
           """
 
-          html = html.replace("</head>", estilo + "</head>", 1)
+          html = html.replace("</head>", css + "</head>", 1)
 
-          js = """
+          botao = """
+          <button class="secondary share-game-btn"
+                  onclick="shareMentex()">
+            📲 COMPARTILHAR MENTEX PELO WHATSAPP
+          </button>
+          """
+
+          marcador = '<button class="secondary home-ad"'
+
+          if marcador not in html:
+              raise Exception("Não foi encontrado o local do botão na tela inicial")
+
+          html = html.replace(marcador, botao + marcador, 1)
+
+          javascript = """
           function shareMentex() {
             const mensagem =
-              '🧠 Conheça o MENTEX! Desafie sua mente e exercite seu cérebro!';
+              '🧠 Conheça o MENTEX! Desafie sua mente, exercite seu cérebro e divirta-se!';
 
-            const link =
+            const whatsapp =
               'https://wa.me/?text=' +
               encodeURIComponent(mensagem);
 
@@ -149,40 +149,57 @@ jobs:
               navigator.share({
                 title: 'MENTEX',
                 text: mensagem
-              }).catch(function(){});
+              }).catch(function() {
+                window.open(whatsapp, '_system');
+              });
             } else {
-              window.open(link, '_system');
+              window.open(whatsapp, '_system');
             }
           }
           """
 
-          if 'function shareMentex()' not in html:
-              pos = html.rfind("</script>")
-              if pos < 0:
-                  raise Exception("Script principal não encontrado")
-              html = html[:pos] + js + html[pos:]
+          posicao = html.rfind("</script>")
 
-          with open(arquivo, "w", encoding="utf-8") as f:
-              f.write(html)
+          if posicao < 0:
+              raise Exception("Script do aplicativo não encontrado")
 
-          shutil.copy(
-              "opening_first.jpg",
-              base + "/opening_first.jpg"
+          html = html[:posicao] + javascript + html[posicao:]
+
+          arquivos[caminho] = (info, html.encode("utf-8"))
+
+          arquivos["assets/www/opening_first.jpg"] = (
+              None,
+              open("opening_first.jpg", "rb").read()
           )
 
-          # Atualizar imagens do ícone do aplicativo
-          for raiz, dirs, arquivos in os.walk("projeto/res"):
-              for nome in arquivos:
-                  if nome in ("ic_launcher.png", "ic_launcher_round.png"):
-                      destino = os.path.join(raiz, nome)
-                      shutil.copy("mentex_icon.png", destino)
+          icone = open("mentex_icon.png", "rb").read()
 
-          print("MENTEX V5.1 atualizado!")
+          for nome, (info, dados) in list(arquivos.items()):
+              if nome == "assets/www/mentex_icon.png":
+                  arquivos[nome] = (info, icone)
+
+              elif nome.startswith("res/mipmap-") and nome.endswith(
+                  ("/ic_launcher.png", "/ic_launcher_round.png",
+                   "/ic_launcher_foreground.png")
+              ):
+                  arquivos[nome] = (info, icone)
+
+          with zipfile.ZipFile(saida, "w") as destino:
+              for nome, (info, dados) in arquivos.items():
+
+                  if nome.upper().startswith("META-INF/") and nome.upper().endswith(
+                      (".RSA", ".DSA", ".EC", ".SF")
+                  ):
+                      continue
+
+                  if info is None:
+                      destino.writestr(nome, dados)
+                  else:
+                      destino.writestr(info, dados)
+
+          print("Atualização interna concluída!")
+          print("Arquivo MENTEX V5.1 preparado!")
           PY
-
-      - name: Reconstruir APK
-        run: |
-          ./apktool b projeto -o MENTEX-V5.1-unsigned.apk
 
       - name: Preparar assinatura
         env:
@@ -193,9 +210,9 @@ jobs:
         run: |
           if [ -n "$KEYSTORE_BASE64" ]; then
             echo "$KEYSTORE_BASE64" | base64 -d > mentex.jks
-            echo "ALIAS=$KEY_ALIAS" >> $GITHUB_ENV
-            echo "STOREPASS=$KEYSTORE_PASSWORD" >> $GITHUB_ENV
-            echo "KEYPASS=$KEY_PASSWORD" >> $GITHUB_ENV
+            ALIAS="$KEY_ALIAS"
+            STOREPASS="$KEYSTORE_PASSWORD"
+            KEYPASS="$KEY_PASSWORD"
           else
             keytool -genkeypair -v \
               -keystore mentex.jks \
@@ -206,29 +223,37 @@ jobs:
               -storepass mentex123 \
               -keypass mentex123 \
               -dname "CN=MENTEX,O=MENTEX,C=BR"
-            echo "ALIAS=mentex" >> $GITHUB_ENV
-            echo "STOREPASS=mentex123" >> $GITHUB_ENV
-            echo "KEYPASS=mentex123" >> $GITHUB_ENV
+
+            ALIAS=mentex
+            STOREPASS=mentex123
+            KEYPASS=mentex123
           fi
 
-      - name: Assinar APK
-        run: |
-          apksigner sign \
-            --ks mentex.jks \
-            --ks-key-alias "$ALIAS" \
-            --ks-pass "pass:$STOREPASS" \
-            --key-pass "pass:$KEYPASS" \
-            --out MENTEX-V5.1.apk \
-            MENTEX-V5.1-unsigned.apk
+          echo "ALIAS=$ALIAS" >> $GITHUB_ENV
+          echo "STOREPASS=$STOREPASS" >> $GITHUB_ENV
+          echo "KEYPASS=$KEYPASS" >> $GITHUB_ENV
 
-      - name: Verificar APK
+      - name: Assinar aplicativo
         run: |
-          apksigner verify --verbose MENTEX-V5.1.apk
+          jarsigner \
+            -keystore mentex.jks \
+            -storepass "$STOREPASS" \
+            -keypass "$KEYPASS" \
+            -sigalg SHA256withRSA \
+            -digestalg SHA-256 \
+            -signedjar MENTEX-V5.1.apk \
+            MENTEX-V5.1-unsigned.apk \
+            "$ALIAS"
+
+      - name: Verificar assinatura
+        run: |
+          jarsigner -verify -verbose MENTEX-V5.1.apk
+          test -s MENTEX-V5.1.apk
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V5.1-APK
+          name: MENTEX-V5.1-FINAL
           path: MENTEX-V5.1.apk
           if-no-files-found: error
           
