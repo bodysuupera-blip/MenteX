@@ -1,5 +1,5 @@
 
-name: Gerar APK MENTEX V5.3
+name: Gerar APK MENTEX V5.4
 
 on:
   workflow_dispatch:
@@ -28,26 +28,40 @@ jobs:
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Verificar projeto
+      - name: Localizar projeto Android
         run: |
           set -e
-          if [ ! -f settings.gradle ] && [ ! -f settings.gradle.kts ]; then
-            echo "ERRO: settings.gradle não encontrado."
+          PROJECT=""
+
+          while IFS= read -r FILE; do
+            DIR=$(dirname "$FILE")
+            if [ -f "$DIR/settings.gradle" ] || [ -f "$DIR/settings.gradle.kts" ]; then
+              if [ -f "$DIR/app/build.gradle" ] || [ -f "$DIR/app/build.gradle.kts" ]; then
+                PROJECT="$DIR"
+                break
+              fi
+            fi
+          done < <(find . -type f \( -name settings.gradle -o -name settings.gradle.kts \))
+
+          if [ -z "$PROJECT" ]; then
+            echo "ERRO: Projeto Android completo não localizado."
+            echo "Arquivos encontrados:"
+            find . -maxdepth 5 -type f -name '*.gradle'
             exit 1
           fi
-          if [ ! -f app/build.gradle ] && [ ! -f app/build.gradle.kts ]; then
-            echo "ERRO: app/build.gradle não encontrado."
-            exit 1
-          fi
-          echo "Projeto Android encontrado!"
+
+          echo "PROJECT_DIR=$PROJECT" >> $GITHUB_ENV
+          echo "Projeto encontrado: $PROJECT"
 
       - name: Compilar APK
-        run: gradle assembleDebug --stacktrace
+        run: |
+          cd "$PROJECT_DIR"
+          gradle assembleDebug --stacktrace
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-APK-V5.3
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: MENTEX-APK-V5.4
+          path: "**/app/build/outputs/apk/debug/app-debug.apk"
           if-no-files-found: error
           
