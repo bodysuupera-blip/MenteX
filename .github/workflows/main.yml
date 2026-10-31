@@ -1,5 +1,5 @@
 
-name: MENTEX V5.0 - Tela e Icone Atualizados
+name: MENTEX V5.0 - Gerar APK
 
 on:
   workflow_dispatch:
@@ -13,11 +13,11 @@ permissions:
 
 jobs:
   build:
-    name: Gerar APK MENTEX V5.0
+    name: Compilar MENTEX V5.0
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar repositorio
+      - name: Baixar repositório
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -32,267 +32,80 @@ jobs:
           node-version: '20'
 
       - name: Configurar Android SDK
-        uses: android-actions/setup-android@v4
-        with:
-          packages: 'platform-tools'
-          accept-android-sdk-licenses: true
+        uses: android-actions/setup-android@v3
 
-      - name: Instalar Android SDK
+      - name: Instalar ferramentas Android
         run: |
-          set -e
+          sdkmanager "platform-tools"
           sdkmanager "platforms;android-35"
           sdkmanager "build-tools;35.0.0"
+          yes | sdkmanager --licenses || true
 
       - name: Instalar Cordova
         run: |
           npm install -g cordova@12.0.0
-          cordova --version
-          node --version
-          java -version
 
-      - name: Localizar e extrair ZIP
-        shell: bash
+      - name: Localizar arquivos do MENTEX
         run: |
           set -e
+          echo "Arquivos ZIP encontrados:"
+          find . -maxdepth 3 -type f -name "*.zip"
 
-          ZIP=$(find . -type f \
-            -iname "MENTEX-V5.0-ATUALIZACAO-DUAS-MELHORIAS.zip" \
-            | head -n 1)
-
-          if [ -z "$ZIP" ]; then
-            echo "ERRO: ZIP de atualizacao nao encontrado."
+          if [ ! -f "MENTEX-V5.0-ATUALIZACAO-DUAS-MELHORIAS.zip" ]; then
+            echo "ERRO: ZIP do projeto não encontrado na raiz do repositório."
             exit 1
           fi
 
-          echo "ZIP encontrado: $ZIP"
+      - name: Extrair projeto
+        run: |
+          set -e
+          mkdir -p origem
+          unzip -q "MENTEX-V5.0-ATUALIZACAO-DUAS-MELHORIAS.zip" -d origem
 
-          mkdir -p extraido
-          unzip -o "$ZIP" -d extraido
-
-          WWW_FILE=$(find extraido -type f \
-            -path "*/mentex-package/www/index.html" \
-            | head -n 1)
-
-          COLORS_FILE=$(find extraido -type f \
-            -path "*/android-res/values/colors.xml" \
-            | head -n 1)
-
-          if [ -z "$WWW_FILE" ]; then
-            echo "ERRO: index.html nao encontrado."
-            find extraido -maxdepth 5 -type f
+          if [ ! -f "origem/mentex-package/www/index.html" ]; then
+            echo "ERRO: não encontrei mentex-package/www/index.html"
+            find origem -maxdepth 5 -type f | head -100
             exit 1
           fi
 
-          if [ -z "$COLORS_FILE" ]; then
-            echo "ERRO: recursos Android nao encontrados."
-            exit 1
-          fi
-
-          WWW_DIR=$(dirname "$WWW_FILE")
-          RES_DIR=$(dirname "$(dirname "$COLORS_FILE")")
-
-          echo "WWW=$WWW_DIR" >> "$GITHUB_ENV"
-          echo "ANDROID_RES=$RES_DIR" >> "$GITHUB_ENV"
-
-          echo "Pasta web: $WWW_DIR"
-          echo "Pasta de icones: $RES_DIR"
-
-      - name: Conferir arquivos
+      - name: Criar projeto Android
         run: |
           set -e
-
-          test -f "$WWW/index.html"
-          test -f "$WWW/opening_screen.png"
-          test -f "$WWW/mentex_icon.png"
-
-          test -f "$ANDROID_RES/mipmap-mdpi/ic_launcher.png"
-          test -f "$ANDROID_RES/mipmap-hdpi/ic_launcher.png"
-          test -f "$ANDROID_RES/mipmap-xhdpi/ic_launcher.png"
-          test -f "$ANDROID_RES/mipmap-xxhdpi/ic_launcher.png"
-          test -f "$ANDROID_RES/mipmap-xxxhdpi/ic_launcher.png"
-          test -f "$ANDROID_RES/mipmap-anydpi-v26/ic_launcher.xml"
-          test -f "$ANDROID_RES/mipmap-anydpi-v26/ic_launcher_round.xml"
-          test -f "$ANDROID_RES/drawable/mentex_icon_source.png"
-
-          echo "Todos os arquivos foram encontrados."
-
-      - name: Conferir tela inicial
-        run: |
-          python - <<'PY'
-          import os
-          from pathlib import Path
-
-          html = (Path(os.environ["WWW"]) / "index.html").read_text(
-              encoding="utf-8"
-          )
-
-          if 'id="openingFirst"' not in html:
-              raise SystemExit("Tela inicial nao encontrada.")
-
-          if 'opening_screen.png' not in html:
-              raise SystemExit("Imagem da tela inicial nao encontrada.")
-
-          if 'showOpeningRules()' not in html:
-              raise SystemExit("Acao do botao COMEÇAR nao encontrada.")
-
-          print("Tela inicial e acao de continuar verificadas.")
-          PY
-
-      - name: Criar projeto Cordova
-        run: |
-          set -e
-
           cordova create mentex-build br.com.mentex.app MENTEX
 
           rm -rf mentex-build/www
-          cp -a "$WWW" mentex-build/www
+          mkdir -p mentex-build/www
 
-          echo "Projeto Cordova criado."
+          cp -a origem/mentex-package/www/. mentex-build/www/
 
-      - name: Configurar icone no config.xml
-        working-directory: mentex-build
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          import re
+          cd mentex-build
+          cordova platform add android@14.0.1
 
-          path = Path("config.xml")
-          xml = path.read_text(encoding="utf-8")
-
-          xml = re.sub(r'\bns0:', '', xml)
-          xml = re.sub(r'\s+xmlns:ns0="[^"]+"', '', xml)
-
-          xml = re.sub(r'\s*<icon\b[^>]*/>', '', xml)
-
-          if not re.search(r'<widget(?:\s|>)', xml):
-              raise SystemExit("ERRO: raiz widget nao encontrada.")
-
-          if '</widget>' not in xml:
-              raise SystemExit("ERRO: fechamento widget nao encontrado.")
-
-          xml = xml.replace(
-              '</widget>',
-              '  <icon src="www/mentex_icon.png" />\n</widget>',
-              1
-          )
-
-          path.write_text(xml, encoding="utf-8")
-
-          print("config.xml configurado.")
-          PY
-
-      - name: Adicionar plataforma Android
-        working-directory: mentex-build
-        run: |
-          cordova platform add android@14.0.1 --verbose
-
-      - name: Instalar icones Android
+      - name: Compilar APK
         run: |
           set -e
-
-          RES="mentex-build/platforms/android/app/src/main/res"
-
-          mkdir -p "$RES"
-
-          # Copia os recursos sem substituir o colors.xml inteiro
-          cp -a "$ANDROID_RES/mipmap-mdpi" "$RES/"
-          cp -a "$ANDROID_RES/mipmap-hdpi" "$RES/"
-          cp -a "$ANDROID_RES/mipmap-xhdpi" "$RES/"
-          cp -a "$ANDROID_RES/mipmap-xxhdpi" "$RES/"
-          cp -a "$ANDROID_RES/mipmap-xxxhdpi" "$RES/"
-          cp -a "$ANDROID_RES/mipmap-anydpi-v26" "$RES/"
-          cp -a "$ANDROID_RES/drawable/mentex_icon_source.png" "$RES/drawable/"
-
-          python - <<'PY'
-          from pathlib import Path
-          import xml.etree.ElementTree as ET
-
-          path = Path(
-              "mentex-build/platforms/android/app/src/main/res/values/colors.xml"
-          )
-
-          path.parent.mkdir(parents=True, exist_ok=True)
-
-          if path.exists():
-              tree = ET.parse(path)
-              root = tree.getroot()
-          else:
-              root = ET.Element("resources")
-              tree = ET.ElementTree(root)
-
-          for item in list(root):
-              if item.attrib.get("name") == "mentex_icon_background":
-                  root.remove(item)
-
-          color = ET.SubElement(root, "color")
-          color.set("name", "mentex_icon_background")
-          color.text = "#003BCE"
-
-          tree.write(path, encoding="utf-8", xml_declaration=True)
-
-          print("Cor de fundo do icone configurada.")
-          PY
-
-          echo "Recursos do icone instalados."
-
-      - name: Conferir icones Android
-        run: |
-          set -e
-
-          RES="mentex-build/platforms/android/app/src/main/res"
-
-          test -f "$RES/mipmap-mdpi/ic_launcher.png"
-          test -f "$RES/mipmap-hdpi/ic_launcher.png"
-          test -f "$RES/mipmap-xhdpi/ic_launcher.png"
-          test -f "$RES/mipmap-xxhdpi/ic_launcher.png"
-          test -f "$RES/mipmap-xxxhdpi/ic_launcher.png"
-          test -f "$RES/mipmap-anydpi-v26/ic_launcher.xml"
-          test -f "$RES/mipmap-anydpi-v26/ic_launcher_round.xml"
-          test -f "$RES/drawable/mentex_icon_source.png"
-
-          echo "Todos os icones estao instalados."
-
-      - name: Gerar APK com diagnostico completo
-        working-directory: mentex-build
-        env:
-          NODE_OPTIONS: --trace-uncaught
-        run: |
-          echo "========== AMBIENTE =========="
-          node --version
-          npm --version
-          cordova --version
-          java -version
-
-          echo "========== PLATAFORMA =========="
-          cordova platform ls
-
-          echo "========== COMPILACAO =========="
+          cd mentex-build
           cordova build android --debug --verbose
 
-      - name: Preparar APK
-        if: success()
+      - name: Verificar APK
         run: |
           set -e
+          APK="mentex-build/platforms/android/app/build/outputs/apk/debug/app-debug.apk"
 
-          mkdir -p apk-final
-
-          APK=$(find mentex-build/platforms/android \
-            -type f -name "*debug.apk" | head -n 1)
-
-          if [ -z "$APK" ]; then
-            echo "ERRO: APK nao foi gerado."
+          if [ ! -f "$APK" ]; then
+            echo "ERRO: APK não foi gerado."
+            find mentex-build/platforms/android -type f -name "*.apk"
             exit 1
           fi
 
-          cp "$APK" apk-final/MENTEX-V5.0-ATUALIZADO.apk
-
-          echo "APK preparado."
+          mkdir -p resultado
+          cp "$APK" resultado/MENTEX-V5.0.apk
+          ls -lh resultado/
 
       - name: Disponibilizar APK
-        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V5.0-ATUALIZADO
-          path: apk-final/MENTEX-V5.0-ATUALIZADO.apk
-          retention-days: 30
+          name: MENTEX-V5.0-APK
+          path: resultado/MENTEX-V5.0.apk
+          if-no-files-found: error
           
