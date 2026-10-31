@@ -1,132 +1,223 @@
 
-name: MENTEX V5.1 - Gerar APK
+name: MENTEX V5.0 - Atualizar Boas-vindas e Icone
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
 
 permissions:
   contents: read
 
 jobs:
-  build:
-    name: Atualizar MENTEX V5.1
+  atualizar:
+    name: Gerar APK MENTEX 5.0
     runs-on: ubuntu-22.04
-    timeout-minutes: 30
-
-    env:
-      ANDROID_HOME: /usr/local/lib/android/sdk
-      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
     steps:
-      - name: Baixar repositório
+      - name: Baixar projeto
         uses: actions/checkout@v4
 
-      - name: Configurar Java
-        uses: actions/setup-java@v4
+      - name: Configurar Python
+        uses: actions/setup-python@v5
         with:
-          distribution: temurin
-          java-version: '17'
+          python-version: '3.11'
 
-      - name: Configurar Android SDK sem ação interativa
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+          accept-android-sdk-licenses: true
+
+      - name: Instalar ferramentas
         run: |
-          echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
-          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> $GITHUB_PATH
-          echo "$ANDROID_HOME/build-tools/35.0.0" >> $GITHUB_PATH
-
-          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-
-          if [ ! -f "$SDKMANAGER" ]; then
-            SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | sort -V | tail -1)
-          fi
-
-          if [ -z "$SDKMANAGER" ]; then
-            echo "ERRO: sdkmanager não encontrado."
-            exit 1
-          fi
-
-          echo "SDKMANAGER=$SDKMANAGER" >> $GITHUB_ENV
-
-      - name: Aceitar licenças e instalar ferramentas
-        run: |
-          set +o pipefail
-          yes | "$SDKMANAGER" --licenses || true
-          "$SDKMANAGER" --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
-
-      - name: Baixar APKTool
-        run: |
-          curl -L https://github.com/iBotPeaches/Apktool/releases/download/v2.11.1/apktool_2.11.1.jar -o apktool.jar
-
-      - name: Localizar APK compatível
-        run: |
-          python3 - <<'PY'
-          import zipfile, glob, shutil, sys
-
-          candidatos = []
-
-          for arquivo in glob.glob("**/*.apk", recursive=True):
-              try:
-                  with zipfile.ZipFile(arquivo) as z:
-                      if "assets/www/index.html" in z.namelist():
-                          candidatos.append(arquivo)
-                          print("APK compatível:", arquivo)
-              except Exception:
-                  pass
-
-          if not candidatos:
-              sys.exit("ERRO: Nenhum APK com assets/www/index.html foi encontrado.")
-
-          candidatos.sort(key=lambda x: ("V5.0" not in x.upper(), len(x)))
-          escolhido = candidatos[0]
-          shutil.copy2(escolhido, "base.apk")
-          print("APK escolhido:", escolhido)
-          PY
-
-      - name: Extrair aplicativo
-        run: |
-          java -jar apktool.jar d base.apk -o projeto -f
+          python -m pip install --upgrade pip pillow
+          sdkmanager "build-tools;35.0.0"
 
       - name: Conferir arquivos
         run: |
-          test -f projeto/assets/www/index.html || {
-            echo "ERRO: index.html não encontrado."
-            exit 1
+          test -f MENTEX-V5.0.apk
+          test -f mentex_welcome.jpg
+          test -f mentex_icon.png
+
+      - name: Aplicar atualizações
+        run: |
+          cat > patch.py <<'PY'
+          from pathlib import Path
+          from PIL import Image
+          import zipfile
+          import io
+          import sys
+
+          base = Path(".")
+          apk = base / "MENTEX-V5.0.apk"
+          welcome = base / "mentex_welcome.jpg"
+          icon = base / "mentex_icon.png"
+
+          with zipfile.ZipFile(apk, "r") as z:
+              html = z.read("assets/www/index.html").decode("utf-8")
+
+          old = '''  <section id="openingFirst" class="opening-screen opening-first">
+              <div class="launch-shell">
+                <div class="launch-topline"><span class="launch-dot"></span> EXPERIÊNCIA DE TREINAMENTO MENTAL</div>
+                <div class="launch-brain-wrap"><div class="launch-ring ring-one"></div><div class="launch-ring ring-two"></div><img class="launch-brain" src="brain_mascot.png" alt="Cérebro MENTEX"></div>
+                <div class="launch-kicker">SUA MENTE. SEU DESAFIO.</div>
+                <h1 class="launch-title">MENTEX</h1>
+                <p class="launch-copy">Prepare-se para pensar mais rápido, testar sua memória e superar novos desafios.</p>
+                <div class="launch-tags"><span>🧠 MEMÓRIA</span><span>⚡ AGILIDADE</span><span>🧩 LÓGICA</span></div>
+                <button class="launch-button" type="button" onclick="showOpeningRules()">COMEÇAR JORNADA <span>→</span></button>
+                <div class="launch-foot">200 FASES • UMA MENTE EM EVOLUÇÃO</div>
+              </div>
+            </section>'''
+
+          new = '''  <section id="openingFirst" class="opening-screen opening-first">
+              <button class="welcome-image-button" type="button"
+                aria-label="Começar MENTEX"
+                onclick="showOpeningRules()">
+                <img src="mentex_welcome.jpg"
+                alt="Bem-vindo ao MENTEX. Toque em Começar para iniciar." />
+              </button>
+            </section>'''
+
+          if old not in html:
+              raise SystemExit("Bloco antigo da abertura não encontrado. APK não alterado.")
+
+          html = html.replace(old, new, 1)
+
+          css = """
+          .opening-first {
+            padding: 0 !important;
+            overflow: hidden !important;
+            background: #003bce !important;
           }
-          echo "Arquivos do MENTEX encontrados."
+          .welcome-image-button {
+            display: block !important;
+            width: 100% !important;
+            height: 100dvh !important;
+            min-height: 100vh !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            border: 0 !important;
+            border-radius: 0 !important;
+            background: #003bce !important;
+            overflow: hidden !important;
+          }
+          .welcome-image-button img {
+            display: block !important;
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: cover !important;
+            object-position: center !important;
+          }
+          """
 
-      - name: Gerar APK
+          if "</style>" not in html:
+              raise SystemExit("Bloco CSS não encontrado.")
+
+          html = html.replace("</style>", css + "\n</style>", 1)
+
+          replacements = {
+              "assets/www/index.html": html.encode("utf-8"),
+              "assets/www/mentex_welcome.jpg": welcome.read_bytes()
+          }
+
+          image = Image.open(icon).convert("RGB")
+          side = min(image.size)
+          x = (image.width - side) // 2
+          y = (image.height - side) // 2
+          image = image.crop((x, y, x + side, y + side))
+
+          densities = {
+              "ldpi": 36,
+              "mdpi": 48,
+              "hdpi": 72,
+              "xhdpi": 96,
+              "xxhdpi": 144,
+              "xxxhdpi": 192
+          }
+
+          for density, size in densities.items():
+              out = io.BytesIO()
+              image.resize(
+                  (size, size),
+                  Image.Resampling.LANCZOS
+              ).save(out, format="PNG", optimize=True)
+
+              replacements[
+                  f"res/mipmap-{density}-v4/ic_launcher.png"
+              ] = out.getvalue()
+
+              out = io.BytesIO()
+              image.resize(
+                  (size * 2, size * 2),
+                  Image.Resampling.LANCZOS
+              ).save(out, format="PNG", optimize=True)
+
+              replacements[
+                  f"res/mipmap-{density}-v26/ic_launcher_foreground.png"
+              ] = out.getvalue()
+
+          output = Path("MENTEX-V5.0-ATUALIZADO-UNSIGNED.apk")
+
+          with zipfile.ZipFile(apk, "r") as original:
+              with zipfile.ZipFile(output, "w") as result:
+                  for info in original.infolist():
+                      name = info.filename
+                      upper = name.upper()
+
+                      if upper.startswith("META-INF/") and upper.endswith(
+                          (".SF", ".RSA", ".DSA", ".EC", "MANIFEST.MF")
+                      ):
+                          continue
+
+                      data = replacements.pop(name, None)
+                      if data is None:
+                          data = original.read(name)
+
+                      result.writestr(info, data)
+
+                  for name, data in replacements.items():
+                      result.writestr(name, data)
+
+          print("Atualizações aplicadas com sucesso.")
+          PY
+
+          python patch.py
+
+      - name: Alinhar APK
         run: |
-          java -jar apktool.jar b projeto -o MENTEX-V5.1-unsigned.apk
+          $ANDROID_HOME/build-tools/35.0.0/zipalign \
+            -f -p 4 \
+            MENTEX-V5.0-ATUALIZADO-UNSIGNED.apk \
+            MENTEX-V5.0-ALINHADO.apk
 
-      - name: Criar chave de assinatura
+      - name: Assinar APK
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          keytool -genkeypair \
-            -keystore mentex.jks \
-            -alias mentex \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -storepass mentex123 \
-            -keypass mentex123 \
-            -dname "CN=MENTEX, OU=App, O=MENTEX, L=Brasil, S=SP, C=BR"
+          test -n "$KEYSTORE"
+          echo "$KEYSTORE" | base64 --decode > mentex.jks
 
-      - name: Alinhar e assinar APK
-        run: |
-          zipalign -f -v 4 MENTEX-V5.1-unsigned.apk MENTEX-V5.1-aligned.apk
-
-          apksigner sign \
+          $ANDROID_HOME/build-tools/35.0.0/apksigner sign \
             --ks mentex.jks \
-            --ks-key-alias mentex \
-            --ks-pass pass:mentex123 \
-            --key-pass pass:mentex123 \
-            --out MENTEX-V5.1.apk \
-            MENTEX-V5.1-aligned.apk
+            --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass env:STORE_PASS \
+            --key-pass env:KEY_PASS \
+            --out MENTEX-V5.0-ATUALIZADO.apk \
+            MENTEX-V5.0-ALINHADO.apk
 
-          apksigner verify MENTEX-V5.1.apk
+          $ANDROID_HOME/build-tools/35.0.0/apksigner verify \
+            MENTEX-V5.0-ATUALIZADO.apk
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V5.1
-          path: MENTEX-V5.1.apk
-          if-no-files-found: error
+          name: MENTEX-V5.0-ATUALIZADO
+          path: MENTEX-V5.0-ATUALIZADO.apk
+          retention-days: 30
           
