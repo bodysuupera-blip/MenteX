@@ -1,5 +1,5 @@
 
-name: MENTEX V5.0 - Boas-vindas e Novo Ícone
+name: MENTEX V5.0 - Tela Inicial e Ícone Atualizados
 
 on:
   workflow_dispatch:
@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   build:
-    name: Gerar APK MENTEX 5.0
+    name: Gerar APK MENTEX V5.0
     runs-on: ubuntu-22.04
 
     steps:
@@ -37,7 +37,7 @@ jobs:
           packages: 'platform-tools'
           accept-android-sdk-licenses: true
 
-      - name: Instalar Android Build Tools
+      - name: Instalar Android SDK
         run: |
           sdkmanager "platforms;android-35"
           sdkmanager "build-tools;35.0.0"
@@ -45,124 +45,60 @@ jobs:
       - name: Instalar Cordova
         run: npm install -g cordova
 
-      - name: Localizar e extrair MENTEX 5.0
+      - name: Localizar e extrair atualização
         shell: bash
         run: |
           set -e
 
-          ZIP=$(find . -type f -iname "MENTEX-5.0-Nova-Plataforma.zip" | head -n 1)
+          ZIP=$(find . -type f \
+            -iname "MENTEX-V5.0-ATUALIZACAO-DUAS-MELHORIAS.zip" \
+            | head -n 1)
 
           if [ -z "$ZIP" ]; then
-            echo "ERRO: MENTEX-5.0-Nova-Plataforma.zip não encontrado."
-            echo "Coloque o ZIP na raiz do repositório."
+            echo "ERRO: ZIP de atualização não encontrado."
+            echo "Coloque o arquivo na raiz do repositório."
             exit 1
           fi
 
           mkdir -p extraido
           unzip -o "$ZIP" -d extraido
 
-          WWW_FILE=$(find extraido -type f -path "*/www/index.html" | head -n 1)
+          WWW=$(find extraido -type f \
+            -path "*/mentex-package/www/index.html" \
+            | head -n 1)
 
-          if [ -z "$WWW_FILE" ]; then
-            echo "ERRO: www/index.html não encontrado."
+          RES=$(find extraido -type f \
+            -path "*/android-res/values/colors.xml" \
+            | head -n 1)
+
+          if [ -z "$WWW" ] || [ -z "$RES" ]; then
+            echo "ERRO: arquivos da atualização não encontrados."
             exit 1
           fi
 
-          echo "WWW=$(dirname "$WWW_FILE")" >> "$GITHUB_ENV"
+          echo "WWW=$(dirname "$WWW")" >> "$GITHUB_ENV"
+          echo "ANDROID_RES=$(dirname "$(dirname "$RES")")" >> "$GITHUB_ENV"
 
-      - name: Atualizar tela de boas-vindas
-        shell: bash
+      - name: Conferir arquivos da atualização
         run: |
-          python - <<'PY'
-          import os
-          from pathlib import Path
+          set -e
 
-          www = Path(os.environ["WWW"])
-          html_file = www / "index.html"
+          test -f "$WWW/index.html"
+          test -f "$WWW/opening_screen.png"
+          test -f "$WWW/mentex_icon.png"
+          test -f "$ANDROID_RES/mipmap-anydpi-v26/ic_launcher.xml"
+          test -f "$ANDROID_RES/drawable/mentex_icon_source.png"
 
-          html = html_file.read_text(encoding="utf-8")
+          echo "Arquivos da tela inicial e do ícone encontrados."
 
-          start = html.find('<section id="openingFirst"')
-
-          if start < 0:
-              raise SystemExit("Tela openingFirst não encontrada.")
-
-          end = html.find("</section>", start)
-
-          if end < 0:
-              raise SystemExit("Fim da tela inicial não encontrado.")
-
-          end += len("</section>")
-
-          novo = """
-          <section id="openingFirst" class="opening-screen opening-first">
-            <button type="button"
-              class="mentex-welcome-button"
-              onclick="showOpeningRules()"
-              aria-label="Começar MENTEX">
-              <img src="opening_screen.png" alt="Bem-vindo ao MENTEX">
-            </button>
-          </section>
-          """
-
-          html = html[:start] + novo + html[end:]
-
-          css = """
-          <style>
-          #openingFirst.opening-first {
-            padding: 0 !important;
-            margin: 0 !important;
-            width: 100% !important;
-            height: 100dvh !important;
-            min-height: 100vh !important;
-            overflow: hidden !important;
-            background: #003bce !important;
-          }
-
-          .mentex-welcome-button {
-            display: block !important;
-            width: 100% !important;
-            height: 100% !important;
-            padding: 0 !important;
-            margin: 0 !important;
-            border: 0 !important;
-            border-radius: 0 !important;
-            background: #003bce !important;
-            overflow: hidden !important;
-          }
-
-          .mentex-welcome-button img {
-            display: block !important;
-            width: 100% !important;
-            height: 100% !important;
-            object-fit: contain !important;
-            object-position: center !important;
-          }
-          </style>
-          """
-
-          if "</head>" not in html:
-              raise SystemExit("Cabeçalho HTML não encontrado.")
-
-          html = html.replace("</head>", css + "\n</head>", 1)
-
-          html_file.write_text(html, encoding="utf-8")
-
-          for asset in ["opening_screen.png", "mentex_icon.png"]:
-              if not (www / asset).exists():
-                  raise SystemExit(f"Imagem {asset} não encontrada.")
-
-          print("Tela de boas-vindas atualizada.")
-
-          PY
-
-      - name: Criar aplicativo Android
+      - name: Criar projeto Cordova
         run: |
           cordova create mentex-build br.com.mentex.app MENTEX
-          rm -rf mentex-build/www
-          cp -r "$WWW" mentex-build/www
 
-      - name: Configurar ícone do MENTEX
+          rm -rf mentex-build/www
+          cp -a "$WWW" mentex-build/www
+
+      - name: Configurar ícone no config.xml
         working-directory: mentex-build
         run: |
           python - <<'PY'
@@ -172,19 +108,15 @@ jobs:
           path = Path("config.xml")
           xml = path.read_text(encoding="utf-8")
 
-          # Corrige o nome da raiz e remove prefixos de namespace
+          # Remove eventual prefixo de namespace incorreto
           xml = re.sub(r'\bns0:', '', xml)
           xml = re.sub(r'\s+xmlns:ns0="[^"]+"', '', xml)
 
-          # Remove declarações de ícones anteriores
+          # Remove configurações antigas de ícone
           xml = re.sub(r'\s*<icon\b[^>]*/>', '', xml)
 
-          # Insere o novo ícone antes do fechamento de widget
           if not re.search(r'<widget(?:\s|>)', xml):
-              raise SystemExit("ERRO: tag widget não encontrada.")
-
-          if '</widget>' not in xml:
-              raise SystemExit("ERRO: fechamento de widget não encontrado.")
+              raise SystemExit("ERRO: raiz widget não encontrada.")
 
           xml = xml.replace(
               '</widget>',
@@ -193,13 +125,40 @@ jobs:
           )
 
           path.write_text(xml, encoding="utf-8")
-
-          print("config.xml corrigido e ícone configurado.")
+          print("Ícone configurado no Cordova.")
           PY
 
       - name: Adicionar plataforma Android
         working-directory: mentex-build
         run: cordova platform add android@14.0.1
+
+      - name: Aplicar ícones Android em todas as resoluções
+        run: |
+          set -e
+
+          RES="mentex-build/platforms/android/app/src/main/res"
+
+          mkdir -p "$RES"
+
+          cp -a "$ANDROID_RES/." "$RES/"
+
+          echo "Ícones Android instalados."
+
+      - name: Conferir ícones instalados
+        run: |
+          set -e
+
+          RES="mentex-build/platforms/android/app/src/main/res"
+
+          test -f "$RES/mipmap-mdpi/ic_launcher.png"
+          test -f "$RES/mipmap-hdpi/ic_launcher.png"
+          test -f "$RES/mipmap-xhdpi/ic_launcher.png"
+          test -f "$RES/mipmap-xxhdpi/ic_launcher.png"
+          test -f "$RES/mipmap-xxxhdpi/ic_launcher.png"
+          test -f "$RES/mipmap-anydpi-v26/ic_launcher.xml"
+          test -f "$RES/mipmap-anydpi-v26/ic_launcher_round.xml"
+
+          echo "Todos os ícones foram encontrados."
 
       - name: Gerar APK
         working-directory: mentex-build
@@ -212,7 +171,8 @@ jobs:
 
           mkdir -p apk-final
 
-          APK=$(find mentex-build/platforms/android -type f -name "*debug.apk" | head -n 1)
+          APK=$(find mentex-build/platforms/android \
+            -type f -name "*debug.apk" | head -n 1)
 
           if [ -z "$APK" ]; then
             echo "ERRO: APK não foi gerado."
