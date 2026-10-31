@@ -1,5 +1,5 @@
 
-name: MENTEX V5.0 - Tela Inicial e Ícone Atualizados
+name: MENTEX V5.0 - Tela e Icone Atualizados
 
 on:
   workflow_dispatch:
@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar repositório
+      - name: Baixar repositorio
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -39,13 +39,18 @@ jobs:
 
       - name: Instalar Android SDK
         run: |
+          set -e
           sdkmanager "platforms;android-35"
           sdkmanager "build-tools;35.0.0"
 
       - name: Instalar Cordova
-        run: npm install -g cordova
+        run: |
+          npm install -g cordova@12.0.0
+          cordova --version
+          node --version
+          java -version
 
-      - name: Localizar e extrair atualização
+      - name: Localizar e extrair ZIP
         shell: bash
         run: |
           set -e
@@ -55,50 +60,96 @@ jobs:
             | head -n 1)
 
           if [ -z "$ZIP" ]; then
-            echo "ERRO: ZIP de atualização não encontrado."
-            echo "Coloque o arquivo na raiz do repositório."
+            echo "ERRO: ZIP de atualizacao nao encontrado."
             exit 1
           fi
+
+          echo "ZIP encontrado: $ZIP"
 
           mkdir -p extraido
           unzip -o "$ZIP" -d extraido
 
-          WWW=$(find extraido -type f \
+          WWW_FILE=$(find extraido -type f \
             -path "*/mentex-package/www/index.html" \
             | head -n 1)
 
-          RES=$(find extraido -type f \
+          COLORS_FILE=$(find extraido -type f \
             -path "*/android-res/values/colors.xml" \
             | head -n 1)
 
-          if [ -z "$WWW" ] || [ -z "$RES" ]; then
-            echo "ERRO: arquivos da atualização não encontrados."
+          if [ -z "$WWW_FILE" ]; then
+            echo "ERRO: index.html nao encontrado."
+            find extraido -maxdepth 5 -type f
             exit 1
           fi
 
-          echo "WWW=$(dirname "$WWW")" >> "$GITHUB_ENV"
-          echo "ANDROID_RES=$(dirname "$(dirname "$RES")")" >> "$GITHUB_ENV"
+          if [ -z "$COLORS_FILE" ]; then
+            echo "ERRO: recursos Android nao encontrados."
+            exit 1
+          fi
 
-      - name: Conferir arquivos da atualização
+          WWW_DIR=$(dirname "$WWW_FILE")
+          RES_DIR=$(dirname "$(dirname "$COLORS_FILE")")
+
+          echo "WWW=$WWW_DIR" >> "$GITHUB_ENV"
+          echo "ANDROID_RES=$RES_DIR" >> "$GITHUB_ENV"
+
+          echo "Pasta web: $WWW_DIR"
+          echo "Pasta de icones: $RES_DIR"
+
+      - name: Conferir arquivos
         run: |
           set -e
 
           test -f "$WWW/index.html"
           test -f "$WWW/opening_screen.png"
           test -f "$WWW/mentex_icon.png"
+
+          test -f "$ANDROID_RES/mipmap-mdpi/ic_launcher.png"
+          test -f "$ANDROID_RES/mipmap-hdpi/ic_launcher.png"
+          test -f "$ANDROID_RES/mipmap-xhdpi/ic_launcher.png"
+          test -f "$ANDROID_RES/mipmap-xxhdpi/ic_launcher.png"
+          test -f "$ANDROID_RES/mipmap-xxxhdpi/ic_launcher.png"
           test -f "$ANDROID_RES/mipmap-anydpi-v26/ic_launcher.xml"
+          test -f "$ANDROID_RES/mipmap-anydpi-v26/ic_launcher_round.xml"
           test -f "$ANDROID_RES/drawable/mentex_icon_source.png"
 
-          echo "Arquivos da tela inicial e do ícone encontrados."
+          echo "Todos os arquivos foram encontrados."
+
+      - name: Conferir tela inicial
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          html = (Path(os.environ["WWW"]) / "index.html").read_text(
+              encoding="utf-8"
+          )
+
+          if 'id="openingFirst"' not in html:
+              raise SystemExit("Tela inicial nao encontrada.")
+
+          if 'opening_screen.png' not in html:
+              raise SystemExit("Imagem da tela inicial nao encontrada.")
+
+          if 'showOpeningRules()' not in html:
+              raise SystemExit("Acao do botao COMEÇAR nao encontrada.")
+
+          print("Tela inicial e acao de continuar verificadas.")
+          PY
 
       - name: Criar projeto Cordova
         run: |
+          set -e
+
           cordova create mentex-build br.com.mentex.app MENTEX
 
           rm -rf mentex-build/www
           cp -a "$WWW" mentex-build/www
 
-      - name: Configurar ícone no config.xml
+          echo "Projeto Cordova criado."
+
+      - name: Configurar icone no config.xml
         working-directory: mentex-build
         run: |
           python - <<'PY'
@@ -108,15 +159,16 @@ jobs:
           path = Path("config.xml")
           xml = path.read_text(encoding="utf-8")
 
-          # Remove eventual prefixo de namespace incorreto
           xml = re.sub(r'\bns0:', '', xml)
           xml = re.sub(r'\s+xmlns:ns0="[^"]+"', '', xml)
 
-          # Remove configurações antigas de ícone
           xml = re.sub(r'\s*<icon\b[^>]*/>', '', xml)
 
           if not re.search(r'<widget(?:\s|>)', xml):
-              raise SystemExit("ERRO: raiz widget não encontrada.")
+              raise SystemExit("ERRO: raiz widget nao encontrada.")
+
+          if '</widget>' not in xml:
+              raise SystemExit("ERRO: fechamento widget nao encontrado.")
 
           xml = xml.replace(
               '</widget>',
@@ -125,14 +177,16 @@ jobs:
           )
 
           path.write_text(xml, encoding="utf-8")
-          print("Ícone configurado no Cordova.")
+
+          print("config.xml configurado.")
           PY
 
       - name: Adicionar plataforma Android
         working-directory: mentex-build
-        run: cordova platform add android@14.0.1
+        run: |
+          cordova platform add android@14.0.1 --verbose
 
-      - name: Aplicar ícones Android em todas as resoluções
+      - name: Instalar icones Android
         run: |
           set -e
 
@@ -140,11 +194,48 @@ jobs:
 
           mkdir -p "$RES"
 
-          cp -a "$ANDROID_RES/." "$RES/"
+          # Copia os recursos sem substituir o colors.xml inteiro
+          cp -a "$ANDROID_RES/mipmap-mdpi" "$RES/"
+          cp -a "$ANDROID_RES/mipmap-hdpi" "$RES/"
+          cp -a "$ANDROID_RES/mipmap-xhdpi" "$RES/"
+          cp -a "$ANDROID_RES/mipmap-xxhdpi" "$RES/"
+          cp -a "$ANDROID_RES/mipmap-xxxhdpi" "$RES/"
+          cp -a "$ANDROID_RES/mipmap-anydpi-v26" "$RES/"
+          cp -a "$ANDROID_RES/drawable/mentex_icon_source.png" "$RES/drawable/"
 
-          echo "Ícones Android instalados."
+          python - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
 
-      - name: Conferir ícones instalados
+          path = Path(
+              "mentex-build/platforms/android/app/src/main/res/values/colors.xml"
+          )
+
+          path.parent.mkdir(parents=True, exist_ok=True)
+
+          if path.exists():
+              tree = ET.parse(path)
+              root = tree.getroot()
+          else:
+              root = ET.Element("resources")
+              tree = ET.ElementTree(root)
+
+          for item in list(root):
+              if item.attrib.get("name") == "mentex_icon_background":
+                  root.remove(item)
+
+          color = ET.SubElement(root, "color")
+          color.set("name", "mentex_icon_background")
+          color.text = "#003BCE"
+
+          tree.write(path, encoding="utf-8", xml_declaration=True)
+
+          print("Cor de fundo do icone configurada.")
+          PY
+
+          echo "Recursos do icone instalados."
+
+      - name: Conferir icones Android
         run: |
           set -e
 
@@ -157,15 +248,29 @@ jobs:
           test -f "$RES/mipmap-xxxhdpi/ic_launcher.png"
           test -f "$RES/mipmap-anydpi-v26/ic_launcher.xml"
           test -f "$RES/mipmap-anydpi-v26/ic_launcher_round.xml"
+          test -f "$RES/drawable/mentex_icon_source.png"
 
-          echo "Todos os ícones foram encontrados."
+          echo "Todos os icones estao instalados."
 
-      - name: Gerar APK
+      - name: Gerar APK com diagnostico completo
         working-directory: mentex-build
-        run: cordova build android --debug
+        env:
+          NODE_OPTIONS: --trace-uncaught
+        run: |
+          echo "========== AMBIENTE =========="
+          node --version
+          npm --version
+          cordova --version
+          java -version
+
+          echo "========== PLATAFORMA =========="
+          cordova platform ls
+
+          echo "========== COMPILACAO =========="
+          cordova build android --debug --verbose
 
       - name: Preparar APK
-        shell: bash
+        if: success()
         run: |
           set -e
 
@@ -175,15 +280,16 @@ jobs:
             -type f -name "*debug.apk" | head -n 1)
 
           if [ -z "$APK" ]; then
-            echo "ERRO: APK não foi gerado."
+            echo "ERRO: APK nao foi gerado."
             exit 1
           fi
 
           cp "$APK" apk-final/MENTEX-V5.0-ATUALIZADO.apk
 
-          echo "APK preparado com sucesso."
+          echo "APK preparado."
 
       - name: Disponibilizar APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-V5.0-ATUALIZADO
