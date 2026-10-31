@@ -30,15 +30,15 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Node.js 20
+      - name: Configurar Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
       - name: Localizar Android SDK
+        shell: bash
         run: |
           set -e
-          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
 
           SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" \
             -type f -name sdkmanager | head -n 1)
@@ -48,16 +48,14 @@ jobs:
             exit 1
           fi
 
-          echo "SDKMANAGER encontrado: $SDKMANAGER"
-          echo "$(dirname "$SDKMANAGER")" >> $GITHUB_PATH
-          echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
+          echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
+          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
 
       - name: Instalar componentes Android
+        shell: bash
         run: |
           set -e
-
-          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" \
-            -type f -name sdkmanager | head -n 1)
 
           yes | "$SDKMANAGER" --licenses || true
 
@@ -71,31 +69,55 @@ jobs:
           npm install -g cordova@12.0.0
           cordova --version
 
-      - name: Verificar arquivo do projeto
+      - name: Verificar ZIP do MENTEX
+        shell: bash
         run: |
           set -e
 
-          if [ ! -f "MENTEX-V5.0-ATUALIZACAO-DUAS-MELHORIAS.zip" ]; then
-            echo "ERRO: arquivo ZIP não encontrado na raiz."
-            echo "Arquivos ZIP disponíveis:"
+          ZIP="MENTEX-V5.0-ATUALIZACAO-DUAS-MELHORIAS.zip"
+
+          if [ ! -f "$ZIP" ]; then
+            echo "ERRO: ZIP não encontrado na raiz do repositório."
             find . -type f -name "*.zip"
             exit 1
           fi
 
-      - name: Extrair projeto
+          echo "ZIP encontrado:"
+          ls -lh "$ZIP"
+
+      - name: Extrair e localizar projeto
+        shell: bash
         run: |
           set -e
 
           mkdir -p origem
-          unzip -q "MENTEX-V5.0-ATUALIZACAO-DUAS-MELHORIAS.zip" -d origem
 
-          if [ ! -f "origem/mentex-package/www/index.html" ]; then
-            echo "ERRO: index.html não encontrado no caminho esperado."
-            find origem -maxdepth 6 -type f | head -100
+          unzip -q \
+            "MENTEX-V5.0-ATUALIZACAO-DUAS-MELHORIAS.zip" \
+            -d origem
+
+          INDEX=$(find origem -type f \
+            -path "*/mentex-package/www/index.html" \
+            -print -quit)
+
+          if [ -z "$INDEX" ]; then
+            echo "ERRO: index.html não encontrado."
+            find origem -type f | head -100
             exit 1
           fi
 
+          WWW_DIR=$(dirname "$INDEX")
+
+          echo "WWW_DIR=$WWW_DIR" >> "$GITHUB_ENV"
+
+          echo "Index encontrado em:"
+          echo "$INDEX"
+
+          echo "Conteúdo da pasta www:"
+          ls -la "$WWW_DIR"
+
       - name: Criar projeto Cordova
+        shell: bash
         run: |
           set -e
 
@@ -104,18 +126,23 @@ jobs:
           rm -rf mentex-build/www
           mkdir -p mentex-build/www
 
-          cp -a origem/mentex-package/www/. mentex-build/www/
+          cp -a "$WWW_DIR/." mentex-build/www/
 
           cd mentex-build
+
           cordova platform add android@14.0.1
 
-      - name: Compilar MENTEX
+      - name: Compilar APK
+        shell: bash
         run: |
           set -e
+
           cd mentex-build
+
           cordova build android --debug --verbose
 
-      - name: Verificar APK
+      - name: Verificar APK gerado
+        shell: bash
         run: |
           set -e
 
@@ -123,13 +150,18 @@ jobs:
 
           if [ ! -f "$APK" ]; then
             echo "ERRO: APK não foi gerado."
+
             find mentex-build -type f -name "*.apk"
+
             exit 1
           fi
 
           mkdir -p resultado
+
           cp "$APK" resultado/MENTEX-V5.0.apk
-          ls -lh resultado/
+
+          echo "APK gerado:"
+          ls -lh resultado/MENTEX-V5.0.apk
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
@@ -137,4 +169,5 @@ jobs:
           name: MENTEX-V5.0-APK
           path: resultado/MENTEX-V5.0.apk
           if-no-files-found: error
+          retention-days: 7
           
