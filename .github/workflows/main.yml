@@ -50,9 +50,7 @@ jobs:
         run: |
           set -e
 
-          ZIP=$(find . -type f \
-            -iname "MENTEX-5.0-Nova-Plataforma.zip" \
-            | head -n 1)
+          ZIP=$(find . -type f -iname "MENTEX-5.0-Nova-Plataforma.zip" | head -n 1)
 
           if [ -z "$ZIP" ]; then
             echo "ERRO: MENTEX-5.0-Nova-Plataforma.zip não encontrado."
@@ -63,18 +61,17 @@ jobs:
           mkdir -p extraido
           unzip -o "$ZIP" -d extraido
 
-          WWW=$(find extraido -type f \
-            -path "*/www/index.html" \
-            | head -n 1)
+          WWW_FILE=$(find extraido -type f -path "*/www/index.html" | head -n 1)
 
-          if [ -z "$WWW" ]; then
-            echo "ERRO: index.html não encontrado."
+          if [ -z "$WWW_FILE" ]; then
+            echo "ERRO: www/index.html não encontrado."
             exit 1
           fi
 
-          echo "WWW=$(dirname "$WWW")" >> "$GITHUB_ENV"
+          echo "WWW=$(dirname "$WWW_FILE")" >> "$GITHUB_ENV"
 
       - name: Atualizar tela de boas-vindas
+        shell: bash
         run: |
           python - <<'PY'
           import os
@@ -82,13 +79,16 @@ jobs:
 
           www = Path(os.environ["WWW"])
           html_file = www / "index.html"
+
           html = html_file.read_text(encoding="utf-8")
 
           start = html.find('<section id="openingFirst"')
+
           if start < 0:
               raise SystemExit("Tela openingFirst não encontrada.")
 
           end = html.find("</section>", start)
+
           if end < 0:
               raise SystemExit("Fim da tela inicial não encontrado.")
 
@@ -100,8 +100,7 @@ jobs:
               class="mentex-welcome-button"
               onclick="showOpeningRules()"
               aria-label="Começar MENTEX">
-              <img src="opening_screen.png"
-                alt="Bem-vindo ao MENTEX">
+              <img src="opening_screen.png" alt="Bem-vindo ao MENTEX">
             </button>
           </section>
           """
@@ -119,6 +118,7 @@ jobs:
             overflow: hidden !important;
             background: #003bce !important;
           }
+
           .mentex-welcome-button {
             display: block !important;
             width: 100% !important;
@@ -130,6 +130,7 @@ jobs:
             background: #003bce !important;
             overflow: hidden !important;
           }
+
           .mentex-welcome-button img {
             display: block !important;
             width: 100% !important;
@@ -144,15 +145,15 @@ jobs:
               raise SystemExit("Cabeçalho HTML não encontrado.")
 
           html = html.replace("</head>", css + "\n</head>", 1)
+
           html_file.write_text(html, encoding="utf-8")
 
-          if not (www / "opening_screen.png").exists():
-              raise SystemExit("Imagem opening_screen.png não encontrada.")
-
-          if not (www / "mentex_icon.png").exists():
-              raise SystemExit("Imagem mentex_icon.png não encontrada.")
+          for asset in ["opening_screen.png", "mentex_icon.png"]:
+              if not (www / asset).exists():
+                  raise SystemExit(f"Imagem {asset} não encontrada.")
 
           print("Tela de boas-vindas atualizada.")
+
           PY
 
       - name: Criar aplicativo Android
@@ -162,28 +163,38 @@ jobs:
           cp -r "$WWW" mentex-build/www
 
       - name: Configurar ícone do MENTEX
+        working-directory: mentex-build
         run: |
-          cd mentex-build
-
           python - <<'PY'
           from pathlib import Path
-          import xml.etree.ElementTree as ET
+          import re
 
           path = Path("config.xml")
-          tree = ET.parse(path)
-          root = tree.getroot()
+          xml = path.read_text(encoding="utf-8")
 
-          ns = ""
-          if root.tag.startswith("{"):
-              ns = root.tag.split("}")[0] + "}"
+          # Corrige o nome da raiz e remove prefixos de namespace
+          xml = re.sub(r'\bns0:', '', xml)
+          xml = re.sub(r'\s+xmlns:ns0="[^"]+"', '', xml)
 
-          for old in list(root.findall(ns + "icon")):
-              root.remove(old)
+          # Remove declarações de ícones anteriores
+          xml = re.sub(r'\s*<icon\b[^>]*/>', '', xml)
 
-          icon = ET.SubElement(root, ns + "icon")
-          icon.set("src", "www/mentex_icon.png")
+          # Insere o novo ícone antes do fechamento de widget
+          if not re.search(r'<widget(?:\s|>)', xml):
+              raise SystemExit("ERRO: tag widget não encontrada.")
 
-          tree.write(path, encoding="utf-8", xml_declaration=True)
+          if '</widget>' not in xml:
+              raise SystemExit("ERRO: fechamento de widget não encontrado.")
+
+          xml = xml.replace(
+              '</widget>',
+              '  <icon src="www/mentex_icon.png" />\n</widget>',
+              1
+          )
+
+          path.write_text(xml, encoding="utf-8")
+
+          print("config.xml corrigido e ícone configurado.")
           PY
 
       - name: Adicionar plataforma Android
@@ -195,12 +206,13 @@ jobs:
         run: cordova build android --debug
 
       - name: Preparar APK
+        shell: bash
         run: |
           set -e
+
           mkdir -p apk-final
 
-          APK=$(find mentex-build/platforms/android \
-            -type f -name "*debug.apk" | head -n 1)
+          APK=$(find mentex-build/platforms/android -type f -name "*debug.apk" | head -n 1)
 
           if [ -z "$APK" ]; then
             echo "ERRO: APK não foi gerado."
@@ -208,6 +220,8 @@ jobs:
           fi
 
           cp "$APK" apk-final/MENTEX-V5.0-ATUALIZADO.apk
+
+          echo "APK preparado com sucesso."
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
