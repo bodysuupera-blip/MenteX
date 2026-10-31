@@ -1,12 +1,12 @@
 
-name: Gerar APK MENTEX V5.4
+name: Gerar APK MENTEX V5.5
 
 on:
   workflow_dispatch:
   push:
     branches:
-      - main
       - principal
+      - main
 
 permissions:
   contents: read
@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar projeto
+      - name: Baixar arquivos
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -25,43 +25,61 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Gradle
-        uses: gradle/actions/setup-gradle@v4
+      - name: Configurar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
-      - name: Localizar projeto Android
+      - name: Preparar projeto MENTEX
+        shell: bash
         run: |
-          set -e
-          PROJECT=""
+          set -euo pipefail
 
-          while IFS= read -r FILE; do
-            DIR=$(dirname "$FILE")
-            if [ -f "$DIR/settings.gradle" ] || [ -f "$DIR/settings.gradle.kts" ]; then
-              if [ -f "$DIR/app/build.gradle" ] || [ -f "$DIR/app/build.gradle.kts" ]; then
-                PROJECT="$DIR"
-                break
-              fi
-            fi
-          done < <(find . -type f \( -name settings.gradle -o -name settings.gradle.kts \))
+          mkdir -p /tmp/mentex
 
-          if [ -z "$PROJECT" ]; then
-            echo "ERRO: Projeto Android completo não localizado."
-            echo "Arquivos encontrados:"
-            find . -maxdepth 5 -type f -name '*.gradle'
+          ZIP="$(find . -type f -name 'MENTEX_NOVA_PLATAFORMA_PARA_GERAR_APK.zip' -print -quit)"
+
+          if [ -z "$ZIP" ]; then
+            echo "ERRO: ZIP MENTEX não encontrado."
+            find . -maxdepth 3 -type f
             exit 1
           fi
 
-          echo "PROJECT_DIR=$PROJECT" >> $GITHUB_ENV
-          echo "Projeto encontrado: $PROJECT"
+          echo "ZIP encontrado: $ZIP"
+          unzip -oq "$ZIP" -d /tmp/mentex
 
-      - name: Compilar APK
+          echo "Arquivos extraídos:"
+          find /tmp/mentex -maxdepth 3 -type f -print
+
+          if [ -f /tmp/mentex/config.xml ] && [ -f /tmp/mentex/www/index.html ]; then
+            echo "TIPO=cordova" >> "$GITHUB_ENV"
+            echo "PROJECT_DIR=/tmp/mentex" >> "$GITHUB_ENV"
+          elif [ -f /tmp/mentex/MENTEX_NOVA_PLATAFORMA/config.xml ]; then
+            echo "TIPO=cordova" >> "$GITHUB_ENV"
+            echo "PROJECT_DIR=/tmp/mentex/MENTEX_NOVA_PLATAFORMA" >> "$GITHUB_ENV"
+          else
+            echo "ERRO: Não encontrei config.xml e www/index.html."
+            exit 1
+          fi
+
+      - name: Instalar Cordova
+        run: npm install -g cordova@12.0.0
+
+      - name: Adicionar Android
         run: |
           cd "$PROJECT_DIR"
-          gradle assembleDebug --stacktrace
+          cordova platform add android@13.0.0
+
+      - name: Compilar MENTEX
+        run: |
+          cd "$PROJECT_DIR"
+          cordova build android --debug
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-APK-V5.4
-          path: "**/app/build/outputs/apk/debug/app-debug.apk"
+          name: MENTEX-APK-V5.5
+          path: /tmp/mentex/**/platforms/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          retention-days: 14
           
