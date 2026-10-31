@@ -1,5 +1,5 @@
 
-name: Gerar APK MENTEX V5.1
+name: Gerar APK MENTEX V5.2
 
 on:
   workflow_dispatch:
@@ -30,34 +30,57 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Localizar projeto MENTEX
+      - name: Localizar e preparar MENTEX
         run: |
-          echo "Procurando config.xml..."
-          find . -name config.xml -type f
-          if [ -f config.xml ] && [ -f www/index.html ]; then
-            echo "PROJECT_DIR=." >> $GITHUB_ENV
-          elif [ -f MENTEX_NOVA_PLATAFORMA/config.xml ]; then
-            echo "PROJECT_DIR=MENTEX_NOVA_PLATAFORMA" >> $GITHUB_ENV
+          set -e
+          mkdir -p /tmp/mentex
+
+          if [ -f config.xml ]; then
+            cp -a . /tmp/mentex/
           else
-            echo "ERRO: Projeto Cordova não encontrado."
+            ZIP=$(find . -type f -iname '*.zip' | head -n 1)
+            if [ -n "$ZIP" ]; then
+              unzip -q "$ZIP" -d /tmp/mentex
+            else
+              cp -a . /tmp/mentex/
+            fi
+          fi
+
+          PROJECT=$(find /tmp/mentex -type f -name config.xml | head -n 1)
+
+          if [ -z "$PROJECT" ]; then
+            echo "ERRO: config.xml não encontrado."
+            find /tmp/mentex -maxdepth 3 -type f | head -100
             exit 1
           fi
+
+          DIR=$(dirname "$PROJECT")
+
+          if [ ! -f "$DIR/www/index.html" ]; then
+            echo "ERRO: www/index.html não encontrado."
+            exit 1
+          fi
+
+          echo "PROJECT_DIR=$DIR" >> $GITHUB_ENV
+          echo "Projeto localizado em: $DIR"
 
       - name: Instalar Cordova
         run: npm install -g cordova@12.0.0
 
       - name: Adicionar Android
-        working-directory: MENTEX_NOVA_PLATAFORMA
-        run: cordova platform add android@13.0.0
+        run: |
+          cd "$PROJECT_DIR"
+          cordova platform add android@13.0.0
 
       - name: Compilar APK
-        working-directory: MENTEX_NOVA_PLATAFORMA
-        run: cordova build android --debug
+        run: |
+          cd "$PROJECT_DIR"
+          cordova build android --debug
 
-      - name: Salvar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-APK-V5.1
-          path: MENTEX_NOVA_PLATAFORMA/platforms/android/app/build/outputs/apk/debug/app-debug.apk
+          name: MENTEX-APK-V5.2
+          path: /tmp/mentex/**/platforms/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           
