@@ -1,5 +1,5 @@
 
-name: MENTEX V5.0 - Atualizar Boas-vindas e Icone
+name: MENTEX V5.0 - Atualizar boas-vindas e ícone
 
 on:
   workflow_dispatch:
@@ -19,6 +19,18 @@ jobs:
     steps:
       - name: Baixar projeto
         uses: actions/checkout@v4
+
+      # CORREÇÃO: Java 17 precisa vir antes do Android SDK
+      - name: Configurar Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Verificar Java
+        run: |
+          java -version
+          echo "JAVA_HOME=$JAVA_HOME"
 
       - name: Configurar Python
         uses: actions/setup-python@v5
@@ -44,146 +56,6 @@ jobs:
 
       - name: Aplicar atualizações
         run: |
-          cat > patch.py <<'PY'
-          from pathlib import Path
-          from PIL import Image
-          import zipfile
-          import io
-          import sys
-
-          base = Path(".")
-          apk = base / "MENTEX-V5.0.apk"
-          welcome = base / "mentex_welcome.jpg"
-          icon = base / "mentex_icon.png"
-
-          with zipfile.ZipFile(apk, "r") as z:
-              html = z.read("assets/www/index.html").decode("utf-8")
-
-          old = '''  <section id="openingFirst" class="opening-screen opening-first">
-              <div class="launch-shell">
-                <div class="launch-topline"><span class="launch-dot"></span> EXPERIÊNCIA DE TREINAMENTO MENTAL</div>
-                <div class="launch-brain-wrap"><div class="launch-ring ring-one"></div><div class="launch-ring ring-two"></div><img class="launch-brain" src="brain_mascot.png" alt="Cérebro MENTEX"></div>
-                <div class="launch-kicker">SUA MENTE. SEU DESAFIO.</div>
-                <h1 class="launch-title">MENTEX</h1>
-                <p class="launch-copy">Prepare-se para pensar mais rápido, testar sua memória e superar novos desafios.</p>
-                <div class="launch-tags"><span>🧠 MEMÓRIA</span><span>⚡ AGILIDADE</span><span>🧩 LÓGICA</span></div>
-                <button class="launch-button" type="button" onclick="showOpeningRules()">COMEÇAR JORNADA <span>→</span></button>
-                <div class="launch-foot">200 FASES • UMA MENTE EM EVOLUÇÃO</div>
-              </div>
-            </section>'''
-
-          new = '''  <section id="openingFirst" class="opening-screen opening-first">
-              <button class="welcome-image-button" type="button"
-                aria-label="Começar MENTEX"
-                onclick="showOpeningRules()">
-                <img src="mentex_welcome.jpg"
-                alt="Bem-vindo ao MENTEX. Toque em Começar para iniciar." />
-              </button>
-            </section>'''
-
-          if old not in html:
-              raise SystemExit("Bloco antigo da abertura não encontrado. APK não alterado.")
-
-          html = html.replace(old, new, 1)
-
-          css = """
-          .opening-first {
-            padding: 0 !important;
-            overflow: hidden !important;
-            background: #003bce !important;
-          }
-          .welcome-image-button {
-            display: block !important;
-            width: 100% !important;
-            height: 100dvh !important;
-            min-height: 100vh !important;
-            padding: 0 !important;
-            margin: 0 !important;
-            border: 0 !important;
-            border-radius: 0 !important;
-            background: #003bce !important;
-            overflow: hidden !important;
-          }
-          .welcome-image-button img {
-            display: block !important;
-            width: 100% !important;
-            height: 100% !important;
-            object-fit: cover !important;
-            object-position: center !important;
-          }
-          """
-
-          if "</style>" not in html:
-              raise SystemExit("Bloco CSS não encontrado.")
-
-          html = html.replace("</style>", css + "\n</style>", 1)
-
-          replacements = {
-              "assets/www/index.html": html.encode("utf-8"),
-              "assets/www/mentex_welcome.jpg": welcome.read_bytes()
-          }
-
-          image = Image.open(icon).convert("RGB")
-          side = min(image.size)
-          x = (image.width - side) // 2
-          y = (image.height - side) // 2
-          image = image.crop((x, y, x + side, y + side))
-
-          densities = {
-              "ldpi": 36,
-              "mdpi": 48,
-              "hdpi": 72,
-              "xhdpi": 96,
-              "xxhdpi": 144,
-              "xxxhdpi": 192
-          }
-
-          for density, size in densities.items():
-              out = io.BytesIO()
-              image.resize(
-                  (size, size),
-                  Image.Resampling.LANCZOS
-              ).save(out, format="PNG", optimize=True)
-
-              replacements[
-                  f"res/mipmap-{density}-v4/ic_launcher.png"
-              ] = out.getvalue()
-
-              out = io.BytesIO()
-              image.resize(
-                  (size * 2, size * 2),
-                  Image.Resampling.LANCZOS
-              ).save(out, format="PNG", optimize=True)
-
-              replacements[
-                  f"res/mipmap-{density}-v26/ic_launcher_foreground.png"
-              ] = out.getvalue()
-
-          output = Path("MENTEX-V5.0-ATUALIZADO-UNSIGNED.apk")
-
-          with zipfile.ZipFile(apk, "r") as original:
-              with zipfile.ZipFile(output, "w") as result:
-                  for info in original.infolist():
-                      name = info.filename
-                      upper = name.upper()
-
-                      if upper.startswith("META-INF/") and upper.endswith(
-                          (".SF", ".RSA", ".DSA", ".EC", "MANIFEST.MF")
-                      ):
-                          continue
-
-                      data = replacements.pop(name, None)
-                      if data is None:
-                          data = original.read(name)
-
-                      result.writestr(info, data)
-
-                  for name, data in replacements.items():
-                      result.writestr(name, data)
-
-          print("Atualizações aplicadas com sucesso.")
-          PY
-
           python patch.py
 
       - name: Alinhar APK
@@ -200,6 +72,7 @@ jobs:
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
+          set -e
           test -n "$KEYSTORE"
           echo "$KEYSTORE" | base64 --decode > mentex.jks
 
