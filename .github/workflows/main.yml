@@ -1,20 +1,20 @@
 
-name: MENTEX 5.1 - Gerar APK
+name: MENTEX INDEPENDENTE - Gerar APK
 
 on:
   workflow_dispatch:
   push:
     branches:
-      - principal
       - main
       - master
+      - principal
 
 permissions:
   contents: read
 
 jobs:
   build:
-    name: Compilar MENTEX Android
+    name: Compilar MENTEX
     runs-on: ubuntu-22.04
 
     steps:
@@ -32,43 +32,18 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Localizar projeto MENTEX
-        shell: bash
+      - name: Verificar arquivos
         run: |
-          PROJECT_DIR=$(find . -type f \
-            -name package.json \
-            -not -path '*/node_modules/*' \
-            -not -path '*/android/*' \
-            -printf '%h\n' | head -n 1)
+          echo "Verificando projeto MENTEX..."
 
-          if [ -z "$PROJECT_DIR" ]; then
-            echo "ERRO: package.json não encontrado."
-            find . -maxdepth 5 -type f | head -150
-            exit 1
-          fi
+          test -f package.json
+          test -f capacitor.config.json
+          test -f www/index.html
 
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Projeto localizado: $PROJECT_DIR"
-          ls -la "$PROJECT_DIR"
-
-      - name: Conferir arquivos necessários
-        shell: bash
-        run: |
-          cd "$PROJECT_DIR"
-
-          for FILE in package.json capacitor.config.json www/index.html; do
-            if [ ! -f "$FILE" ]; then
-              echo "ERRO: arquivo não encontrado: $FILE"
-              exit 1
-            fi
-          done
-
-          echo "Arquivos principais encontrados."
+          echo "Todos os arquivos foram encontrados!"
 
       - name: Instalar dependências
-        run: |
-          cd "$PROJECT_DIR"
-          npm install
+        run: npm install
 
       - name: Configurar Android SDK
         shell: bash
@@ -77,7 +52,7 @@ jobs:
             -name sdkmanager -type f | head -n 1)
 
           if [ -z "$SDKMANAGER" ]; then
-            echo "ERRO: SDK Manager não encontrado."
+            echo "SDK Manager não encontrado."
             exit 1
           fi
 
@@ -88,45 +63,26 @@ jobs:
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-      - name: Criar plataforma Android
-        shell: bash
-        run: |
-          cd "$PROJECT_DIR"
+      - name: Adicionar Android
+        run: npx cap add android
 
-          if [ ! -d android ]; then
-            npx cap add android
-          fi
+      - name: Sincronizar MENTEX
+        run: npx cap sync android
 
-      - name: Sincronizar aplicativo
+      - name: Compilar APK
         run: |
-          cd "$PROJECT_DIR"
-          npx cap sync android
-
-      - name: Gerar APK
-        shell: bash
-        run: |
-          cd "$PROJECT_DIR/android"
+          cd android
           chmod +x gradlew
-          ./gradlew assembleDebug --stacktrace
+          ./gradlew assembleDebug
 
-      - name: Conferir APK
-        shell: bash
+      - name: Verificar APK
         run: |
-          APK="$PROJECT_DIR/android/app/build/outputs/apk/debug/app-debug.apk"
-
-          if [ ! -f "$APK" ]; then
-            echo "ERRO: APK não encontrado."
-            find "$PROJECT_DIR/android" -name '*.apk'
-            exit 1
-          fi
-
-          mkdir -p "$GITHUB_WORKSPACE/resultado"
-          cp "$APK" "$GITHUB_WORKSPACE/resultado/MENTEX-5.1.apk"
+          test -f android/app/build/outputs/apk/debug/app-debug.apk
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-5.1-APK
-          path: resultado/MENTEX-5.1.apk
+          name: MENTEX-INDEPENDENTE-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           
