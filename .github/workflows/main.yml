@@ -1,5 +1,5 @@
 
-name: MENTEX V5.2 - Gerar APK Atualizado
+name: MENTEX V5.2 - Gerar APK
 
 on:
   workflow_dispatch:
@@ -9,27 +9,49 @@ permissions:
 
 jobs:
   build:
-    name: Gerar APK MENTEX
+    name: Preparar APK MENTEX V5.2
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar projeto
+      - name: Baixar arquivos do projeto
         uses: actions/checkout@v4
 
-      - name: Preparar APK atualizado
+      - name: Localizar e extrair APK
         run: |
           mkdir -p saida
+          mkdir -p temporario
 
-          if [ -f "MENTEX-FIGURAS-ACERTO-ERRO.apk" ]; then
-            cp MENTEX-FIGURAS-ACERTO-ERRO.apk saida/MENTEX-V5.2.apk
-          else
-            echo "ERRO: APK atualizado não encontrado na raiz do projeto"
+          APK=$(find . -type f -iname "*.apk" \
+            -not -path "./.git/*" | head -n 1)
+
+          if [ -z "$APK" ]; then
+            ZIP=$(find . -type f -iname "*.zip" \
+              -not -path "./.git/*" | head -n 1)
+
+            if [ -z "$ZIP" ]; then
+              echo "ERRO: Nenhum APK ou ZIP encontrado."
+              exit 1
+            fi
+
+            unzip -o "$ZIP" -d temporario
+
+            APK=$(find temporario -type f \
+              -iname "*.apk" | head -n 1)
+          fi
+
+          if [ -z "$APK" ]; then
+            echo "ERRO: O ZIP não contém APK."
             exit 1
           fi
 
-      - name: Disponibilizar APK
+          cp "$APK" saida/MENTEX-V5.2.apk
+
+          echo "APK localizado com sucesso!"
+
+      - name: Disponibilizar aplicativo
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-V5.2-APK
           path: saida/MENTEX-V5.2.apk
           if-no-files-found: error
+          
