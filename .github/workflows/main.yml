@@ -1,5 +1,5 @@
 
-name: MENTEX - Gerar APK
+name: MENTEX V4.7 - Atualizar Icone e Gerar APK
 
 on:
   workflow_dispatch:
@@ -9,17 +9,12 @@ permissions:
 
 jobs:
   build:
-    name: MENTEX - Ícone e Respostas Atualizados
+    name: Compilar APK do MENTEX
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar repositório
+      - name: Baixar projeto
         uses: actions/checkout@v4
-
-      - name: Configurar Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
 
       - name: Configurar Java 17
         uses: actions/setup-java@v4
@@ -27,130 +22,63 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Extrair pacote MENTEX atualizado
+      - name: Instalar ferramentas
+        run: sudo apt-get update && sudo apt-get install -y unzip findutils
+
+      - name: Localizar projeto Android
         shell: bash
         run: |
-          set -Eeuo pipefail
+          set -e
+          GRADLE_FILE=$(find . -name gradlew -type f | head -n 1)
+          if [ -z "$GRADLE_FILE" ]; then
+            echo "ERRO: gradlew não encontrado."
+            exit 1
+          fi
+          PROJECT_DIR=$(dirname "$GRADLE_FILE")
+          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
+          echo "Projeto encontrado: $PROJECT_DIR"
 
-          ZIP="$GITHUB_WORKSPACE/MENTEX-ESTILO-ORIGINAL-MELHORADO-ICONE-NOVO.zip"
-          DEST="$RUNNER_TEMP/mentex-final"
-
-          if [ ! -f "$ZIP" ]; then
-            echo "ERRO: ZIP atualizado não encontrado na raiz do GitHub."
+      - name: Aplicar novo ícone MENTEX
+        shell: bash
+        run: |
+          set -e
+          if [ ! -f MENTEX-ICONE-MELHORADO.zip ]; then
+            echo "ERRO: coloque MENTEX-ICONE-MELHORADO.zip na raiz do repositorio."
             exit 1
           fi
 
-          mkdir -p "$DEST"
-          unzip -q "$ZIP" -d "$DEST"
+          mkdir -p /tmp/mentex-icon
+          unzip -o MENTEX-ICONE-MELHORADO.zip -d /tmp/mentex-icon
 
-          PACKAGE=$(find "$DEST" -type f \
-            -name package.json \
-            -not -path '*/node_modules/*' \
-            -print -quit)
+          APP_DIR="$PROJECT_DIR/app"
+          ICON_DIR="/tmp/mentex-icon/android/app/src/main/res"
 
-          if [ -z "$PACKAGE" ]; then
-            echo "ERRO: package.json não encontrado."
+          if [ ! -d "$APP_DIR/src/main/res" ]; then
+            echo "ERRO: pasta de recursos Android não encontrada."
             exit 1
           fi
 
-          PROJECT_DIR=$(dirname "$PACKAGE")
-          echo "$PROJECT_DIR" > "$RUNNER_TEMP/project-dir.txt"
+          if [ ! -d "$ICON_DIR" ]; then
+            echo "ERRO: arquivos do ícone não encontrados no ZIP."
+            exit 1
+          fi
 
-          echo "Projeto atualizado: $PROJECT_DIR"
+          cp -R "$ICON_DIR"/. "$APP_DIR/src/main/res/"
+          echo "Novo ícone aplicado."
 
-      - name: Conferir imagens novas
+      - name: Gerar APK
         shell: bash
         run: |
-          set -Eeuo pipefail
-
-          PROJECT_DIR=$(cat "$RUNNER_TEMP/project-dir.txt")
-
-          for FILE in \
-            www/index.html \
-            www/mentex_icon.png \
-            www/brain_happy.png \
-            www/brain_sad.png \
-            android-icon-res/mipmap-mdpi/ic_launcher.png \
-            android-icon-res/mipmap-hdpi/ic_launcher.png \
-            android-icon-res/mipmap-xhdpi/ic_launcher.png \
-            android-icon-res/mipmap-xxhdpi/ic_launcher.png \
-            android-icon-res/mipmap-xxxhdpi/ic_launcher.png \
-            android-icon-res/mipmap-anydpi-v26/ic_launcher.xml \
-            android-icon-res/drawable-nodpi/mentex_icon_foreground.png
-          do
-            if [ ! -s "$PROJECT_DIR/$FILE" ]; then
-              echo "ERRO: arquivo ausente: $FILE"
-              exit 1
-            fi
-          done
-
-          echo "Todas as imagens atualizadas foram encontradas."
-
-      - name: Instalar dependências
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          PROJECT_DIR=$(cat "$RUNNER_TEMP/project-dir.txt")
+          set -e
           cd "$PROJECT_DIR"
-
-          npm install
-          npx cap add android
-          npx cap sync android
-
-      - name: Aplicar ícone original do MENTEX
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          PROJECT_DIR=$(cat "$RUNNER_TEMP/project-dir.txt")
-          SRC="$PROJECT_DIR/android-icon-res"
-          DST="$PROJECT_DIR/android/app/src/main/res"
-
-          for DENSITY in mipmap-mdpi mipmap-hdpi mipmap-xhdpi mipmap-xxhdpi mipmap-xxxhdpi; do
-            mkdir -p "$DST/$DENSITY"
-
-            cp "$SRC/$DENSITY/ic_launcher.png" "$DST/$DENSITY/"
-            cp "$SRC/$DENSITY/ic_launcher_round.png" "$DST/$DENSITY/"
-          done
-
-          mkdir -p "$DST/mipmap-anydpi-v26"
-          mkdir -p "$DST/drawable-nodpi"
-          mkdir -p "$DST/values"
-
-          cp "$SRC/mipmap-anydpi-v26/ic_launcher.xml" "$DST/mipmap-anydpi-v26/"
-          cp "$SRC/mipmap-anydpi-v26/ic_launcher_round.xml" "$DST/mipmap-anydpi-v26/"
-          cp "$SRC/drawable-nodpi/mentex_icon_foreground.png" "$DST/drawable-nodpi/"
-          cp "$SRC/values/colors.xml" "$DST/values/"
-
-          echo "Ícone original instalado."
-
-      - name: Compilar APK atualizado
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          PROJECT_DIR=$(cat "$RUNNER_TEMP/project-dir.txt")
-          cd "$PROJECT_DIR/android"
-
           chmod +x gradlew
-          ./gradlew clean assembleDebug
-
-          APK="app/build/outputs/apk/debug/app-debug.apk"
-
-          if [ ! -s "$APK" ]; then
-            echo "ERRO: APK não foi gerado."
-            exit 1
-          fi
-
-          cp "$APK" "$GITHUB_WORKSPACE/MENTEX-ATUALIZADO.apk"
-
-          echo "APK atualizado com sucesso."
+          ./gradlew clean assembleDebug --stacktrace
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-ATUALIZADO-APK
-          path: MENTEX-ATUALIZADO.apk
+          name: MENTEX-APK-ATUALIZADO
+          path: |
+            ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           
