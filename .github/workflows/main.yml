@@ -1,5 +1,5 @@
 
-name: MENTEX V5.2 - Gerar APK
+name: LABIRINTO MORTAL - Gerar APK
 
 on:
   workflow_dispatch:
@@ -9,49 +9,90 @@ permissions:
 
 jobs:
   build:
-    name: Preparar APK MENTEX V5.2
-    runs-on: ubuntu-latest
+    name: Compilar LABIRINTO MORTAL
+    runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar arquivos do projeto
+      - name: Baixar repositório
         uses: actions/checkout@v4
 
-      - name: Localizar e extrair APK
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Instalar Gradle 8.9
         run: |
-          mkdir -p saida
-          mkdir -p temporario
+          wget -q https://services.gradle.org/distributions/gradle-8.9-bin.zip
+          unzip -q gradle-8.9-bin.zip -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/gradle-8.9/bin" >> "$GITHUB_PATH"
 
-          APK=$(find . -type f -iname "*.apk" \
-            -not -path "./.git/*" | head -n 1)
+      - name: Localizar projeto Android
+        shell: bash
+        run: |
+          set -Eeuo pipefail
 
-          if [ -z "$APK" ]; then
-            ZIP=$(find . -type f -iname "*.zip" \
-              -not -path "./.git/*" | head -n 1)
+          echo "Procurando projeto Android..."
 
-            if [ -z "$ZIP" ]; then
-              echo "ERRO: Nenhum APK ou ZIP encontrado."
-              exit 1
-            fi
+          PROJECT=""
 
-            unzip -o "$ZIP" -d temporario
-
-            APK=$(find temporario -type f \
-              -iname "*.apk" | head -n 1)
+          # Prioriza o projeto LABIRINTO MORTAL
+          if [ -f "./LabirintoMortal/settings.gradle" ]; then
+            PROJECT="./LabirintoMortal"
           fi
 
-          if [ -z "$APK" ]; then
-            echo "ERRO: O ZIP não contém APK."
+          # Procura em outras pastas se necessário
+          if [ -z "$PROJECT" ]; then
+            while IFS= read -r FILE; do
+              DIR="$(dirname "$FILE")"
+
+              if [ -f "$DIR/build.gradle" ] &&
+                 [ -f "$DIR/app/build.gradle" ] &&
+                 [ -f "$DIR/app/src/main/AndroidManifest.xml" ]; then
+                PROJECT="$DIR"
+                break
+              fi
+            done < <(find . -type f \( \
+              -name settings.gradle -o \
+              -name settings.gradle.kts \
+              \) | sort)
+          fi
+
+          if [ -z "$PROJECT" ]; then
+            echo "ERRO: Projeto Android não encontrado."
+            echo "Arquivos encontrados:"
+            find . -maxdepth 5 -type f | head -150
             exit 1
           fi
 
-          cp "$APK" saida/MENTEX-V5.2.apk
+          echo "Projeto encontrado: $PROJECT"
+          echo "PROJECT_DIR=$PROJECT" >> "$GITHUB_ENV"
 
-          echo "APK localizado com sucesso!"
+      - name: Verificar arquivos
+        run: |
+          cd "$PROJECT_DIR"
+          test -f settings.gradle
+          test -f build.gradle
+          test -f app/build.gradle
+          test -f app/src/main/AndroidManifest.xml
+          echo "Estrutura Android encontrada."
 
-      - name: Disponibilizar aplicativo
+      - name: Compilar aplicativo
+        run: |
+          cd "$PROJECT_DIR"
+          gradle --no-daemon assembleDebug
+
+      - name: Preparar APK
+        run: |
+          mkdir -p output
+          cp "$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk" \
+             output/LABIRINTO-MORTAL.apk
+
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-V5.2-APK
-          path: saida/MENTEX-V5.2.apk
+          name: LABIRINTO-MORTAL-APK
+          path: output/LABIRINTO-MORTAL.apk
           if-no-files-found: error
           
