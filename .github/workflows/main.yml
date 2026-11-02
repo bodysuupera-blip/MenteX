@@ -1,5 +1,5 @@
 
-name: MENTEX V4.7 - Atualizar Icone e Gerar APK
+name: MENTEX - Extrair Projeto e Gerar APK
 
 on:
   workflow_dispatch:
@@ -9,75 +9,87 @@ permissions:
 
 jobs:
   build:
-    name: Compilar APK do MENTEX
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar projeto
+      - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Configurar Java 17
+      - name: Configurar Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
+      - name: Preparar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
       - name: Instalar ferramentas
-        run: sudo apt-get update && sudo apt-get install -y unzip findutils
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unzip findutils
 
-      - name: Localizar projeto Android
+      - name: Extrair projeto MENTEX
         shell: bash
         run: |
           set -e
-          GRADLE_FILE=$(find . -name gradlew -type f | head -n 1)
-          if [ -z "$GRADLE_FILE" ]; then
-            echo "ERRO: gradlew não encontrado."
+
+          ZIP="MENTEX-4.7-PROJETO-RECONSTRUIDO-CORRIGIDO.zip"
+
+          if [ ! -f "$ZIP" ]; then
+            echo "Projeto ZIP nao encontrado"
             exit 1
           fi
-          PROJECT_DIR=$(dirname "$GRADLE_FILE")
-          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
-          echo "Projeto encontrado: $PROJECT_DIR"
 
-      - name: Aplicar novo ícone MENTEX
+          mkdir -p projeto
+          unzip -q "$ZIP" -d projeto
+
+          ROOT=$(find projeto -name settings.gradle -o -name settings.gradle.kts | head -n 1)
+
+          if [ -z "$ROOT" ]; then
+            echo "ERRO: projeto Android sem settings.gradle"
+            find projeto -maxdepth 4 -type f | head -100
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$ROOT")
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+          echo "Projeto localizado em $PROJECT_DIR"
+
+      - name: Configurar icone MENTEX
         shell: bash
         run: |
           set -e
-          if [ ! -f MENTEX-ICONE-MELHORADO.zip ]; then
-            echo "ERRO: coloque MENTEX-ICONE-MELHORADO.zip na raiz do repositorio."
-            exit 1
+
+          APP="$PROJECT_DIR/app/src/main/res"
+
+          if [ -f MENTEX-ICONE-MELHORADO.zip ]; then
+            mkdir -p /tmp/icone
+            unzip -q MENTEX-ICONE-MELHORADO.zip -d /tmp/icone
+
+            ICONS=$(find /tmp/icone -path '*/android/app/src/main/res' -type d | head -1)
+
+            if [ -n "$ICONS" ] && [ -d "$APP" ]; then
+              cp -R "$ICONS"/. "$APP"/
+            fi
+          else
+            echo "ZIP do icone nao encontrado; mantendo icone do projeto."
           fi
 
-          mkdir -p /tmp/mentex-icon
-          unzip -o MENTEX-ICONE-MELHORADO.zip -d /tmp/mentex-icon
-
-          APP_DIR="$PROJECT_DIR/app"
-          ICON_DIR="/tmp/mentex-icon/android/app/src/main/res"
-
-          if [ ! -d "$APP_DIR/src/main/res" ]; then
-            echo "ERRO: pasta de recursos Android não encontrada."
-            exit 1
-          fi
-
-          if [ ! -d "$ICON_DIR" ]; then
-            echo "ERRO: arquivos do ícone não encontrados no ZIP."
-            exit 1
-          fi
-
-          cp -R "$ICON_DIR"/. "$APP_DIR/src/main/res/"
-          echo "Novo ícone aplicado."
-
-      - name: Gerar APK
+      - name: Compilar APK
         shell: bash
         run: |
           set -e
           cd "$PROJECT_DIR"
-          chmod +x gradlew
-          ./gradlew clean assembleDebug --stacktrace
+          gradle clean assembleDebug --stacktrace
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-APK-ATUALIZADO
+          name: MENTEX-APK
           path: |
             ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
