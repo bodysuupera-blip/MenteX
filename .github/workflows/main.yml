@@ -1,23 +1,21 @@
 
-name: MENTEX - Gerar APK com Atualização
+name: MENTEX 5.1 - Gerar APK
 
 on:
   workflow_dispatch:
   push:
     branches:
       - principal
+      - main
+      - master
 
 permissions:
   contents: read
 
 jobs:
   build:
-    name: Atualizar e Compilar MENTEX
+    name: Compilar MENTEX Android
     runs-on: ubuntu-22.04
-
-    env:
-      ANDROID_HOME: /usr/local/lib/android/sdk
-      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
     steps:
       - name: Baixar projeto
@@ -34,14 +32,25 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Verificar estrutura
+        run: |
+          echo "Verificando arquivos do MENTEX..."
+          test -f package.json
+          test -f capacitor.config.json
+          test -f www/index.html
+          echo "Estrutura encontrada!"
+
+      - name: Instalar dependências
+        run: npm install
+
       - name: Configurar Android SDK
         shell: bash
         run: |
-          echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
-          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | head -n 1)
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" \
+            -name sdkmanager -type f | head -n 1)
 
           if [ -z "$SDKMANAGER" ]; then
-            echo "ERRO: sdkmanager não encontrado."
+            echo "ERRO: SDK Manager não encontrado."
             exit 1
           fi
 
@@ -52,97 +61,22 @@ jobs:
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-      - name: Instalar ferramentas
-        run: |
-          npm install -g cordova
-          sudo apt-get update
-          sudo apt-get install -y unzip
+      - name: Criar projeto Android
+        run: npx cap add android
 
-      - name: Localizar projeto
-        shell: bash
-        run: |
-          PROJECT_DIR=$(find . -name config.xml \
-            -not -path '*/platforms/*' \
-            -not -path '*/node_modules/*' \
-            -printf '%h\n' | head -n 1)
-
-          if [ -z "$PROJECT_DIR" ]; then
-            echo "ERRO: config.xml não encontrado."
-            exit 1
-          fi
-
-          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
-          echo "Projeto encontrado: $PROJECT_DIR"
-
-      - name: Aplicar atualização do MENTEX
-        shell: bash
-        run: |
-          ZIP="MENTEX-ATUALIZACAO-PRONTA.zip"
-
-          if [ ! -f "$ZIP" ]; then
-            echo "ERRO: ZIP não encontrado na raiz do repositório."
-            exit 1
-          fi
-
-          mkdir -p /tmp/mentex-update
-          unzip -o "$ZIP" -d /tmp/mentex-update
-
-          SOURCE="/tmp/mentex-update/MENTEX-ATUALIZACAO-PRONTA/assets/public"
-          DEST="$PROJECT_DIR/www"
-
-          if [ ! -f "$SOURCE/index.html" ]; then
-            echo "ERRO: index.html não encontrado dentro do ZIP."
-            exit 1
-          fi
-
-          mkdir -p "$DEST"
-          cp -a "$SOURCE/." "$DEST/"
-
-          echo "Arquivos atualizados:"
-          ls -lh "$DEST"
-
-      - name: Instalar dependências
-        shell: bash
-        run: |
-          cd "$PROJECT_DIR"
-
-          if [ -f package.json ]; then
-            npm install
-          fi
-
-      - name: Preparar Android
-        shell: bash
-        run: |
-          cd "$PROJECT_DIR"
-
-          if [ ! -d platforms/android ]; then
-            cordova platform add android@14.0.1
-          fi
+      - name: Sincronizar MENTEX
+        run: npx cap sync android
 
       - name: Gerar APK
         run: |
-          cd "$PROJECT_DIR"
-          cordova build android
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --stacktrace
 
-      - name: Localizar APK
-        shell: bash
-        run: |
-          APK=$(find "$PROJECT_DIR/platforms/android" \
-            -type f -name '*debug.apk' | head -n 1)
-
-          if [ -z "$APK" ]; then
-            echo "ERRO: APK não encontrado."
-            find "$PROJECT_DIR/platforms/android" -type f -name '*.apk'
-            exit 1
-          fi
-
-          mkdir -p resultado
-          cp "$APK" resultado/MENTEX-ATUALIZADO.apk
-
-      - name: Disponibilizar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-ATUALIZADO
-          path: resultado/MENTEX-ATUALIZADO.apk
+          name: MENTEX-5.1-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           
