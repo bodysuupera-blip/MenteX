@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   build:
-    name: Compilar MENTEX com Novo Ícone
+    name: Compilar MENTEX - Ícone e Acerto/Erro
     runs-on: ubuntu-22.04
 
     steps:
@@ -36,7 +36,7 @@ jobs:
           DEST="$RUNNER_TEMP/mentex-original"
 
           if [ ! -f "$ZIP" ]; then
-            echo "ERRO: ZIP atualizado não encontrado."
+            echo "ERRO: ZIP do MENTEX não encontrado."
             exit 1
           fi
 
@@ -56,9 +56,10 @@ jobs:
           PROJECT_DIR=$(dirname "$PACKAGE")
           echo "$PROJECT_DIR" > "$RUNNER_TEMP/project-dir.txt"
 
-          echo "Projeto localizado: $PROJECT_DIR"
+          echo "Projeto encontrado: $PROJECT_DIR"
 
       - name: Instalar dependências
+        shell: bash
         run: |
           set -Eeuo pipefail
 
@@ -70,45 +71,50 @@ jobs:
 
           npm install
           npx cap add android
+          npx cap sync android
 
-      - name: Aplicar novo ícone
+      - name: Aplicar novo ícone MENTEX
         shell: bash
         run: |
           set -Eeuo pipefail
 
           PROJECT_DIR=$(cat "$RUNNER_TEMP/project-dir.txt")
-          RES_DIR="$PROJECT_DIR/android-icon-res"
-          ANDROID_RES="$PROJECT_DIR/android/app/src/main/res"
+          SRC="$PROJECT_DIR/android-icon-res"
+          DST="$PROJECT_DIR/android/app/src/main/res"
 
           for density in mipmap-mdpi mipmap-hdpi mipmap-xhdpi mipmap-xxhdpi mipmap-xxxhdpi; do
-            SOURCE="$RES_DIR/$density"
+            mkdir -p "$DST/$density"
 
-            if [ ! -f "$SOURCE/ic_launcher.png" ]; then
-              echo "ERRO: ícone ausente em $density"
-              exit 1
-            fi
-
-            mkdir -p "$ANDROID_RES/$density"
-
-            cp "$SOURCE/ic_launcher.png" \
-              "$ANDROID_RES/$density/ic_launcher.png"
-
-            cp "$SOURCE/ic_launcher_round.png" \
-              "$ANDROID_RES/$density/ic_launcher_round.png"
+            cp "$SRC/$density/ic_launcher.png" "$DST/$density/"
+            cp "$SRC/$density/ic_launcher_round.png" "$DST/$density/"
           done
 
-          echo "Novo ícone instalado sem modificar o AndroidManifest.xml."
+          mkdir -p "$DST/mipmap-anydpi-v26"
+          mkdir -p "$DST/drawable-nodpi"
+          mkdir -p "$DST/values"
 
-      - name: Sincronizar Android
+          cp "$SRC/mipmap-anydpi-v26/ic_launcher.xml" "$DST/mipmap-anydpi-v26/"
+          cp "$SRC/mipmap-anydpi-v26/ic_launcher_round.xml" "$DST/mipmap-anydpi-v26/"
+          cp "$SRC/drawable-nodpi/mentex_icon_foreground.png" "$DST/drawable-nodpi/"
+          cp "$SRC/values/colors.xml" "$DST/values/"
+
+          echo "Novo ícone aplicado."
+
+      - name: Verificar imagens das respostas
+        shell: bash
         run: |
           set -Eeuo pipefail
 
           PROJECT_DIR=$(cat "$RUNNER_TEMP/project-dir.txt")
-          cd "$PROJECT_DIR"
 
-          npx cap sync android
+          test -s "$PROJECT_DIR/www/brain_happy.png"
+          test -s "$PROJECT_DIR/www/brain_sad.png"
+          test -s "$PROJECT_DIR/www/mentex_icon.png"
+
+          echo "Imagens de acerto, erro e ícone verificadas."
 
       - name: Compilar APK
+        shell: bash
         run: |
           set -Eeuo pipefail
 
@@ -116,21 +122,21 @@ jobs:
           cd "$PROJECT_DIR/android"
 
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew clean assembleDebug
 
           APK="app/build/outputs/apk/debug/app-debug.apk"
 
-          if [ ! -f "$APK" ]; then
+          if [ ! -s "$APK" ]; then
             echo "ERRO: APK não foi gerado."
             exit 1
           fi
 
-          cp "$APK" "$GITHUB_WORKSPACE/MENTEX-NOVO-ICONE.apk"
+          cp "$APK" "$GITHUB_WORKSPACE/MENTEX-ATUALIZADO.apk"
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-NOVO-ICONE-APK
-          path: MENTEX-NOVO-ICONE.apk
+          name: MENTEX-ATUALIZADO-APK
+          path: MENTEX-ATUALIZADO.apk
           if-no-files-found: error
           
