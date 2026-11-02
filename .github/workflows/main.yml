@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   build:
-    name: Compilar MENTEX Original Melhorado
+    name: Compilar MENTEX com Novo Ícone
     runs-on: ubuntu-22.04
 
     steps:
@@ -27,16 +27,16 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Localizar projeto
+      - name: Localizar e extrair projeto MENTEX
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          ZIP="./MENTEX-ESTILO-ORIGINAL-MELHORADO.zip"
+          ZIP="./MENTEX-ESTILO-ORIGINAL-MELHORADO-ICONE-NOVO.zip"
           DEST="$RUNNER_TEMP/mentex-original"
 
           if [ ! -f "$ZIP" ]; then
-            echo "ERRO: ZIP MENTEX não encontrado."
+            echo "ERRO: ZIP atualizado do MENTEX não encontrado."
             exit 1
           fi
 
@@ -56,9 +56,10 @@ jobs:
           PROJECT_DIR=$(dirname "$PACKAGE")
           echo "$PROJECT_DIR" > "$RUNNER_TEMP/project-dir.txt"
 
-          echo "Projeto localizado: $PROJECT_DIR"
+          echo "Projeto encontrado: $PROJECT_DIR"
 
-      - name: Instalar e preparar Android
+      - name: Instalar dependências e preparar Android
+        shell: bash
         run: |
           set -Eeuo pipefail
 
@@ -69,8 +70,43 @@ jobs:
           test -f capacitor.config.json
 
           npm install
-
           npx cap add android
+
+      - name: Aplicar novo ícone MENTEX
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          PROJECT_DIR=$(cat "$RUNNER_TEMP/project-dir.txt")
+          RES_DIR="$PROJECT_DIR/android-icon-res"
+          ANDROID_RES="$PROJECT_DIR/android/app/src/main/res"
+
+          for density in mipmap-mdpi mipmap-hdpi mipmap-xhdpi mipmap-xxhdpi mipmap-xxxhdpi; do
+            if [ ! -f "$RES_DIR/$density/ic_launcher.png" ]; then
+              echo "ERRO: ícone não encontrado em $density"
+              exit 1
+            fi
+
+            mkdir -p "$ANDROID_RES/$density"
+
+            cp "$RES_DIR/$density/ic_launcher.png" \
+              "$ANDROID_RES/$density/ic_launcher.png"
+
+            cp "$RES_DIR/$density/ic_launcher_round.png" \
+              "$ANDROID_RES/$density/ic_launcher_round.png"
+          done
+
+          MANIFEST="$PROJECT_DIR/android/app/src/main/AndroidManifest.xml"
+
+          sed -i 's/android:icon="@mipmap\/ic_launcher"/android:icon="@mipmap\/ic_launcher" android:roundIcon="@mipmap\/ic_launcher_round"/' "$MANIFEST"
+
+          echo "Novo ícone MENTEX aplicado."
+
+      - name: Sincronizar projeto Android
+        run: |
+          set -Eeuo pipefail
+          PROJECT_DIR=$(cat "$RUNNER_TEMP/project-dir.txt")
+          cd "$PROJECT_DIR"
           npx cap sync android
 
       - name: Compilar APK
@@ -84,12 +120,12 @@ jobs:
           ./gradlew assembleDebug
 
           cp app/build/outputs/apk/debug/app-debug.apk \
-            "$GITHUB_WORKSPACE/MENTEX-ORIGINAL-MELHORADO.apk"
+            "$GITHUB_WORKSPACE/MENTEX-NOVO-ICONE.apk"
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-ORIGINAL-MELHORADO-APK
-          path: MENTEX-ORIGINAL-MELHORADO.apk
+          name: MENTEX-NOVO-ICONE-APK
+          path: MENTEX-NOVO-ICONE.apk
           if-no-files-found: error
           
