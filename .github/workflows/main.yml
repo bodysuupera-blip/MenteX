@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   build:
-    name: Compilar MENTEX - Ícone e Acerto/Erro
+    name: MENTEX - Ícone e Respostas Atualizados
     runs-on: ubuntu-22.04
 
     steps:
@@ -27,16 +27,16 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Localizar e extrair projeto
+      - name: Extrair pacote MENTEX atualizado
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          ZIP="./MENTEX-ESTILO-ORIGINAL-MELHORADO-ICONE-NOVO.zip"
-          DEST="$RUNNER_TEMP/mentex-original"
+          ZIP="$GITHUB_WORKSPACE/MENTEX-ESTILO-ORIGINAL-MELHORADO-ICONE-NOVO.zip"
+          DEST="$RUNNER_TEMP/mentex-final"
 
           if [ ! -f "$ZIP" ]; then
-            echo "ERRO: ZIP do MENTEX não encontrado."
+            echo "ERRO: ZIP atualizado não encontrado na raiz do GitHub."
             exit 1
           fi
 
@@ -56,7 +56,35 @@ jobs:
           PROJECT_DIR=$(dirname "$PACKAGE")
           echo "$PROJECT_DIR" > "$RUNNER_TEMP/project-dir.txt"
 
-          echo "Projeto encontrado: $PROJECT_DIR"
+          echo "Projeto atualizado: $PROJECT_DIR"
+
+      - name: Conferir imagens novas
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          PROJECT_DIR=$(cat "$RUNNER_TEMP/project-dir.txt")
+
+          for FILE in \
+            www/index.html \
+            www/mentex_icon.png \
+            www/brain_happy.png \
+            www/brain_sad.png \
+            android-icon-res/mipmap-mdpi/ic_launcher.png \
+            android-icon-res/mipmap-hdpi/ic_launcher.png \
+            android-icon-res/mipmap-xhdpi/ic_launcher.png \
+            android-icon-res/mipmap-xxhdpi/ic_launcher.png \
+            android-icon-res/mipmap-xxxhdpi/ic_launcher.png \
+            android-icon-res/mipmap-anydpi-v26/ic_launcher.xml \
+            android-icon-res/drawable-nodpi/mentex_icon_foreground.png
+          do
+            if [ ! -s "$PROJECT_DIR/$FILE" ]; then
+              echo "ERRO: arquivo ausente: $FILE"
+              exit 1
+            fi
+          done
+
+          echo "Todas as imagens atualizadas foram encontradas."
 
       - name: Instalar dependências
         shell: bash
@@ -66,14 +94,11 @@ jobs:
           PROJECT_DIR=$(cat "$RUNNER_TEMP/project-dir.txt")
           cd "$PROJECT_DIR"
 
-          test -f www/index.html
-          test -f capacitor.config.json
-
           npm install
           npx cap add android
           npx cap sync android
 
-      - name: Aplicar novo ícone MENTEX
+      - name: Aplicar ícone original do MENTEX
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -82,84 +107,25 @@ jobs:
           SRC="$PROJECT_DIR/android-icon-res"
           DST="$PROJECT_DIR/android/app/src/main/res"
 
-          echo "Aplicando ícones PNG..."
+          for DENSITY in mipmap-mdpi mipmap-hdpi mipmap-xhdpi mipmap-xxhdpi mipmap-xxxhdpi; do
+            mkdir -p "$DST/$DENSITY"
 
-          for density in mipmap-mdpi mipmap-hdpi mipmap-xhdpi mipmap-xxhdpi mipmap-xxxhdpi; do
-            mkdir -p "$DST/$density"
-
-            if [ -f "$SRC/$density/ic_launcher.png" ]; then
-              cp "$SRC/$density/ic_launcher.png" "$DST/$density/"
-            else
-              echo "Aviso: ícone PNG ausente em $density"
-            fi
-
-            if [ -f "$SRC/$density/ic_launcher_round.png" ]; then
-              cp "$SRC/$density/ic_launcher_round.png" "$DST/$density/"
-            fi
+            cp "$SRC/$DENSITY/ic_launcher.png" "$DST/$DENSITY/"
+            cp "$SRC/$DENSITY/ic_launcher_round.png" "$DST/$DENSITY/"
           done
 
-          echo "Verificando ícone adaptativo..."
+          mkdir -p "$DST/mipmap-anydpi-v26"
+          mkdir -p "$DST/drawable-nodpi"
+          mkdir -p "$DST/values"
 
-          if [ -f "$SRC/drawable-nodpi/mentex_icon_foreground.png" ]; then
-            mkdir -p "$DST/mipmap-anydpi-v26"
-            mkdir -p "$DST/drawable-nodpi"
-            mkdir -p "$DST/values"
+          cp "$SRC/mipmap-anydpi-v26/ic_launcher.xml" "$DST/mipmap-anydpi-v26/"
+          cp "$SRC/mipmap-anydpi-v26/ic_launcher_round.xml" "$DST/mipmap-anydpi-v26/"
+          cp "$SRC/drawable-nodpi/mentex_icon_foreground.png" "$DST/drawable-nodpi/"
+          cp "$SRC/values/colors.xml" "$DST/values/"
 
-            cp "$SRC/drawable-nodpi/mentex_icon_foreground.png" \
-              "$DST/drawable-nodpi/"
+          echo "Ícone original instalado."
 
-            if [ -f "$SRC/values/colors.xml" ]; then
-              cp "$SRC/values/colors.xml" "$DST/values/"
-            else
-              cat > "$DST/values/mentex_icon_colors.xml" <<'EOF'
-          <resources>
-              <color name="mentex_icon_background">#061B55</color>
-          </resources>
-          EOF
-            fi
-
-            if [ -f "$SRC/mipmap-anydpi-v26/ic_launcher.xml" ]; then
-              cp "$SRC/mipmap-anydpi-v26/ic_launcher.xml" \
-                "$DST/mipmap-anydpi-v26/"
-            else
-              cat > "$DST/mipmap-anydpi-v26/ic_launcher.xml" <<'EOF'
-          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-              <background android:drawable="@color/mentex_icon_background"/>
-              <foreground android:drawable="@drawable/mentex_icon_foreground"/>
-          </adaptive-icon>
-          EOF
-            fi
-
-            if [ -f "$SRC/mipmap-anydpi-v26/ic_launcher_round.xml" ]; then
-              cp "$SRC/mipmap-anydpi-v26/ic_launcher_round.xml" \
-                "$DST/mipmap-anydpi-v26/"
-            else
-              cp "$DST/mipmap-anydpi-v26/ic_launcher.xml" \
-                "$DST/mipmap-anydpi-v26/ic_launcher_round.xml"
-            fi
-
-            echo "Ícone adaptativo instalado."
-          else
-            echo "Aviso: sem imagem adaptativa; serão usados os ícones PNG."
-          fi
-
-          echo "Ícone MENTEX aplicado."
-
-      - name: Verificar imagens de acerto e erro
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          PROJECT_DIR=$(cat "$RUNNER_TEMP/project-dir.txt")
-
-          test -s "$PROJECT_DIR/www/index.html"
-          test -s "$PROJECT_DIR/www/brain_happy.png"
-          test -s "$PROJECT_DIR/www/brain_sad.png"
-          test -s "$PROJECT_DIR/www/mentex_icon.png"
-
-          echo "Imagens verificadas."
-
-      - name: Compilar APK
+      - name: Compilar APK atualizado
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -178,6 +144,8 @@ jobs:
           fi
 
           cp "$APK" "$GITHUB_WORKSPACE/MENTEX-ATUALIZADO.apk"
+
+          echo "APK atualizado com sucesso."
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
