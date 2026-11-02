@@ -32,55 +32,54 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Extrair projeto MENTEX
+      - name: Localizar e extrair projeto correto
         shell: bash
         run: |
           set -e
 
-          if [ ! -f package.json ]; then
-            ZIP=""
+          ZIP="$GITHUB_WORKSPACE/MENTEX-INDEPENDENTE.zip"
 
-            while IFS= read -r arquivo; do
-              ZIP="$arquivo"
-              break
-            done < <(find . -maxdepth 1 -type f -iname "*.zip")
-
-            if [ -z "$ZIP" ]; then
-              echo "ERRO: Nenhum ZIP encontrado."
-              ls -la
-              exit 1
-            fi
-
-            echo "Extraindo: $ZIP"
-
-            mkdir -p /tmp/mentex
-            unzip -oq "$ZIP" -d /tmp/mentex
-
-            PACKAGE=""
-
-            while IFS= read -r arquivo; do
-              PACKAGE="$arquivo"
-              break
-            done < <(find /tmp/mentex -type f -name package.json)
-
-            if [ -z "$PACKAGE" ]; then
-              echo "ERRO: package.json não encontrado dentro do ZIP."
-              find /tmp/mentex -maxdepth 4 -type f -print
-              exit 1
-            fi
-
-            PROJECT_DIR=$(dirname "$PACKAGE")
-            cp -a "$PROJECT_DIR"/. .
+          if [ ! -f "$ZIP" ]; then
+            echo "ERRO: MENTEX-INDEPENDENTE.zip não encontrado na raiz."
+            echo "Arquivos disponíveis:"
+            ls -la
+            exit 1
           fi
 
-      - name: Verificar arquivos
+          mkdir -p /tmp/mentex
+          unzip -oq "$ZIP" -d /tmp/mentex
+
+          PACKAGE=""
+
+          while IFS= read -r arquivo; do
+            PACKAGE="$arquivo"
+            break
+          done < <(find /tmp/mentex -type f -name package.json)
+
+          if [ -z "$PACKAGE" ]; then
+            echo "ERRO: package.json não encontrado no projeto independente."
+            find /tmp/mentex -maxdepth 5 -type f -print
+            exit 1
+          fi
+
+          PROJECT_DIR="$(dirname "$PACKAGE")"
+
+          cp -a "$PROJECT_DIR"/. "$GITHUB_WORKSPACE"/
+
+          echo "Projeto independente localizado e extraído."
+
+      - name: Verificar estrutura
+        shell: bash
         run: |
           set -e
+
           echo "Verificando projeto MENTEX..."
+
           test -f package.json
           test -f capacitor.config.json
           test -f www/index.html
-          echo "Arquivos encontrados!"
+
+          echo "Todos os arquivos necessários foram encontrados."
 
       - name: Instalar dependências
         run: npm install
@@ -95,10 +94,10 @@ jobs:
           while IFS= read -r arquivo; do
             SDKMANAGER="$arquivo"
             break
-          done < <(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f)
+          done < <(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager)
 
           if [ -z "$SDKMANAGER" ]; then
-            echo "SDK Manager não encontrado."
+            echo "ERRO: SDK Manager não encontrado."
             exit 1
           fi
 
@@ -109,21 +108,24 @@ jobs:
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-      - name: Adicionar Android
+      - name: Adicionar plataforma Android
         run: npx cap add android
 
-      - name: Sincronizar MENTEX
+      - name: Sincronizar aplicativo
         run: npx cap sync android
 
       - name: Compilar APK
+        shell: bash
         run: |
+          set -e
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Verificar APK
+      - name: Conferir APK gerado
         run: |
           test -f android/app/build/outputs/apk/debug/app-debug.apk
+          echo "APK gerado com sucesso!"
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
