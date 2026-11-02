@@ -27,20 +27,34 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Localizar e compilar projeto
+      - name: Extrair e localizar projeto
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          echo "Procurando projeto MENTEX..."
+          ZIP="./MENTEX-NOVA-GERACAO-PROJETO.zip"
+          DEST="$RUNNER_TEMP/mentex-novo"
 
-          PACKAGE=$(find . -type f -name package.json \
+          echo "Procurando ZIP..."
+
+          if [ ! -f "$ZIP" ]; then
+            echo "ERRO: ZIP da nova plataforma não encontrado."
+            exit 1
+          fi
+
+          mkdir -p "$DEST"
+          unzip -q "$ZIP" -d "$DEST"
+
+          echo "Procurando package.json..."
+
+          PACKAGE=$(find "$DEST" -type f \
+            -name package.json \
             -not -path '*/node_modules/*' \
             -print -quit)
 
           if [ -z "$PACKAGE" ]; then
-            echo "ERRO: package.json não encontrado."
-            find . -maxdepth 4 -type f | head -100
+            echo "ERRO: projeto não encontrado dentro do ZIP."
+            find "$DEST" -maxdepth 4 -type f
             exit 1
           fi
 
@@ -48,33 +62,35 @@ jobs:
 
           echo "Projeto encontrado: $PROJECT_DIR"
 
+          echo "$PROJECT_DIR" > "$RUNNER_TEMP/mentex-dir.txt"
+
+      - name: Instalar e preparar Android
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          PROJECT_DIR=$(cat "$RUNNER_TEMP/mentex-dir.txt")
           cd "$PROJECT_DIR"
 
-          if [ ! -f www/index.html ]; then
-            echo "ERRO: www/index.html não encontrado."
-            exit 1
-          fi
+          test -f www/index.html
+          test -f capacitor.config.json
 
-          if [ ! -f capacitor.config.json ]; then
-            echo "ERRO: capacitor.config.json não encontrado."
-            exit 1
-          fi
-
-          echo "Instalando dependências..."
           npm install
 
-          echo "Preparando Android..."
-
-          if [ ! -d android ]; then
-            npx cap add android
-          fi
+          npx cap add android
 
           npx cap sync android
 
-          echo "Compilando APK..."
+      - name: Compilar APK
+        shell: bash
+        run: |
+          set -Eeuo pipefail
 
-          cd android
+          PROJECT_DIR=$(cat "$RUNNER_TEMP/mentex-dir.txt")
+          cd "$PROJECT_DIR/android"
+
           chmod +x gradlew
+
           ./gradlew assembleDebug
 
           APK="app/build/outputs/apk/debug/app-debug.apk"
@@ -86,7 +102,7 @@ jobs:
 
           cp "$APK" "$GITHUB_WORKSPACE/MENTEX-NOVA-GERACAO.apk"
 
-          echo "APK gerado com sucesso!"
+          echo "APK GERADO COM SUCESSO!"
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
