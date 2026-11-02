@@ -9,22 +9,24 @@ permissions:
 
 jobs:
   build:
+    name: Compilar APK do MENTEX
     runs-on: ubuntu-22.04
 
     steps:
       - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Configurar Java
+      - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
 
-      - name: Preparar Gradle
+      - name: Preparar Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.7'
+          gradle-version: '8.9'
 
       - name: Instalar ferramentas
         run: |
@@ -34,63 +36,101 @@ jobs:
       - name: Extrair projeto MENTEX
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
           ZIP="MENTEX-4.7-PROJETO-RECONSTRUIDO-CORRIGIDO.zip"
 
           if [ ! -f "$ZIP" ]; then
-            echo "Projeto ZIP nao encontrado"
+            echo "ERRO: ZIP do projeto não encontrado."
             exit 1
           fi
 
           mkdir -p projeto
-          unzip -q "$ZIP" -d projeto
+          unzip -oq "$ZIP" -d projeto
 
-          ROOT=$(find projeto -name settings.gradle -o -name settings.gradle.kts | head -n 1)
+          ROOT=$(find projeto -type f \( \
+            -name settings.gradle -o \
+            -name settings.gradle.kts \
+          \) -print -quit)
 
           if [ -z "$ROOT" ]; then
-            echo "ERRO: projeto Android sem settings.gradle"
-            find projeto -maxdepth 4 -type f | head -100
+            echo "ERRO: settings.gradle não encontrado."
+            find projeto -maxdepth 5 -type f | head -100
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$ROOT")
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-          echo "Projeto localizado em $PROJECT_DIR"
+          echo "Projeto encontrado: $PROJECT_DIR"
 
-      - name: Configurar icone MENTEX
+          if [ ! -f "$PROJECT_DIR/app/build.gradle" ] && \
+             [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
+            echo "ERRO: app/build.gradle não encontrado."
+            exit 1
+          fi
+
+      - name: Aplicar novo icone MENTEX
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          APP="$PROJECT_DIR/app/src/main/res"
+          ZIP="MENTEX-ICONE-MELHORADO.zip"
 
-          if [ -f MENTEX-ICONE-MELHORADO.zip ]; then
-            mkdir -p /tmp/icone
-            unzip -q MENTEX-ICONE-MELHORADO.zip -d /tmp/icone
+          if [ ! -f "$ZIP" ]; then
+            echo "ZIP do icone não encontrado. Mantendo icone atual."
+            exit 0
+          fi
 
-            ICONS=$(find /tmp/icone -path '*/android/app/src/main/res' -type d | head -1)
+          mkdir -p /tmp/mentex-icon
+          unzip -oq "$ZIP" -d /tmp/mentex-icon
 
-            if [ -n "$ICONS" ] && [ -d "$APP" ]; then
-              cp -R "$ICONS"/. "$APP"/
-            fi
+          ICON_DIR=$(find /tmp/mentex-icon \
+            -type d -path '*/android/app/src/main/res' \
+            -print -quit)
+
+          APP_DIR="$PROJECT_DIR/app/src/main/res"
+
+          if [ -n "$ICON_DIR" ] && [ -d "$APP_DIR" ]; then
+            cp -R "$ICON_DIR"/. "$APP_DIR"/
+            echo "Novo icone aplicado."
           else
-            echo "ZIP do icone nao encontrado; mantendo icone do projeto."
+            echo "ERRO: estrutura de icones ou pasta Android não encontrada."
+            exit 1
           fi
 
       - name: Compilar APK
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
+
           cd "$PROJECT_DIR"
+
+          gradle --version
+
           gradle clean assembleDebug --stacktrace
 
-      - name: Publicar APK
+      - name: Verificar APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APK=$(find "$PROJECT_DIR/app/build/outputs/apk" \
+            -type f -name '*.apk' -print -quit)
+
+          if [ -z "$APK" ]; then
+            echo "ERRO: nenhum APK foi gerado."
+            exit 1
+          fi
+
+          echo "APK gerado: $APK"
+          ls -lh "$APK"
+
+      - name: Disponibilizar APK para baixar
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-APK
-          path: |
-            ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
+          name: MENTEX-APK-ATUALIZADO
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/**/*.apk
           if-no-files-found: error
+          retention-days: 14
           
