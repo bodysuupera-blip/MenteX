@@ -31,8 +31,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: npm
-          cache-dependency-path: MENTEX-NOVO-PROJETO/package.json
 
       - name: Localizar projeto MENTEX
         shell: bash
@@ -45,13 +43,11 @@ jobs:
 
           if [ -z "$PROJECT_DIR" ]; then
             echo "ERRO: package.json não encontrado."
-            echo "Arquivos encontrados:"
-            find . -maxdepth 4 -type f | head -100
+            find . -maxdepth 5 -type f | head -150
             exit 1
           fi
 
-          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
-
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           echo "Projeto localizado: $PROJECT_DIR"
           ls -la "$PROJECT_DIR"
 
@@ -60,22 +56,37 @@ jobs:
         run: |
           cd "$PROJECT_DIR"
 
-          test -f package.json
-          test -f capacitor.config.json
-          test -f www/index.html
+          for FILE in package.json capacitor.config.json www/index.html; do
+            if [ ! -f "$FILE" ]; then
+              echo "ERRO: arquivo não encontrado: $FILE"
+              exit 1
+            fi
+          done
 
-          echo "Arquivos principais encontrados!"
-          ls -lh www/
+          echo "Arquivos principais encontrados."
 
       - name: Instalar dependências
         run: |
           cd "$PROJECT_DIR"
           npm install
 
-      - name: Verificar Android SDK
+      - name: Configurar Android SDK
+        shell: bash
         run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          ls "$ANDROID_HOME/platform-tools"
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" \
+            -name sdkmanager -type f | head -n 1)
+
+          if [ -z "$SDKMANAGER" ]; then
+            echo "ERRO: SDK Manager não encontrado."
+            exit 1
+          fi
+
+          yes | "$SDKMANAGER" --licenses || true
+
+          "$SDKMANAGER" --install \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
 
       - name: Criar plataforma Android
         shell: bash
@@ -92,10 +103,11 @@ jobs:
           npx cap sync android
 
       - name: Gerar APK
+        shell: bash
         run: |
           cd "$PROJECT_DIR/android"
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug --stacktrace
 
       - name: Conferir APK
         shell: bash
@@ -103,13 +115,13 @@ jobs:
           APK="$PROJECT_DIR/android/app/build/outputs/apk/debug/app-debug.apk"
 
           if [ ! -f "$APK" ]; then
-            echo "ERRO: APK não foi encontrado."
+            echo "ERRO: APK não encontrado."
             find "$PROJECT_DIR/android" -name '*.apk'
             exit 1
           fi
 
-          mkdir -p resultado
-          cp "$APK" resultado/MENTEX-5.1.apk
+          mkdir -p "$GITHUB_WORKSPACE/resultado"
+          cp "$APK" "$GITHUB_WORKSPACE/resultado/MENTEX-5.1.apk"
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
