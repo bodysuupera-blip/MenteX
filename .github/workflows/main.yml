@@ -32,8 +32,41 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Verificar arquivos
+      - name: Extrair projeto MENTEX
+        shell: bash
         run: |
+          set -e
+
+          if [ ! -f package.json ]; then
+            ZIP=$(find . -maxdepth 1 -type f -iname "*.zip" | head -n 1)
+
+            if [ -z "$ZIP" ]; then
+              echo "ERRO: Nenhum ZIP encontrado."
+              ls -la
+              exit 1
+            fi
+
+            echo "Extraindo: $ZIP"
+            mkdir -p /tmp/mentex
+            unzip -oq "$ZIP" -d /tmp/mentex
+
+            PACKAGE=$(find /tmp/mentex -type f -name package.json | head -n 1)
+
+            if [ -z "$PACKAGE" ]; then
+              echo "ERRO: package.json não encontrado dentro do ZIP."
+              find /tmp/mentex -maxdepth 4 -type f
+              exit 1
+            fi
+
+            PROJECT_DIR=$(dirname "$PACKAGE")
+            cp -a "$PROJECT_DIR"/. .
+          fi
+
+      - name: Verificar arquivos
+        shell: bash
+        run: |
+          set -e
+
           echo "Verificando projeto MENTEX..."
 
           test -f package.json
@@ -48,6 +81,8 @@ jobs:
       - name: Configurar Android SDK
         shell: bash
         run: |
+          set -e
+
           SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" \
             -name sdkmanager -type f | head -n 1)
 
@@ -70,7 +105,9 @@ jobs:
         run: npx cap sync android
 
       - name: Compilar APK
+        shell: bash
         run: |
+          set -e
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug
