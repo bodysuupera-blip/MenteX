@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   build:
-    name: Compilar MENTEX Nova Geração
+    name: Compilar MENTEX Original Melhorado
     runs-on: ubuntu-22.04
 
     steps:
@@ -27,25 +27,21 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Extrair e localizar projeto
+      - name: Localizar projeto
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          ZIP="./MENTEX-NOVA-GERACAO-PROJETO.zip"
-          DEST="$RUNNER_TEMP/mentex-novo"
-
-          echo "Procurando ZIP..."
+          ZIP="./MENTEX-ESTILO-ORIGINAL-MELHORADO.zip"
+          DEST="$RUNNER_TEMP/mentex-original"
 
           if [ ! -f "$ZIP" ]; then
-            echo "ERRO: ZIP da nova plataforma não encontrado."
+            echo "ERRO: ZIP MENTEX não encontrado."
             exit 1
           fi
 
           mkdir -p "$DEST"
           unzip -q "$ZIP" -d "$DEST"
-
-          echo "Procurando package.json..."
 
           PACKAGE=$(find "$DEST" -type f \
             -name package.json \
@@ -53,23 +49,20 @@ jobs:
             -print -quit)
 
           if [ -z "$PACKAGE" ]; then
-            echo "ERRO: projeto não encontrado dentro do ZIP."
-            find "$DEST" -maxdepth 4 -type f
+            echo "ERRO: package.json não encontrado."
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$PACKAGE")
+          echo "$PROJECT_DIR" > "$RUNNER_TEMP/project-dir.txt"
 
-          echo "Projeto encontrado: $PROJECT_DIR"
-
-          echo "$PROJECT_DIR" > "$RUNNER_TEMP/mentex-dir.txt"
+          echo "Projeto localizado: $PROJECT_DIR"
 
       - name: Instalar e preparar Android
-        shell: bash
         run: |
           set -Eeuo pipefail
 
-          PROJECT_DIR=$(cat "$RUNNER_TEMP/mentex-dir.txt")
+          PROJECT_DIR=$(cat "$RUNNER_TEMP/project-dir.txt")
           cd "$PROJECT_DIR"
 
           test -f www/index.html
@@ -78,36 +71,25 @@ jobs:
           npm install
 
           npx cap add android
-
           npx cap sync android
 
       - name: Compilar APK
-        shell: bash
         run: |
           set -Eeuo pipefail
 
-          PROJECT_DIR=$(cat "$RUNNER_TEMP/mentex-dir.txt")
+          PROJECT_DIR=$(cat "$RUNNER_TEMP/project-dir.txt")
           cd "$PROJECT_DIR/android"
 
           chmod +x gradlew
-
           ./gradlew assembleDebug
 
-          APK="app/build/outputs/apk/debug/app-debug.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk \
+            "$GITHUB_WORKSPACE/MENTEX-ORIGINAL-MELHORADO.apk"
 
-          if [ ! -f "$APK" ]; then
-            echo "ERRO: APK não foi gerado."
-            exit 1
-          fi
-
-          cp "$APK" "$GITHUB_WORKSPACE/MENTEX-NOVA-GERACAO.apk"
-
-          echo "APK GERADO COM SUCESSO!"
-
-      - name: Disponibilizar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-NOVA-GERACAO-APK
-          path: MENTEX-NOVA-GERACAO.apk
+          name: MENTEX-ORIGINAL-MELHORADO-APK
+          path: MENTEX-ORIGINAL-MELHORADO.apk
           if-no-files-found: error
           
