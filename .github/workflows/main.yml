@@ -82,36 +82,82 @@ jobs:
           SRC="$PROJECT_DIR/android-icon-res"
           DST="$PROJECT_DIR/android/app/src/main/res"
 
+          echo "Aplicando ícones PNG..."
+
           for density in mipmap-mdpi mipmap-hdpi mipmap-xhdpi mipmap-xxhdpi mipmap-xxxhdpi; do
             mkdir -p "$DST/$density"
 
-            cp "$SRC/$density/ic_launcher.png" "$DST/$density/"
-            cp "$SRC/$density/ic_launcher_round.png" "$DST/$density/"
+            if [ -f "$SRC/$density/ic_launcher.png" ]; then
+              cp "$SRC/$density/ic_launcher.png" "$DST/$density/"
+            else
+              echo "Aviso: ícone PNG ausente em $density"
+            fi
+
+            if [ -f "$SRC/$density/ic_launcher_round.png" ]; then
+              cp "$SRC/$density/ic_launcher_round.png" "$DST/$density/"
+            fi
           done
 
-          mkdir -p "$DST/mipmap-anydpi-v26"
-          mkdir -p "$DST/drawable-nodpi"
-          mkdir -p "$DST/values"
+          echo "Verificando ícone adaptativo..."
 
-          cp "$SRC/mipmap-anydpi-v26/ic_launcher.xml" "$DST/mipmap-anydpi-v26/"
-          cp "$SRC/mipmap-anydpi-v26/ic_launcher_round.xml" "$DST/mipmap-anydpi-v26/"
-          cp "$SRC/drawable-nodpi/mentex_icon_foreground.png" "$DST/drawable-nodpi/"
-          cp "$SRC/values/colors.xml" "$DST/values/"
+          if [ -f "$SRC/drawable-nodpi/mentex_icon_foreground.png" ]; then
+            mkdir -p "$DST/mipmap-anydpi-v26"
+            mkdir -p "$DST/drawable-nodpi"
+            mkdir -p "$DST/values"
 
-          echo "Novo ícone aplicado."
+            cp "$SRC/drawable-nodpi/mentex_icon_foreground.png" \
+              "$DST/drawable-nodpi/"
 
-      - name: Verificar imagens das respostas
+            if [ -f "$SRC/values/colors.xml" ]; then
+              cp "$SRC/values/colors.xml" "$DST/values/"
+            else
+              cat > "$DST/values/mentex_icon_colors.xml" <<'EOF'
+          <resources>
+              <color name="mentex_icon_background">#061B55</color>
+          </resources>
+          EOF
+            fi
+
+            if [ -f "$SRC/mipmap-anydpi-v26/ic_launcher.xml" ]; then
+              cp "$SRC/mipmap-anydpi-v26/ic_launcher.xml" \
+                "$DST/mipmap-anydpi-v26/"
+            else
+              cat > "$DST/mipmap-anydpi-v26/ic_launcher.xml" <<'EOF'
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/mentex_icon_background"/>
+              <foreground android:drawable="@drawable/mentex_icon_foreground"/>
+          </adaptive-icon>
+          EOF
+            fi
+
+            if [ -f "$SRC/mipmap-anydpi-v26/ic_launcher_round.xml" ]; then
+              cp "$SRC/mipmap-anydpi-v26/ic_launcher_round.xml" \
+                "$DST/mipmap-anydpi-v26/"
+            else
+              cp "$DST/mipmap-anydpi-v26/ic_launcher.xml" \
+                "$DST/mipmap-anydpi-v26/ic_launcher_round.xml"
+            fi
+
+            echo "Ícone adaptativo instalado."
+          else
+            echo "Aviso: sem imagem adaptativa; serão usados os ícones PNG."
+          fi
+
+          echo "Ícone MENTEX aplicado."
+
+      - name: Verificar imagens de acerto e erro
         shell: bash
         run: |
           set -Eeuo pipefail
 
           PROJECT_DIR=$(cat "$RUNNER_TEMP/project-dir.txt")
 
+          test -s "$PROJECT_DIR/www/index.html"
           test -s "$PROJECT_DIR/www/brain_happy.png"
           test -s "$PROJECT_DIR/www/brain_sad.png"
           test -s "$PROJECT_DIR/www/mentex_icon.png"
 
-          echo "Imagens de acerto, erro e ícone verificadas."
+          echo "Imagens verificadas."
 
       - name: Compilar APK
         shell: bash
