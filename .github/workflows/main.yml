@@ -15,23 +15,42 @@ jobs:
     name: Atualizar e Compilar MENTEX
     runs-on: ubuntu-22.04
 
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
     steps:
       - name: Baixar projeto
         uses: actions/checkout@v4
 
-      - name: Configurar Java
+      - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Node
+      - name: Configurar Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Configurar Android
-        uses: android-actions/setup-android@v3
+      - name: Configurar Android SDK
+        shell: bash
+        run: |
+          echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | head -n 1)
+
+          if [ -z "$SDKMANAGER" ]; then
+            echo "ERRO: sdkmanager não encontrado."
+            exit 1
+          fi
+
+          yes | "$SDKMANAGER" --licenses || true
+
+          "$SDKMANAGER" --install \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
 
       - name: Instalar ferramentas
         run: |
@@ -53,7 +72,7 @@ jobs:
           fi
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
-          echo "Projeto: $PROJECT_DIR"
+          echo "Projeto encontrado: $PROJECT_DIR"
 
       - name: Aplicar atualização do MENTEX
         shell: bash
@@ -61,7 +80,7 @@ jobs:
           ZIP="MENTEX-ATUALIZACAO-PRONTA.zip"
 
           if [ ! -f "$ZIP" ]; then
-            echo "ERRO: coloque o ZIP na raiz do repositório."
+            echo "ERRO: ZIP não encontrado na raiz do repositório."
             exit 1
           fi
 
@@ -72,17 +91,18 @@ jobs:
           DEST="$PROJECT_DIR/www"
 
           if [ ! -f "$SOURCE/index.html" ]; then
-            echo "ERRO: index.html não encontrado no ZIP."
+            echo "ERRO: index.html não encontrado dentro do ZIP."
             exit 1
           fi
 
           mkdir -p "$DEST"
           cp -a "$SOURCE/." "$DEST/"
 
-          echo "Atualização aplicada:"
-          ls -la "$DEST"
+          echo "Arquivos atualizados:"
+          ls -lh "$DEST"
 
       - name: Instalar dependências
+        shell: bash
         run: |
           cd "$PROJECT_DIR"
 
@@ -91,6 +111,7 @@ jobs:
           fi
 
       - name: Preparar Android
+        shell: bash
         run: |
           cd "$PROJECT_DIR"
 
@@ -98,7 +119,7 @@ jobs:
             cordova platform add android@14.0.1
           fi
 
-      - name: Compilar APK
+      - name: Gerar APK
         run: |
           cd "$PROJECT_DIR"
           cordova build android
@@ -111,6 +132,7 @@ jobs:
 
           if [ -z "$APK" ]; then
             echo "ERRO: APK não encontrado."
+            find "$PROJECT_DIR/platforms/android" -type f -name '*.apk'
             exit 1
           fi
 
@@ -123,3 +145,4 @@ jobs:
           name: MENTEX-ATUALIZADO
           path: resultado/MENTEX-ATUALIZADO.apk
           if-no-files-found: error
+          
