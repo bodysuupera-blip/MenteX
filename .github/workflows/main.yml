@@ -38,7 +38,12 @@ jobs:
           set -e
 
           if [ ! -f package.json ]; then
-            ZIP=$(find . -maxdepth 1 -type f -iname "*.zip" | head -n 1)
+            ZIP=""
+
+            while IFS= read -r arquivo; do
+              ZIP="$arquivo"
+              break
+            done < <(find . -maxdepth 1 -type f -iname "*.zip")
 
             if [ -z "$ZIP" ]; then
               echo "ERRO: Nenhum ZIP encontrado."
@@ -47,14 +52,20 @@ jobs:
             fi
 
             echo "Extraindo: $ZIP"
+
             mkdir -p /tmp/mentex
             unzip -oq "$ZIP" -d /tmp/mentex
 
-            PACKAGE=$(find /tmp/mentex -type f -name package.json | head -n 1)
+            PACKAGE=""
+
+            while IFS= read -r arquivo; do
+              PACKAGE="$arquivo"
+              break
+            done < <(find /tmp/mentex -type f -name package.json)
 
             if [ -z "$PACKAGE" ]; then
               echo "ERRO: package.json não encontrado dentro do ZIP."
-              find /tmp/mentex -maxdepth 4 -type f
+              find /tmp/mentex -maxdepth 4 -type f -print
               exit 1
             fi
 
@@ -63,17 +74,13 @@ jobs:
           fi
 
       - name: Verificar arquivos
-        shell: bash
         run: |
           set -e
-
           echo "Verificando projeto MENTEX..."
-
           test -f package.json
           test -f capacitor.config.json
           test -f www/index.html
-
-          echo "Todos os arquivos foram encontrados!"
+          echo "Arquivos encontrados!"
 
       - name: Instalar dependências
         run: npm install
@@ -83,8 +90,12 @@ jobs:
         run: |
           set -e
 
-          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" \
-            -name sdkmanager -type f | head -n 1)
+          SDKMANAGER=""
+
+          while IFS= read -r arquivo; do
+            SDKMANAGER="$arquivo"
+            break
+          done < <(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f)
 
           if [ -z "$SDKMANAGER" ]; then
             echo "SDK Manager não encontrado."
@@ -105,9 +116,7 @@ jobs:
         run: npx cap sync android
 
       - name: Compilar APK
-        shell: bash
         run: |
-          set -e
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug
