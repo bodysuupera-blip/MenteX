@@ -1,5 +1,5 @@
 
-name: MENTEX - Extrair Projeto e Gerar APK
+name: MENTEX - Atualizar Icone e Gerar APK
 
 on:
   workflow_dispatch:
@@ -50,27 +50,25 @@ jobs:
 
           if [ -z "$ROOT" ]; then
             echo "ERRO: settings.gradle não encontrado."
-            find projeto -maxdepth 5 -type f | head -100
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$ROOT")
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-          echo "Projeto encontrado: $PROJECT_DIR"
-
-          if [ ! -f "$PROJECT_DIR/app/build.gradle" ] && \
-             [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
-            echo "ERRO: arquivo build.gradle do aplicativo não encontrado."
+          if [ ! -d "$PROJECT_DIR/app/src/main" ]; then
+            echo "ERRO: estrutura do aplicativo não encontrada."
             exit 1
           fi
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Projeto encontrado: $PROJECT_DIR"
 
       - name: Preparar Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Aplicar novo icone MENTEX
+      - name: Aplicar icone MENTEX
         shell: bash
         run: |
           set -euo pipefail
@@ -86,20 +84,27 @@ jobs:
           unzip -oq "$ZIP" -d /tmp/mentex-icon
 
           ICON_DIR=$(find /tmp/mentex-icon \
-            -type d -path '*/android/app/src/main/res' \
-            -print -quit)
+            -type d -name android-res -print -quit)
 
-          APP_DIR="$PROJECT_DIR/app/src/main/res"
-
-          if [ -z "$ICON_DIR" ] || [ ! -d "$APP_DIR" ]; then
-            echo "ERRO: estrutura de icones não encontrada."
+          if [ -z "$ICON_DIR" ]; then
+            echo "ERRO: pasta android-res não encontrada."
+            find /tmp/mentex-icon -type f
             exit 1
           fi
 
-          cp -R "$ICON_DIR"/. "$APP_DIR"/
-          echo "Icone aplicado."
+          RES="$PROJECT_DIR/app/src/main/res"
+          mkdir -p "$RES"
 
-      - name: Compilar aplicativo
+          cp -R "$ICON_DIR"/. "$RES"/
+
+          if [ ! -f "$RES/mipmap-mdpi/ic_launcher.png" ]; then
+            echo "ERRO: ícone não foi instalado corretamente."
+            exit 1
+          fi
+
+          echo "Novo icone MENTEX aplicado."
+
+      - name: Compilar APK
         shell: bash
         run: |
           set -euo pipefail
@@ -122,10 +127,10 @@ jobs:
             exit 1
           fi
 
-          echo "APK encontrado:"
+          echo "APK gerado com sucesso:"
           ls -lh "$APK"
 
-      - name: Disponibilizar APK
+      - name: Publicar APK para download
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-APK-ATUALIZADO
