@@ -123,4 +123,3 @@ jobs:
           name: MENTEX-ATUALIZADO
           path: resultado/MENTEX-ATUALIZADO.apk
           if-no-files-found: error
-          
