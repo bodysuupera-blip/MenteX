@@ -1,5 +1,5 @@
 
-name: LABIRINTO MORTAL - Gerar APK 2.3
+name: LABIRINTO MORTAL - Gerar APK 3.0.1
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   build:
-    name: Compilar LABIRINTO MORTAL 2.3
+    name: Compilar LABIRINTO MORTAL
     runs-on: ubuntu-22.04
 
     steps:
@@ -22,80 +22,77 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Preparar projeto LABIRINTO MORTAL
+      - name: Preparar projeto Android
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          mkdir -p "$RUNNER_TEMP/labirinto"
+          echo "Procurando projeto Android..."
 
-          ZIP=""
-          for f in \
-            "$GITHUB_WORKSPACE/LABIRINTO-MORTAL-V2.3-BOAS-VINDAS-3D.zip" \
-            "$GITHUB_WORKSPACE/LABIRINTO-MORTAL-PLATAFORMA-2.1-FUNDO-SOMBRIO.zip" \
-            "$GITHUB_WORKSPACE/LABIRINTO-MORTAL-PROJETO-ANDROID.zip"
-          do
-            if [[ -f "$f" ]]; then
-              ZIP="$f"
-              break
-            fi
-          done
+          if [ -f "gradlew" ] && [ -f "settings.gradle" ]; then
+            PROJECT_DIR="."
+          elif [ -f "LabirintoMortal/gradlew" ] && [ -f "LabirintoMortal/settings.gradle" ]; then
+            PROJECT_DIR="LabirintoMortal"
+          else
+            PROJECT_DIR="$(find . -type f -name settings.gradle \
+              -not -path '*/.gradle/*' \
+              -not -path '*/build/*' \
+              -print -quit | xargs -r dirname)"
+          fi
 
-          if [[ -z "$ZIP" ]]; then
-            echo "ERRO: nenhum ZIP do LABIRINTO MORTAL foi encontrado."
-            find . -maxdepth 2 -iname '*LABIRINTO*.zip' -print
+          if [ -z "${PROJECT_DIR:-}" ] || [ ! -f "$PROJECT_DIR/settings.gradle" ]; then
+            echo "ERRO: projeto Android não encontrado."
             exit 1
           fi
 
-          echo "Extraindo: $ZIP"
-          unzip -q "$ZIP" -d "$RUNNER_TEMP/labirinto"
-
-          PROJECT_DIR=""
-          while IFS= read -r settings; do
-            candidate="$(dirname "$settings")"
-            if [[ -f "$candidate/app/build.gradle" || -f "$candidate/app/build.gradle.kts" ]]; then
-              PROJECT_DIR="$candidate"
-              break
-            fi
-          done < <(find "$RUNNER_TEMP/labirinto" -name settings.gradle -o -name settings.gradle.kts)
-
-          if [[ -z "$PROJECT_DIR" ]]; then
-            echo "ERRO: projeto Android não encontrado dentro do ZIP."
-            find "$RUNNER_TEMP/labirinto" -maxdepth 6 -type f | head -200
-            exit 1
-          fi
-
-          echo "Projeto localizado: $PROJECT_DIR"
+          echo "Projeto encontrado: $PROJECT_DIR"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      - name: Instalar Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
+      - name: Preparar Gradle Wrapper
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cd "$PROJECT_DIR"
+
+          if [ ! -f gradlew ]; then
+            echo "ERRO: gradlew ausente no projeto."
+            exit 1
+          fi
+
+          chmod +x gradlew
 
       - name: Compilar APK
         shell: bash
         run: |
           set -Eeuo pipefail
-          gradle --no-daemon -p "$PROJECT_DIR" assembleDebug
+          cd "$PROJECT_DIR"
 
-      - name: Verificar APK
+          ./gradlew clean assembleDebug --stacktrace
+
+      - name: Localizar e organizar APK
         shell: bash
         run: |
           set -Eeuo pipefail
-          APK="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
-          if [[ ! -s "$APK" ]]; then
+
+          APK="$(find "$PROJECT_DIR" -type f \
+            -path '*/build/outputs/apk/debug/*.apk' \
+            -print -quit)"
+
+          if [ -z "$APK" ]; then
             echo "ERRO: APK não foi gerado."
-            find "$PROJECT_DIR" -path '*build/outputs*' -type f
             exit 1
           fi
-          ls -lh "$APK"
 
-      - name: Publicar APK
+          mkdir -p saida
+          cp "$APK" saida/LABIRINTO-MORTAL-3.0.1.apk
+
+          echo "APK gerado:"
+          ls -lh saida/
+
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: LABIRINTO-MORTAL-2.3-APK
-          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
+          name: LABIRINTO-MORTAL-3.0.1-APK
+          path: saida/LABIRINTO-MORTAL-3.0.1.apk
           if-no-files-found: error
-          retention-days: 7
           
