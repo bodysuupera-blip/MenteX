@@ -22,7 +22,7 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Localizar e extrair ZIP 2.1
+      - name: Extrair projeto Android 2.1
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -30,39 +30,86 @@ jobs:
           ZIP="$GITHUB_WORKSPACE/LABIRINTO-MORTAL-PLATAFORMA-2.1-FUNDO-SOMBRIO.zip"
 
           if [[ ! -f "$ZIP" ]]; then
-            echo "ZIP 2.1 não encontrado. Procurando..."
-            ZIP=$(find "$GITHUB_WORKSPACE" -maxdepth 3 \
-              -type f -iname 'LABIRINTO-MORTAL-PLATAFORMA-2.1-FUNDO-SOMBRIO.zip' \
-              -print -quit)
-          fi
-
-          if [[ -z "${ZIP:-}" || ! -f "$ZIP" ]]; then
-            echo "ERRO: ZIP da versão 2.1 não encontrado."
+            echo "ERRO: ZIP 2.1 não encontrado."
             exit 1
           fi
 
           mkdir -p "$RUNNER_TEMP/labirinto-extraido"
           unzip -oq "$ZIP" -d "$RUNNER_TEMP/labirinto-extraido"
 
-          echo "Conteúdo extraído:"
-          find "$RUNNER_TEMP/labirinto-extraido" -maxdepth 5 -type f | head -100
+          PROJECT_DIR=""
 
-          PROJECT_DIR=$(find "$RUNNER_TEMP/labirinto-extraido" \
-            -type f -name settings.gradle \
-            -printf '%h\n' | while read -r dir; do
-              if [[ -f "$dir/app/build.gradle" ]]; then
-                echo "$dir"
-                break
-              fi
-            done)
+          while IFS= read -r file; do
+            dir="$(dirname "$file")"
+            if [[ -f "$dir/app/build.gradle" ]]; then
+              PROJECT_DIR="$dir"
+              break
+            fi
+          done < <(find "$RUNNER_TEMP/labirinto-extraido" -name settings.gradle -type f)
 
-          if [[ -z "${PROJECT_DIR:-}" ]]; then
-            echo "ERRO: Projeto Android não encontrado dentro do ZIP."
+          if [[ -z "$PROJECT_DIR" ]]; then
+            echo "ERRO: Projeto Android não encontrado no ZIP."
+            find "$RUNNER_TEMP/labirinto-extraido" -maxdepth 5 -type f
             exit 1
           fi
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           echo "Projeto localizado: $PROJECT_DIR"
+
+      - name: Corrigir degradê do Java
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import os
+          import sys
+
+          root = Path(os.environ["RUNNER_TEMP"]) / "labirinto-extraido"
+          files = list(root.rglob("MainActivity.java"))
+
+          if not files:
+              sys.exit("ERRO: MainActivity.java não encontrado.")
+
+          pattern = re.compile(
+              r'new\s+LinearGradient\s*\(\s*'
+              r'0\s*,\s*yy\s*,\s*w\s*,\s*yy\s*\+\s*h\s*\*\s*\.035f\s*,\s*'
+              r'0x001a2534\s*,\s*0x332d3545\s*,\s*0x001a2534\s*,\s*'
+              r'Shader\.TileMode\.CLAMP\s*\)',
+              re.IGNORECASE
+          )
+
+          replacement = (
+              'new LinearGradient(0, yy, w, yy + h * .035f, '
+              'new int[]{0x001a2534, 0x332d3545, 0x001a2534}, '
+              'null, Shader.TileMode.CLAMP)'
+          )
+
+          corrected = False
+
+          for file in files:
+              source = file.read_text(encoding="utf-8")
+
+              if pattern.search(source):
+                  source, count = pattern.subn(replacement, source)
+                  file.write_text(source, encoding="utf-8")
+                  print(f"Degradê corrigido em: {file}")
+                  corrected = True
+                  break
+
+              if "new int[]{0x001a2534, 0x332d3545, 0x001a2534}" in source:
+                  print("Degradê já corrigido.")
+                  corrected = True
+                  break
+
+          if not corrected:
+              sys.exit(
+                  "ERRO: Não encontrei a chamada LinearGradient esperada. "
+                  "Verifique a versão do código-fonte."
+              )
+          PY
 
       - name: Instalar Gradle 8.9
         shell: bash
@@ -76,21 +123,16 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          gradle --no-daemon \
-            -p "$PROJECT_DIR" \
-            assembleDebug
+          gradle --no-daemon -p "$PROJECT_DIR" assembleDebug
 
       - name: Verificar APK
         shell: bash
         run: |
-          set -Eeuo pipefail
           APK="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
-
           if [[ ! -s "$APK" ]]; then
             echo "ERRO: APK não foi gerado."
             exit 1
           fi
-
           ls -lh "$APK"
 
       - name: Disponibilizar APK
