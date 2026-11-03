@@ -21,24 +21,38 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Localizar projeto Android
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -f settings.gradle ] && [ -f app/build.gradle ]; then
+            echo "PROJECT_DIR=." >> "$GITHUB_ENV"
+          elif [ -f LabirintoMortal/settings.gradle ] && [ -f LabirintoMortal/app/build.gradle ]; then
+            echo "PROJECT_DIR=LabirintoMortal" >> "$GITHUB_ENV"
+          else
+            echo "ERRO: projeto Android não encontrado."
+            echo "Arquivos encontrados:"
+            find . -maxdepth 4 -type f | head -100
+            exit 1
+          fi
+
       - name: Instalar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Conferir arquivos do projeto
-        run: |
-          test -f settings.gradle
-          test -f app/build.gradle
-          test -f app/src/main/AndroidManifest.xml
-
       - name: Gerar APK
-        run: gradle --no-daemon assembleDebug --stacktrace
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$PROJECT_DIR"
+          gradle --no-daemon assembleDebug --stacktrace
 
-      - name: Salvar APK para baixar
+      - name: Salvar APK
         uses: actions/upload-artifact@v4
         with:
           name: LABIRINTO-MORTAL-SOMBRIO-2.0-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           
