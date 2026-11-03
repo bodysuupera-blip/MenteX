@@ -1,5 +1,4 @@
-
-name: LABIRINTO MORTAL - APK 3D 3.0.1
+name: LABIRINTO MORTAL - APK 3D 3.0.2
 
 on:
   workflow_dispatch:
@@ -9,7 +8,7 @@ permissions:
 
 jobs:
   build:
-    name: Compilar LABIRINTO MORTAL 3D
+    name: Compilar LABIRINTO MORTAL
     runs-on: ubuntu-22.04
 
     steps:
@@ -22,47 +21,51 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Instalar Gradle 8.9
+      - name: Configurar Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Extrair projeto 3D atualizado
+      - name: Localizar ZIP exclusivo do LABIRINTO MORTAL
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          ZIP="$GITHUB_WORKSPACE/LABIRINTO-MORTAL-3.0.1-3D-CENARIOS-NOVOS.zip"
+          ZIP="$GITHUB_WORKSPACE/LABIRINTO-MORTAL-3.0.2-ABERTURA-CINEMATOGRAFICA.zip"
 
           if [ ! -f "$ZIP" ]; then
-            echo "ERRO: ZIP 3D atualizado não encontrado."
+            echo "ERRO: ZIP do LABIRINTO MORTAL 3.0.2 não encontrado na raiz."
+            echo "Arquivos ZIP encontrados:"
+            find "$GITHUB_WORKSPACE" -maxdepth 2 -type f -name '*.zip'
             exit 1
           fi
 
-          mkdir -p "$RUNNER_TEMP/labirinto-atualizado"
-          unzip -q "$ZIP" -d "$RUNNER_TEMP/labirinto-atualizado"
+          mkdir -p "$RUNNER_TEMP/labirinto"
+          unzip -q "$ZIP" -d "$RUNNER_TEMP/labirinto"
 
-          PROJECT_DIR="$RUNNER_TEMP/labirinto-atualizado/LabirintoMortal"
+          PROJECT="$RUNNER_TEMP/labirinto/LabirintoMortal"
 
-          if [ ! -f "$PROJECT_DIR/settings.gradle" ]; then
-            echo "ERRO: settings.gradle não encontrado."
-            find "$RUNNER_TEMP/labirinto-atualizado" -maxdepth 5 -type f
+          if [ ! -f "$PROJECT/settings.gradle" ] || [ ! -f "$PROJECT/app/build.gradle" ]; then
+            echo "ERRO: estrutura do projeto LABIRINTO MORTAL inválida."
+            find "$RUNNER_TEMP/labirinto" -maxdepth 5 -type f
             exit 1
           fi
 
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Projeto atualizado encontrado."
+          echo "PROJECT_DIR=$PROJECT" >> "$GITHUB_ENV"
+          echo "Projeto exclusivo localizado: $PROJECT"
 
-      - name: Conferir versão
+      - name: Conferir versão 3.0.2
         shell: bash
         run: |
           set -Eeuo pipefail
           cd "$PROJECT_DIR"
 
-          grep -Eq 'versionCode[[:space:]]+6' app/build.gradle
-          grep -Fq "versionName '3.0.1'" app/build.gradle
+          cat app/build.gradle
 
-          echo "Versão 3.0.1 confirmada."
+          grep -Eq 'versionCode[[:space:]]+7' app/build.gradle
+          grep -Fq "versionName '3.0.2'" app/build.gradle
+
+          echo "Versão 3.0.2 confirmada."
 
       - name: Compilar APK
         shell: bash
@@ -70,7 +73,7 @@ jobs:
           set -Eeuo pipefail
           gradle --no-daemon -p "$PROJECT_DIR" clean assembleDebug --stacktrace
 
-      - name: Preparar APK
+      - name: Conferir e preparar APK
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -78,23 +81,22 @@ jobs:
           APK="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
 
           if [ ! -s "$APK" ]; then
-            echo "ERRO: APK não foi gerado."
+            echo "ERRO: APK do LABIRINTO MORTAL não foi gerado."
             find "$PROJECT_DIR" -type f -name '*.apk'
             exit 1
           fi
 
-          mkdir -p "$GITHUB_WORKSPACE/saida"
+          mkdir -p saida
 
-          cp "$APK" "$GITHUB_WORKSPACE/saida/LABIRINTO-MORTAL-3.0.1-3D.apk"
+          cp "$APK" "saida/LABIRINTO-MORTAL-3.0.2-ABERTURA-CINEMATOGRAFICA.apk"
 
-          ls -lh "$GITHUB_WORKSPACE/saida"
-          sha256sum "$GITHUB_WORKSPACE/saida/LABIRINTO-MORTAL-3.0.1-3D.apk"
+          ls -lh saida/
+          sha256sum saida/*.apk
 
-      - name: Publicar APK
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: LABIRINTO-MORTAL-3.0.1-3D-ATUALIZADO
-          path: saida/LABIRINTO-MORTAL-3.0.1-3D.apk
+          name: LABIRINTO-MORTAL-3.0.2-ABERTURA-CINEMATOGRAFICA
+          path: saida/LABIRINTO-MORTAL-3.0.2-ABERTURA-CINEMATOGRAFICA.apk
           if-no-files-found: error
           retention-days: 7
-          
