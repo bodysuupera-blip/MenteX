@@ -1,5 +1,5 @@
 
-name: LABIRINTO MORTAL - Gerar APK 3.0.1
+name: LABIRINTO MORTAL - APK ATUALIZADO 3.0.1
 
 on:
   workflow_dispatch:
@@ -9,107 +9,77 @@ permissions:
 
 jobs:
   build:
-    name: Compilar LABIRINTO MORTAL
+    name: Compilar versão atualizada
     runs-on: ubuntu-22.04
 
     steps:
       - name: Baixar repositório
         uses: actions/checkout@v4
 
-      - name: Configurar Java 17
+      - name: Configurar Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Instalar Gradle 8.9
+      - name: Instalar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Localizar e extrair projeto
+      - name: Extrair ZIP correto
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          PROJECT_DIR=""
+          ZIP="LABIRINTO-MORTAL-3.0.1-SEM-ARCADE.zip"
 
-          # Procura projeto já extraído
-          while IFS= read -r -d '' FILE; do
-            PROJECT_DIR="$(dirname "$FILE")"
-            break
-          done < <(find . -type f \
-            \( -name settings.gradle -o -name settings.gradle.kts \) \
-            -not -path '*/.gradle/*' \
-            -not -path '*/build/*' -print0)
-
-          # Se não encontrou, extrai o ZIP
-          if [ -z "$PROJECT_DIR" ]; then
-            ZIP_FOUND=""
-
-            while IFS= read -r -d '' ZIP; do
-              case "$(basename "$ZIP")" in
-                LABIRINTO*.zip|labirinto*.zip)
-                  ZIP_FOUND="$ZIP"
-                  break
-                  ;;
-              esac
-            done < <(find . -type f -iname '*.zip' -print0)
-
-            if [ -z "$ZIP_FOUND" ]; then
-              echo "ERRO: ZIP do LABIRINTO MORTAL não encontrado."
-              exit 1
-            fi
-
-            mkdir -p "$RUNNER_TEMP/labirinto"
-            unzip -q "$ZIP_FOUND" -d "$RUNNER_TEMP/labirinto"
-
-            while IFS= read -r -d '' FILE; do
-              PROJECT_DIR="$(dirname "$FILE")"
-              break
-            done < <(find "$RUNNER_TEMP/labirinto" -type f \
-              \( -name settings.gradle -o -name settings.gradle.kts \) \
-              -not -path '*/.gradle/*' \
-              -not -path '*/build/*' -print0)
-          fi
-
-          if [ -z "$PROJECT_DIR" ]; then
-            echo "ERRO: projeto Android não encontrado."
+          if [ ! -f "$ZIP" ]; then
+            echo "ERRO: arquivo atualizado não encontrado: $ZIP"
+            echo "Arquivos ZIP disponíveis:"
+            find . -type f -iname '*.zip'
             exit 1
           fi
 
-          echo "Projeto localizado: $PROJECT_DIR"
+          echo "Usando exclusivamente: $ZIP"
+
+          mkdir -p "$RUNNER_TEMP/fonte-atualizada"
+          unzip -q "$ZIP" -d "$RUNNER_TEMP/fonte-atualizada"
+
+          PROJECT_DIR="$(find "$RUNNER_TEMP/fonte-atualizada" \
+            -type f -name settings.gradle -printf '%h\n' | head -1)"
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERRO: projeto Android não encontrado dentro do ZIP."
+            exit 1
+          fi
+
+          echo "Projeto selecionado: $PROJECT_DIR"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      - name: Verificar configuração Android
+      - name: Conferir versão do projeto
         shell: bash
         run: |
           set -Eeuo pipefail
           cd "$PROJECT_DIR"
 
-          if [ ! -f build.gradle ] && [ ! -f build.gradle.kts ]; then
-            echo "ERRO: arquivo build.gradle não encontrado."
+          echo "Verificando versão:"
+          grep -nE 'versionCode|versionName' app/build.gradle
+
+          if ! grep -q 'versionName "3.0.1"' app/build.gradle; then
+            echo "ERRO: o projeto não contém a versão 3.0.1."
             exit 1
           fi
 
-          if [ ! -f app/build.gradle ] && [ ! -f app/build.gradle.kts ]; then
-            echo "ERRO: módulo Android app não encontrado."
-            exit 1
-          fi
-
-          echo "Configuração Android encontrada."
-          cat build.gradle
-
-      - name: Compilar APK
+      - name: Compilar APK atualizado
         shell: bash
         run: |
           set -Eeuo pipefail
           cd "$PROJECT_DIR"
 
-          gradle --version
-          gradle clean assembleDebug --stacktrace
+          gradle --no-daemon clean assembleDebug --stacktrace
 
-      - name: Preparar APK
+      - name: Conferir APK gerado
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -119,18 +89,20 @@ jobs:
             -print -quit)"
 
           if [ -z "$APK" ]; then
-            echo "ERRO: APK não foi gerado."
+            echo "ERRO: APK não encontrado."
             exit 1
           fi
 
-          mkdir -p "$GITHUB_WORKSPACE/saida"
-          cp "$APK" "$GITHUB_WORKSPACE/saida/LABIRINTO-MORTAL-3.0.1.apk"
+          mkdir -p saida
+          cp "$APK" saida/LABIRINTO-MORTAL-3.0.1-ATUALIZADO.apk
 
-          ls -lh "$GITHUB_WORKSPACE/saida/"
+          sha256sum saida/LABIRINTO-MORTAL-3.0.1-ATUALIZADO.apk
+          ls -lh saida/
 
-      - name: Disponibilizar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: LABIRINTO-MORTAL-3.0.1-APK
-          path: saida/LABIRINTO-MORTAL-3.0.1.apk
+          name: LABIRINTO-MORTAL-3.0.1-ATUALIZADO
+          path: saida/LABIRINTO-MORTAL-3.0.1-ATUALIZADO.apk
           if-no-files-found: error
+          
