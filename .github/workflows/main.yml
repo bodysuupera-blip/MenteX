@@ -22,31 +22,56 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Localizar projeto Android
+      - name: Preparar projeto LABIRINTO MORTAL
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          if [[ -f settings.gradle && -f app/build.gradle ]]; then
-            PROJECT_DIR="$GITHUB_WORKSPACE"
-          elif [[ -f LabirintoMortal/settings.gradle && -f LabirintoMortal/app/build.gradle ]]; then
-            PROJECT_DIR="$GITHUB_WORKSPACE/LabirintoMortal"
-          else
-            echo "ERRO: Projeto Android V2.3 não encontrado."
-            find . -maxdepth 5 -type f | sort | head -150
+          mkdir -p "$RUNNER_TEMP/labirinto"
+
+          ZIP=""
+          for f in \
+            "$GITHUB_WORKSPACE/LABIRINTO-MORTAL-V2.3-BOAS-VINDAS-3D.zip" \
+            "$GITHUB_WORKSPACE/LABIRINTO-MORTAL-PLATAFORMA-2.1-FUNDO-SOMBRIO.zip" \
+            "$GITHUB_WORKSPACE/LABIRINTO-MORTAL-PROJETO-ANDROID.zip"
+          do
+            if [[ -f "$f" ]]; then
+              ZIP="$f"
+              break
+            fi
+          done
+
+          if [[ -z "$ZIP" ]]; then
+            echo "ERRO: nenhum ZIP do LABIRINTO MORTAL foi encontrado."
+            find . -maxdepth 2 -iname '*LABIRINTO*.zip' -print
             exit 1
           fi
 
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Projeto encontrado: $PROJECT_DIR"
+          echo "Extraindo: $ZIP"
+          unzip -q "$ZIP" -d "$RUNNER_TEMP/labirinto"
 
-      - name: Instalar Gradle 8.9
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          wget -q https://services.gradle.org/distributions/gradle-8.9-bin.zip
-          unzip -q gradle-8.9-bin.zip -d "$RUNNER_TEMP"
-          echo "$RUNNER_TEMP/gradle-8.9/bin" >> "$GITHUB_PATH"
+          PROJECT_DIR=""
+          while IFS= read -r settings; do
+            candidate="$(dirname "$settings")"
+            if [[ -f "$candidate/app/build.gradle" || -f "$candidate/app/build.gradle.kts" ]]; then
+              PROJECT_DIR="$candidate"
+              break
+            fi
+          done < <(find "$RUNNER_TEMP/labirinto" -name settings.gradle -o -name settings.gradle.kts)
+
+          if [[ -z "$PROJECT_DIR" ]]; then
+            echo "ERRO: projeto Android não encontrado dentro do ZIP."
+            find "$RUNNER_TEMP/labirinto" -maxdepth 6 -type f | head -200
+            exit 1
+          fi
+
+          echo "Projeto localizado: $PROJECT_DIR"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Instalar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
 
       - name: Compilar APK
         shell: bash
@@ -59,18 +84,17 @@ jobs:
         run: |
           set -Eeuo pipefail
           APK="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
-
           if [[ ! -s "$APK" ]]; then
             echo "ERRO: APK não foi gerado."
+            find "$PROJECT_DIR" -path '*build/outputs*' -type f
             exit 1
           fi
-
           ls -lh "$APK"
 
-      - name: Disponibilizar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: LABIRINTO-MORTAL-V2.3-APK
+          name: LABIRINTO-MORTAL-2.3-APK
           path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
