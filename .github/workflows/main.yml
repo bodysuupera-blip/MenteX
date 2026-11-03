@@ -1,4 +1,5 @@
-name: LABIRINTO MORTAL - APK 3D 3.0.2
+
+name: LABIRINTO MORTAL - GERAR APK 4.0.0
 
 on:
   workflow_dispatch:
@@ -8,7 +9,7 @@ permissions:
 
 jobs:
   build:
-    name: Compilar LABIRINTO MORTAL
+    name: Compilar LABIRINTO MORTAL 4.0.0
     runs-on: ubuntu-22.04
 
     steps:
@@ -26,46 +27,45 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Localizar ZIP exclusivo do LABIRINTO MORTAL
+      - name: Extrair exclusivamente LABIRINTO MORTAL 4.0.0
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          ZIP="$GITHUB_WORKSPACE/LABIRINTO-MORTAL-3.0.2-ABERTURA-CINEMATOGRAFICA.zip"
+          ZIP="$GITHUB_WORKSPACE/LABIRINTO-MORTAL-4.0.0-PLATAFORMA-3D-SOMBRIA.zip"
 
           if [ ! -f "$ZIP" ]; then
-            echo "ERRO: ZIP do LABIRINTO MORTAL 3.0.2 não encontrado na raiz."
-            echo "Arquivos ZIP encontrados:"
-            find "$GITHUB_WORKSPACE" -maxdepth 2 -type f -name '*.zip'
+            echo "ERRO: ZIP 4.0.0 não encontrado na raiz do GitHub."
+            find "$GITHUB_WORKSPACE" -maxdepth 2 -name '*.zip'
             exit 1
           fi
 
-          mkdir -p "$RUNNER_TEMP/labirinto"
-          unzip -q "$ZIP" -d "$RUNNER_TEMP/labirinto"
+          DEST="$RUNNER_TEMP/labirinto-4.0.0"
+          mkdir -p "$DEST"
+          unzip -q "$ZIP" -d "$DEST"
 
-          PROJECT="$RUNNER_TEMP/labirinto/LabirintoMortal"
+          PROJECT="$DEST/LabirintoMortal"
 
           if [ ! -f "$PROJECT/settings.gradle" ] || [ ! -f "$PROJECT/app/build.gradle" ]; then
-            echo "ERRO: estrutura do projeto LABIRINTO MORTAL inválida."
-            find "$RUNNER_TEMP/labirinto" -maxdepth 5 -type f
+            echo "ERRO: projeto LABIRINTO MORTAL inválido."
+            find "$DEST" -maxdepth 5 -type f
             exit 1
           fi
 
           echo "PROJECT_DIR=$PROJECT" >> "$GITHUB_ENV"
-          echo "Projeto exclusivo localizado: $PROJECT"
+          echo "Projeto 4.0.0 encontrado."
 
-      - name: Conferir versão 3.0.2
+      - name: Conferir versão do jogo
         shell: bash
         run: |
           set -Eeuo pipefail
           cd "$PROJECT_DIR"
 
+          grep -Eq 'versionCode[[:space:]]+8' app/build.gradle
+          grep -Fq "versionName '4.0.0'" app/build.gradle
+
+          echo "Versão 4.0.0 confirmada."
           cat app/build.gradle
-
-          grep -Eq 'versionCode[[:space:]]+7' app/build.gradle
-          grep -Fq "versionName '3.0.2'" app/build.gradle
-
-          echo "Versão 3.0.2 confirmada."
 
       - name: Compilar APK
         shell: bash
@@ -73,7 +73,7 @@ jobs:
           set -Eeuo pipefail
           gradle --no-daemon -p "$PROJECT_DIR" clean assembleDebug --stacktrace
 
-      - name: Conferir e preparar APK
+      - name: Conferir APK gerado
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -81,22 +81,20 @@ jobs:
           APK="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
 
           if [ ! -s "$APK" ]; then
-            echo "ERRO: APK do LABIRINTO MORTAL não foi gerado."
-            find "$PROJECT_DIR" -type f -name '*.apk'
+            echo "ERRO: APK não foi gerado."
             exit 1
           fi
 
-          mkdir -p saida
+          mkdir -p "$GITHUB_WORKSPACE/saida"
+          cp "$APK" "$GITHUB_WORKSPACE/saida/LABIRINTO-MORTAL-4.0.0.apk"
 
-          cp "$APK" "saida/LABIRINTO-MORTAL-3.0.2-ABERTURA-CINEMATOGRAFICA.apk"
-
-          ls -lh saida/
-          sha256sum saida/*.apk
+          ls -lh "$GITHUB_WORKSPACE/saida"
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: LABIRINTO-MORTAL-3.0.2-ABERTURA-CINEMATOGRAFICA
-          path: saida/LABIRINTO-MORTAL-3.0.2-ABERTURA-CINEMATOGRAFICA.apk
+          name: LABIRINTO-MORTAL-4.0.0
+          path: saida/LABIRINTO-MORTAL-4.0.0.apk
           if-no-files-found: error
           retention-days: 7
+          
