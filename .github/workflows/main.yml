@@ -22,12 +22,12 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Instalar Gradle
+      - name: Instalar Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Extrair ZIP 3D atualizado
+      - name: Extrair projeto 3D atualizado
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -36,8 +36,6 @@ jobs:
 
           if [ ! -f "$ZIP" ]; then
             echo "ERRO: ZIP 3D atualizado não encontrado."
-            echo "Envie LABIRINTO-MORTAL-3.0.1-3D-CENARIOS-NOVOS.zip para a raiz do GitHub."
-            find "$GITHUB_WORKSPACE" -maxdepth 2 -type f -iname '*.zip'
             exit 1
           fi
 
@@ -52,38 +50,27 @@ jobs:
             exit 1
           fi
 
-          if [ ! -f "$PROJECT_DIR/app/build.gradle" ]; then
-            echo "ERRO: módulo Android app não encontrado."
-            exit 1
-          fi
-
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Projeto 3D encontrado corretamente."
+          echo "Projeto atualizado encontrado."
 
-      - name: Confirmar versão 3.0.1
+      - name: Conferir versão
         shell: bash
         run: |
           set -Eeuo pipefail
           cd "$PROJECT_DIR"
 
-          cat app/build.gradle
-
           grep -Eq 'versionCode[[:space:]]+6' app/build.gradle
-          grep -Eq 'versionName[[:space:]]+["\x27]3\.0\.1["\x27]' app/build.gradle
+          grep -Fq "versionName '3.0.1'" app/build.gradle
 
           echo "Versão 3.0.1 confirmada."
 
-      - name: Compilar projeto
+      - name: Compilar APK
         shell: bash
         run: |
           set -Eeuo pipefail
+          gradle --no-daemon -p "$PROJECT_DIR" clean assembleDebug --stacktrace
 
-          gradle --no-daemon \
-            -p "$PROJECT_DIR" \
-            clean assembleDebug \
-            --stacktrace
-
-      - name: Conferir APK
+      - name: Preparar APK
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -98,10 +85,8 @@ jobs:
 
           mkdir -p "$GITHUB_WORKSPACE/saida"
 
-          cp "$APK" \
-            "$GITHUB_WORKSPACE/saida/LABIRINTO-MORTAL-3.0.1-3D.apk"
+          cp "$APK" "$GITHUB_WORKSPACE/saida/LABIRINTO-MORTAL-3.0.1-3D.apk"
 
-          echo "APK gerado:"
           ls -lh "$GITHUB_WORKSPACE/saida"
           sha256sum "$GITHUB_WORKSPACE/saida/LABIRINTO-MORTAL-3.0.1-3D.apk"
 
@@ -111,4 +96,5 @@ jobs:
           name: LABIRINTO-MORTAL-3.0.1-3D-ATUALIZADO
           path: saida/LABIRINTO-MORTAL-3.0.1-3D.apk
           if-no-files-found: error
+          retention-days: 7
           
