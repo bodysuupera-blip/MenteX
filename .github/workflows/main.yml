@@ -1,58 +1,46 @@
 
-name: LABIRINTO MORTAL - Gerar APK Sombrio 2.0
-
-on:
-  workflow_dispatch:
-
-permissions:
-  contents: read
-
-jobs:
-  build:
-    runs-on: ubuntu-22.04
-
-    steps:
-      - name: Baixar projeto
-        uses: actions/checkout@v4
-
-      - name: Configurar Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Localizar projeto Android
+      name: Localizar projeto Android
         shell: bash
         run: |
           set -euo pipefail
 
-          if [ -f settings.gradle ] && [ -f app/build.gradle ]; then
-            echo "PROJECT_DIR=." >> "$GITHUB_ENV"
-          elif [ -f LabirintoMortal/settings.gradle ] && [ -f LabirintoMortal/app/build.gradle ]; then
-            echo "PROJECT_DIR=LabirintoMortal" >> "$GITHUB_ENV"
-          else
-            echo "ERRO: projeto Android não encontrado."
-            echo "Arquivos encontrados:"
-            find . -maxdepth 4 -type f | head -100
+          PROJECT=""
+
+          for DIR in . LabirintoMortal; do
+            if [ -f "$DIR/settings.gradle" ] && [ -f "$DIR/app/build.gradle" ]; then
+              PROJECT="$DIR"
+              break
+            fi
+          done
+
+          if [ -z "$PROJECT" ]; then
+            echo "Procurando projeto dentro dos ZIPs..."
+            mkdir -p /tmp/projetos
+
+            while IFS= read -r -d '' ZIP; do
+              DEST="/tmp/projetos/$(basename "$ZIP" .zip)"
+              mkdir -p "$DEST"
+
+              if unzip -oq "$ZIP" -d "$DEST"; then
+                while IFS= read -r -d '' FILE; do
+                  DIR="${FILE%/settings.gradle}"
+                  if [ -f "$DIR/app/build.gradle" ]; then
+                    PROJECT="$DIR"
+                    break
+                  fi
+                done < <(find "$DEST" -type f -name settings.gradle -print0)
+              fi
+
+              [ -n "$PROJECT" ] && break
+            done < <(find . -maxdepth 1 -type f -name '*.zip' -print0)
+
+          fi
+
+          if [ -z "$PROJECT" ]; then
+            echo "ERRO: nenhum projeto Android válido foi encontrado."
             exit 1
           fi
 
-      - name: Instalar Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
-
-      - name: Gerar APK
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd "$PROJECT_DIR"
-          gradle --no-daemon assembleDebug --stacktrace
-
-      - name: Salvar APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: LABIRINTO-MORTAL-SOMBRIO-2.0-APK
-          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
+          echo "Projeto encontrado: $PROJECT"
+          echo "PROJECT_DIR=$PROJECT" >> "$GITHUB_ENV"
           
