@@ -1,5 +1,5 @@
 
-name: LABIRINTO MORTAL - PLATAFORMA V4
+name: LABIRINTO MORTAL - Gerar APK 2.1
 
 on:
   workflow_dispatch:
@@ -9,11 +9,11 @@ permissions:
 
 jobs:
   build:
-    name: Compilar Plataforma V4
+    name: Compilar LABIRINTO MORTAL
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar repositório
+      - name: Baixar projeto
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -22,78 +22,46 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Instalar Gradle
+      - name: Localizar projeto Android
+        shell: bash
         run: |
+          set -Eeuo pipefail
+
+          if [[ -f settings.gradle && -f app/build.gradle ]]; then
+            PROJECT_DIR="$GITHUB_WORKSPACE"
+          elif [[ -f LabirintoMortal/settings.gradle && -f LabirintoMortal/app/build.gradle ]]; then
+            PROJECT_DIR="$GITHUB_WORKSPACE/LabirintoMortal"
+          else
+            echo "ERRO: Projeto Android não encontrado."
+            find . -maxdepth 5 -type f | sort
+            exit 1
+          fi
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Projeto encontrado: $PROJECT_DIR"
+
+      - name: Configurar Gradle
+        run: |
+          set -Eeuo pipefail
           wget -q https://services.gradle.org/distributions/gradle-8.9-bin.zip
           unzip -q gradle-8.9-bin.zip -d "$RUNNER_TEMP"
           echo "$RUNNER_TEMP/gradle-8.9/bin" >> "$GITHUB_PATH"
 
-      - name: Localizar ZIP V4
-        run: |
-          set -Eeuo pipefail
-
-          ZIP=$(find . -type f \
-            -name "LABIRINTO-MORTAL-PLATAFORMA-INOVADORA-V4.zip" \
-            -not -path "./.git/*" | head -n 1)
-
-          if [ -z "$ZIP" ]; then
-            echo "ERRO: ZIP V4 não encontrado."
-            exit 1
-          fi
-
-          echo "ZIP=$ZIP" >> "$GITHUB_ENV"
-
-      - name: Extrair projeto
-        run: |
-          set -Eeuo pipefail
-
-          mkdir -p "$RUNNER_TEMP/v4"
-          unzip -q "$ZIP" -d "$RUNNER_TEMP/v4"
-
-          PROJECT=""
-
-          while IFS= read -r FILE; do
-            DIR="$(dirname "$FILE")"
-
-            if [ -f "$DIR/build.gradle" ] &&
-               [ -f "$DIR/app/build.gradle" ] &&
-               [ -f "$DIR/app/src/main/AndroidManifest.xml" ]; then
-              PROJECT="$DIR"
-              break
-            fi
-          done < <(find "$RUNNER_TEMP/v4" \
-            -type f -name settings.gradle)
-
-          if [ -z "$PROJECT" ]; then
-            echo "ERRO: Projeto Android não encontrado."
-            exit 1
-          fi
-
-          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
-
-      - name: Verificar versão V4
-        run: |
-          FILE="$PROJECT/app/src/main/java/com/arcade/labirintomortal/MainActivity.java"
-
-          test -f "$FILE"
-          grep -q 'drawMissions' "$FILE"
-          grep -q 'drawAchievements' "$FILE"
-          grep -q 'drawSettings' "$FILE"
-          grep -q 'dailyClaimed' "$FILE"
-          test -f "$PROJECT/app/src/main/res/drawable/ic_launcher.xml"
-
-          echo "Funcionalidades V4 verificadas."
-
       - name: Compilar APK
         run: |
-          cd "$PROJECT"
-          gradle --no-daemon --stacktrace assembleDebug
+          set -Eeuo pipefail
+          gradle --no-daemon -p "$PROJECT_DIR" assembleDebug
 
-      - name: Publicar APK
+      - name: Verificar APK
+        run: |
+          APK="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
+          test -f "$APK"
+          ls -lh "$APK"
+
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: LABIRINTO-MORTAL-V4
-          path: ${{ env.PROJECT }}/app/build/outputs/apk/debug/app-debug.apk
+          name: LABIRINTO-MORTAL-2.1-APK
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          retention-days: 30
           
