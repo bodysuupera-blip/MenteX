@@ -22,54 +22,97 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Preparar projeto Android
+      - name: Extrair projeto e localizar Android
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          echo "Procurando projeto Android..."
+          echo "Procurando projeto ou arquivo ZIP..."
 
-          if [ -f "gradlew" ] && [ -f "settings.gradle" ]; then
-            PROJECT_DIR="."
-          elif [ -f "LabirintoMortal/gradlew" ] && [ -f "LabirintoMortal/settings.gradle" ]; then
-            PROJECT_DIR="LabirintoMortal"
-          else
-            PROJECT_DIR="$(find . -type f -name settings.gradle \
-              -not -path '*/.gradle/*' \
-              -not -path '*/build/*' \
-              -print -quit | xargs -r dirname)"
+          mkdir -p "$RUNNER_TEMP/labirinto-fonte"
+
+          # Primeiro verifica se o projeto já está extraído.
+          PROJECT_DIR=""
+
+          while IFS= read -r -d '' FILE; do
+            DIR="$(dirname "$FILE")"
+            if [ -f "$DIR/settings.gradle" ] || [ -f "$DIR/settings.gradle.kts" ]; then
+              PROJECT_DIR="$DIR"
+              break
+            fi
+          done < <(find . -type f \( -name settings.gradle -o -name settings.gradle.kts \) \
+            -not -path '*/.gradle/*' -not -path '*/build/*' -print0)
+
+          # Se não encontrou, procura e extrai o ZIP.
+          if [ -z "$PROJECT_DIR" ]; then
+            ZIP_FOUND=""
+
+            while IFS= read -r -d '' ZIP; do
+              case "$(basename "$ZIP")" in
+                LABIRINTO*.zip|labirinto*.zip)
+                  ZIP_FOUND="$ZIP"
+                  break
+                  ;;
+              esac
+            done < <(find . -type f -iname '*.zip' -print0)
+
+            if [ -z "$ZIP_FOUND" ]; then
+              echo "ERRO: nenhum ZIP do LABIRINTO MORTAL foi encontrado."
+              echo "Envie o arquivo LABIRINTO-MORTAL-3.0.1-SEM-ARCADE.zip para o repositório."
+              exit 1
+            fi
+
+            echo "ZIP encontrado: $ZIP_FOUND"
+            unzip -q "$ZIP_FOUND" -d "$RUNNER_TEMP/labirinto-fonte"
+
+            while IFS= read -r -d '' FILE; do
+              DIR="$(dirname "$FILE")"
+              if [ -f "$DIR/settings.gradle" ] || [ -f "$DIR/settings.gradle.kts" ]; then
+                PROJECT_DIR="$DIR"
+                break
+              fi
+            done < <(find "$RUNNER_TEMP/labirinto-fonte" -type f \
+              \( -name settings.gradle -o -name settings.gradle.kts \) \
+              -not -path '*/.gradle/*' -not -path '*/build/*' -print0)
           fi
 
-          if [ -z "${PROJECT_DIR:-}" ] || [ ! -f "$PROJECT_DIR/settings.gradle" ]; then
-            echo "ERRO: projeto Android não encontrado."
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERRO: o ZIP foi extraído, mas não contém um projeto Android válido."
+            echo "Arquivos encontrados:"
+            find "$RUNNER_TEMP/labirinto-fonte" -maxdepth 4 -type f | head -100
             exit 1
           fi
 
-          echo "Projeto encontrado: $PROJECT_DIR"
+          echo "Projeto encontrado em: $PROJECT_DIR"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      - name: Preparar Gradle Wrapper
+      - name: Verificar Gradle Wrapper
         shell: bash
         run: |
           set -Eeuo pipefail
           cd "$PROJECT_DIR"
 
           if [ ! -f gradlew ]; then
-            echo "ERRO: gradlew ausente no projeto."
+            echo "ERRO: arquivo gradlew ausente no projeto."
+            exit 1
+          fi
+
+          if [ ! -d gradle/wrapper ]; then
+            echo "ERRO: pasta gradle/wrapper ausente."
             exit 1
           fi
 
           chmod +x gradlew
+          ls -la
 
       - name: Compilar APK
         shell: bash
         run: |
           set -Eeuo pipefail
           cd "$PROJECT_DIR"
-
           ./gradlew clean assembleDebug --stacktrace
 
-      - name: Localizar e organizar APK
+      - name: Localizar APK
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -85,8 +128,6 @@ jobs:
 
           mkdir -p saida
           cp "$APK" saida/LABIRINTO-MORTAL-3.0.1.apk
-
-          echo "APK gerado:"
           ls -lh saida/
 
       - name: Disponibilizar APK
