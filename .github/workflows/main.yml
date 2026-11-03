@@ -1,5 +1,5 @@
 
-name: LABIRINTO MORTAL - Gerar APK
+name: LABIRINTO MORTAL - ARCADE SOMBRIO
 
 on:
   workflow_dispatch:
@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar repositório MENTEX
+      - name: Baixar repositório
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -28,7 +28,7 @@ jobs:
           unzip -q gradle-8.9-bin.zip -d "$RUNNER_TEMP"
           echo "$RUNNER_TEMP/gradle-8.9/bin" >> "$GITHUB_PATH"
 
-      - name: Localizar ZIP do jogo
+      - name: Localizar ZIP atualizado
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -38,15 +38,14 @@ jobs:
             -not -path "./.git/*" | head -n 1)
 
           if [ -z "$ZIP_FILE" ]; then
-            echo "ERRO: ZIP do LABIRINTO MORTAL não encontrado."
-            echo "Envie o ZIP para a raiz do repositório."
+            echo "ERRO: ZIP atualizado não encontrado."
             exit 1
           fi
 
           echo "ZIP encontrado: $ZIP_FILE"
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
 
-      - name: Extrair projeto Android
+      - name: Extrair projeto
         run: |
           set -Eeuo pipefail
 
@@ -68,13 +67,13 @@ jobs:
             -type f -name settings.gradle)
 
           if [ -z "$PROJECT" ]; then
-            echo "ERRO: Projeto Android incompleto."
+            echo "ERRO: Projeto Android não encontrado."
             find "$RUNNER_TEMP/labirinto" -maxdepth 5 -type f
             exit 1
           fi
 
-          echo "Projeto localizado: $PROJECT"
           echo "PROJECT_DIR=$PROJECT" >> "$GITHUB_ENV"
+          echo "Projeto encontrado: $PROJECT"
 
       - name: Compilar APK
         run: |
@@ -88,15 +87,15 @@ jobs:
           mkdir -p output
 
           cp "$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk" \
-             output/LABIRINTO-MORTAL.apk
+             output/LABIRINTO-MORTAL-ARCADE-SOMBRIO.apk
 
           ls -lh output/
 
-      - name: Disponibilizar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: LABIRINTO-MORTAL-APK
-          path: output/LABIRINTO-MORTAL.apk
+          name: LABIRINTO-MORTAL-ARCADE-SOMBRIO
+          path: output/LABIRINTO-MORTAL-ARCADE-SOMBRIO.apk
           if-no-files-found: error
           retention-days: 30
           
