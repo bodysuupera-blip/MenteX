@@ -1,5 +1,5 @@
 
-name: LABIRINTO MORTAL - ARCADE SOMBRIO
+name: LABIRINTO MORTAL - PLATAFORMA V3
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   build:
-    name: Compilar LABIRINTO MORTAL
+    name: Compilar Plataforma V3
     runs-on: ubuntu-22.04
 
     steps:
@@ -28,29 +28,27 @@ jobs:
           unzip -q gradle-8.9-bin.zip -d "$RUNNER_TEMP"
           echo "$RUNNER_TEMP/gradle-8.9/bin" >> "$GITHUB_PATH"
 
-      - name: Localizar ZIP atualizado
-        shell: bash
+      - name: Localizar ZIP V3
         run: |
           set -Eeuo pipefail
 
-          ZIP_FILE=$(find . -type f \
-            -name "LABIRINTO-MORTAL-PROJETO-ANDROID.zip" \
+          ZIP=$(find . -type f \
+            -name "LABIRINTO-MORTAL-PLATAFORMA-ARCADE-V3.zip" \
             -not -path "./.git/*" | head -n 1)
 
-          if [ -z "$ZIP_FILE" ]; then
-            echo "ERRO: ZIP atualizado não encontrado."
+          if [ -z "$ZIP" ]; then
+            echo "ERRO: ZIP V3 não encontrado."
             exit 1
           fi
 
-          echo "ZIP encontrado: $ZIP_FILE"
-          echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
+          echo "ZIP=$ZIP" >> "$GITHUB_ENV"
 
       - name: Extrair projeto
         run: |
           set -Eeuo pipefail
 
-          mkdir -p "$RUNNER_TEMP/labirinto"
-          unzip -q "$ZIP_FILE" -d "$RUNNER_TEMP/labirinto"
+          mkdir -p "$RUNNER_TEMP/jogo"
+          unzip -q "$ZIP" -d "$RUNNER_TEMP/jogo"
 
           PROJECT=""
 
@@ -63,39 +61,50 @@ jobs:
               PROJECT="$DIR"
               break
             fi
-          done < <(find "$RUNNER_TEMP/labirinto" \
-            -type f -name settings.gradle)
+          done < <(find "$RUNNER_TEMP/jogo" \
+            -name settings.gradle -type f)
 
           if [ -z "$PROJECT" ]; then
             echo "ERRO: Projeto Android não encontrado."
-            find "$RUNNER_TEMP/labirinto" -maxdepth 5 -type f
             exit 1
           fi
 
-          echo "PROJECT_DIR=$PROJECT" >> "$GITHUB_ENV"
-          echo "Projeto encontrado: $PROJECT"
+          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
+
+      - name: Verificar funcionalidades V3
+        run: |
+          FILE="$PROJECT/app/src/main/java/com/arcade/labirintomortal/MainActivity.java"
+
+          test -f "$FILE"
+          grep -q 'drawHowTo' "$FILE"
+          grep -q 'drawInvite' "$FILE"
+          grep -q 'drawBank' "$FILE"
+          grep -q 'drawShop' "$FILE"
+          grep -q 'drawProfile' "$FILE"
+          grep -q 'drawRanking' "$FILE"
+          test -f "$PROJECT/app/src/main/res/drawable/ic_launcher.xml"
+
+          echo "Funcionalidades V3 verificadas."
 
       - name: Compilar APK
         run: |
-          cd "$PROJECT_DIR"
+          cd "$PROJECT"
           gradle --no-daemon --stacktrace assembleDebug
 
       - name: Preparar APK
         run: |
-          set -Eeuo pipefail
-
           mkdir -p output
 
-          cp "$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk" \
-             output/LABIRINTO-MORTAL-ARCADE-SOMBRIO.apk
+          cp "$PROJECT/app/build/outputs/apk/debug/app-debug.apk" \
+            output/LABIRINTO-MORTAL-V3.apk
 
           ls -lh output/
 
-      - name: Publicar APK
+      - name: Publicar aplicativo
         uses: actions/upload-artifact@v4
         with:
-          name: LABIRINTO-MORTAL-ARCADE-SOMBRIO
-          path: output/LABIRINTO-MORTAL-ARCADE-SOMBRIO.apk
+          name: LABIRINTO-MORTAL-PLATAFORMA-V3
+          path: output/LABIRINTO-MORTAL-V3.apk
           if-no-files-found: error
           retention-days: 30
           
