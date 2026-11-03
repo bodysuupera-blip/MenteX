@@ -1,46 +1,92 @@
 
-      name: Localizar projeto Android
+name: LABIRINTO MORTAL - Gerar APK Sombrio 2.0
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  construir:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Baixar arquivos
+        uses: actions/checkout@v4
+
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Instalar ferramentas
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unzip
+
+      - name: Encontrar projeto correto
         shell: bash
         run: |
           set -euo pipefail
 
+          mkdir -p /tmp/labirinto
+
           PROJECT=""
 
-          for DIR in . LabirintoMortal; do
-            if [ -f "$DIR/settings.gradle" ] && [ -f "$DIR/app/build.gradle" ]; then
-              PROJECT="$DIR"
-              break
+          if [ -f "LabirintoMortal/settings.gradle" ] && \
+             [ -f "LabirintoMortal/app/build.gradle" ]; then
+            PROJECT="$GITHUB_WORKSPACE/LabirintoMortal"
+          elif [ -f "settings.gradle" ] && \
+               [ -f "app/build.gradle" ]; then
+            PROJECT="$GITHUB_WORKSPACE"
+          else
+            ZIP="./LABIRINTO-MORTAL-EDICAO-SOMBRIA-2.0.zip"
+
+            if [ ! -f "$ZIP" ]; then
+              ZIP="./LABIRINTO-MORTAL-PROJETO-ANDROID.zip"
             fi
-          done
 
-          if [ -z "$PROJECT" ]; then
-            echo "Procurando projeto dentro dos ZIPs..."
-            mkdir -p /tmp/projetos
+            if [ ! -f "$ZIP" ]; then
+              echo "ERRO: ZIP do Labirinto Mortal não encontrado."
+              exit 1
+            fi
 
-            while IFS= read -r -d '' ZIP; do
-              DEST="/tmp/projetos/$(basename "$ZIP" .zip)"
-              mkdir -p "$DEST"
+            unzip -oq "$ZIP" -d /tmp/labirinto
 
-              if unzip -oq "$ZIP" -d "$DEST"; then
-                while IFS= read -r -d '' FILE; do
-                  DIR="${FILE%/settings.gradle}"
-                  if [ -f "$DIR/app/build.gradle" ]; then
-                    PROJECT="$DIR"
-                    break
-                  fi
-                done < <(find "$DEST" -type f -name settings.gradle -print0)
-              fi
-
-              [ -n "$PROJECT" ] && break
-            done < <(find . -maxdepth 1 -type f -name '*.zip' -print0)
-
+            if [ -f "/tmp/labirinto/LabirintoMortal/settings.gradle" ] && \
+               [ -f "/tmp/labirinto/LabirintoMortal/app/build.gradle" ]; then
+              PROJECT="/tmp/labirinto/LabirintoMortal"
+            elif [ -f "/tmp/labirinto/settings.gradle" ] && \
+                 [ -f "/tmp/labirinto/app/build.gradle" ]; then
+              PROJECT="/tmp/labirinto"
+            else
+              echo "ERRO: estrutura Android inválida no ZIP."
+              find /tmp/labirinto -maxdepth 4 -type f -print
+              exit 1
+            fi
           fi
 
-          if [ -z "$PROJECT" ]; then
-            echo "ERRO: nenhum projeto Android válido foi encontrado."
-            exit 1
-          fi
-
-          echo "Projeto encontrado: $PROJECT"
+          echo "Projeto selecionado: $PROJECT"
           echo "PROJECT_DIR=$PROJECT" >> "$GITHUB_ENV"
+
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Compilar APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$PROJECT_DIR"
+          gradle --no-daemon assembleDebug --stacktrace
+
+      - name: Disponibilizar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: LABIRINTO-MORTAL-SOMBRIO-2.0-APK
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
           
