@@ -134,4 +134,3 @@ jobs:
           name: LABIRINTO-MORTAL-3.0.1-APK
           path: saida/LABIRINTO-MORTAL-3.0.1.apk
           if-no-files-found: error
-          
