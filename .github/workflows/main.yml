@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar projeto
+      - name: Baixar repositório
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -22,46 +22,58 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Instalar Gradle 8.9
+      - name: Instalar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Localizar projeto atualizado
+      - name: Extrair ZIP 3D atualizado
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          if [ -f "LabirintoMortal/settings.gradle" ] && \
-             [ -f "LabirintoMortal/app/build.gradle" ]; then
-            PROJECT_DIR="$GITHUB_WORKSPACE/LabirintoMortal"
+          ZIP="$GITHUB_WORKSPACE/LABIRINTO-MORTAL-3.0.1-3D-CENARIOS-NOVOS.zip"
 
-          elif [ -f "settings.gradle" ] && \
-               [ -f "app/build.gradle" ]; then
-            PROJECT_DIR="$GITHUB_WORKSPACE"
-
-          else
-            echo "ERRO: projeto LABIRINTO MORTAL não encontrado."
-            echo "Extraia o ZIP 3D atualizado na raiz do repositório."
-            find . -maxdepth 5 -type f | sort | head -150
+          if [ ! -f "$ZIP" ]; then
+            echo "ERRO: ZIP 3D atualizado não encontrado."
+            echo "Envie LABIRINTO-MORTAL-3.0.1-3D-CENARIOS-NOVOS.zip para a raiz do GitHub."
+            find "$GITHUB_WORKSPACE" -maxdepth 2 -type f -iname '*.zip'
             exit 1
           fi
 
-          echo "Projeto selecionado: $PROJECT_DIR"
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/labirinto-atualizado"
+          unzip -q "$ZIP" -d "$RUNNER_TEMP/labirinto-atualizado"
 
-      - name: Conferir versão
+          PROJECT_DIR="$RUNNER_TEMP/labirinto-atualizado/LabirintoMortal"
+
+          if [ ! -f "$PROJECT_DIR/settings.gradle" ]; then
+            echo "ERRO: settings.gradle não encontrado."
+            find "$RUNNER_TEMP/labirinto-atualizado" -maxdepth 5 -type f
+            exit 1
+          fi
+
+          if [ ! -f "$PROJECT_DIR/app/build.gradle" ]; then
+            echo "ERRO: módulo Android app não encontrado."
+            exit 1
+          fi
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Projeto 3D encontrado corretamente."
+
+      - name: Confirmar versão 3.0.1
         shell: bash
         run: |
           set -Eeuo pipefail
           cd "$PROJECT_DIR"
 
-          grep -q "versionCode 6" app/build.gradle
-          grep -q "versionName '3.0.1'" app/build.gradle
+          cat app/build.gradle
+
+          grep -Eq 'versionCode[[:space:]]+6' app/build.gradle
+          grep -Eq 'versionName[[:space:]]+["\x27]3\.0\.1["\x27]' app/build.gradle
 
           echo "Versão 3.0.1 confirmada."
 
-      - name: Compilar APK
+      - name: Compilar projeto
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -71,7 +83,7 @@ jobs:
             clean assembleDebug \
             --stacktrace
 
-      - name: Preparar APK atualizado
+      - name: Conferir APK
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -80,6 +92,7 @@ jobs:
 
           if [ ! -s "$APK" ]; then
             echo "ERRO: APK não foi gerado."
+            find "$PROJECT_DIR" -type f -name '*.apk'
             exit 1
           fi
 
@@ -90,14 +103,12 @@ jobs:
 
           echo "APK gerado:"
           ls -lh "$GITHUB_WORKSPACE/saida"
-
           sha256sum "$GITHUB_WORKSPACE/saida/LABIRINTO-MORTAL-3.0.1-3D.apk"
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: LABIRINTO-MORTAL-3.0.1-3D-APK
+          name: LABIRINTO-MORTAL-3.0.1-3D-ATUALIZADO
           path: saida/LABIRINTO-MORTAL-3.0.1-3D.apk
           if-no-files-found: error
-          retention-days: 7
           
