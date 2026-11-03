@@ -1,5 +1,5 @@
 
-name: LABIRINTO MORTAL - Gerar APK 2.2
+name: LABIRINTO MORTAL - Gerar APK 2.3
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   build:
-    name: Compilar LABIRINTO MORTAL 2.2
+    name: Compilar LABIRINTO MORTAL 2.3
     runs-on: ubuntu-22.04
 
     steps:
@@ -22,36 +22,18 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Extrair projeto V2.2
+      - name: Localizar projeto Android
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          ZIP="$GITHUB_WORKSPACE/LABIRINTO-MORTAL-V2.2-SEM-CHIADO-3D-ILUSTRADO.zip"
-
-          if [[ ! -f "$ZIP" ]]; then
-            echo "ERRO: ZIP V2.2 não encontrado."
-            exit 1
-          fi
-
-          mkdir -p "$RUNNER_TEMP/labirinto-v22"
-
-          unzip -oq "$ZIP" -d "$RUNNER_TEMP/labirinto-v22"
-
-          PROJECT_DIR=""
-
-          while IFS= read -r SETTINGS; do
-            DIR="$(dirname "$SETTINGS")"
-
-            if [[ -f "$DIR/app/build.gradle" ]]; then
-              PROJECT_DIR="$DIR"
-              break
-            fi
-          done < <(find "$RUNNER_TEMP/labirinto-v22" -name settings.gradle -type f)
-
-          if [[ -z "$PROJECT_DIR" ]]; then
-            echo "ERRO: Projeto Android não encontrado no ZIP."
-            find "$RUNNER_TEMP/labirinto-v22" -maxdepth 6 -type f
+          if [[ -f settings.gradle && -f app/build.gradle ]]; then
+            PROJECT_DIR="$GITHUB_WORKSPACE"
+          elif [[ -f LabirintoMortal/settings.gradle && -f LabirintoMortal/app/build.gradle ]]; then
+            PROJECT_DIR="$GITHUB_WORKSPACE/LabirintoMortal"
+          else
+            echo "ERRO: Projeto Android V2.3 não encontrado."
+            find . -maxdepth 5 -type f | sort | head -150
             exit 1
           fi
 
@@ -62,26 +44,20 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-
           wget -q https://services.gradle.org/distributions/gradle-8.9-bin.zip
           unzip -q gradle-8.9-bin.zip -d "$RUNNER_TEMP"
-
           echo "$RUNNER_TEMP/gradle-8.9/bin" >> "$GITHUB_PATH"
 
       - name: Compilar APK
         shell: bash
         run: |
           set -Eeuo pipefail
-
-          gradle --no-daemon \
-            -p "$PROJECT_DIR" \
-            assembleDebug
+          gradle --no-daemon -p "$PROJECT_DIR" assembleDebug
 
       - name: Verificar APK
         shell: bash
         run: |
           set -Eeuo pipefail
-
           APK="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
 
           if [[ ! -s "$APK" ]]; then
@@ -89,13 +65,12 @@ jobs:
             exit 1
           fi
 
-          echo "APK gerado com sucesso:"
           ls -lh "$APK"
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: LABIRINTO-MORTAL-V2.2-APK
+          name: LABIRINTO-MORTAL-V2.3-APK
           path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
