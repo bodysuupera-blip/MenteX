@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - 'CAO_FUJAO/**'
+      - 'Cao_Fujao_Android.zip'
       - '.github/workflows/gerar-cao-fujao.yml'
 
 permissions:
@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar projeto
+      - name: Baixar repositório
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -26,16 +26,25 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Gradle
+      - name: Preparar projeto separado
+        run: |
+          set -e
+          test -f Cao_Fujao_Android.zip
+          mkdir -p CAO_FUJAO
+          unzip -o Cao_Fujao_Android.zip -d CAO_FUJAO
+          test -f CAO_FUJAO/settings.gradle
+          test -f CAO_FUJAO/app/build.gradle
+
+      - name: Instalar Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Compilar APK
+      - name: Gerar APK
         working-directory: CAO_FUJAO
         run: gradle assembleDebug
 
-      - name: Salvar APK
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
           name: CAO-FUJAO-APK
