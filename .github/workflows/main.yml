@@ -1,12 +1,8 @@
 
-name: CAO FUJAO - GERAR APK
+name: CÃO FUJÃO 2.0 - Gerar APK
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - 'Cao_Fujao_Android.zip'
-      - '.github/workflows/gerar-cao-fujao.yml'
 
 permissions:
   contents: read
@@ -26,28 +22,26 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Preparar projeto separado
-        run: |
-          set -e
-          test -f Cao_Fujao_Android.zip
-          mkdir -p CAO_FUJAO
-          unzip -o Cao_Fujao_Android.zip -d CAO_FUJAO
-          test -f CAO_FUJAO/settings.gradle
-          test -f CAO_FUJAO/app/build.gradle
-
-      - name: Instalar Gradle 8.9
+      - name: Instalar Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.9'
+          gradle-version: '8.7'
 
-      - name: Gerar APK
-        working-directory: CAO_FUJAO
-        run: gradle assembleDebug
+      - name: Verificar projeto
+        run: |
+          test -f settings.gradle
+          test -f build.gradle
+          test -f app/build.gradle
+          test -f app/src/main/assets/index.html
+          echo "Projeto encontrado!"
 
-      - name: Disponibilizar APK
+      - name: Compilar APK
+        run: gradle --no-daemon assembleDebug
+
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: CAO-FUJAO-APK
-          path: CAO_FUJAO/app/build/outputs/apk/debug/app-debug.apk
+          name: CAO-FUJAO-2.0-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           
