@@ -22,38 +22,76 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Gradle 8.7
+      - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
-      - name: Verificar arquivos
+      - name: Extrair e localizar projeto
         shell: bash
         run: |
-          set -e
-          PROJECT="cao-fujao-project"
+          set -Eeuo pipefail
 
-          echo "Verificando projeto..."
+          mkdir -p _cao_source
 
-          for FILE in settings.gradle build.gradle app/build.gradle app/src/main/assets/index.html; do
-            if [ ! -f "$PROJECT/$FILE" ]; then
-              echo "ERRO: arquivo ausente: $PROJECT/$FILE"
+          PROJECT_FILE=$(find . -type f \
+            \( -name settings.gradle -o -name settings.gradle.kts \) \
+            -not -path './.git/*' -print -quit || true)
+
+          if [ -z "$PROJECT_FILE" ]; then
+            echo "Projeto ainda nao extraido. Procurando ZIP..."
+
+            FOUND=false
+
+            while IFS= read -r -d '' ZIP; do
+              if unzip -Z1 "$ZIP" | grep -qE '(^|/)settings.gradle$'; then
+                echo "Extraindo: $ZIP"
+                unzip -oq "$ZIP" -d _cao_source
+                FOUND=true
+                break
+              fi
+            done < <(find . -type f -name '*.zip' \
+              -not -path './.git/*' -print0)
+
+            if [ "$FOUND" = false ]; then
+              echo "ERRO: nenhum ZIP de projeto Android encontrado."
+              find . -maxdepth 4 -type f
               exit 1
             fi
-          done
+          fi
 
-          echo "Todos os arquivos encontrados!"
+          PROJECT_FILE=$(find . -type f \
+            \( -name settings.gradle -o -name settings.gradle.kts \) \
+            -not -path './.git/*' -print -quit)
 
-      - name: Compilar aplicativo
-        shell: bash
+          PROJECT_DIR="${PROJECT_FILE%/*}"
+
+          if [ "$PROJECT_DIR" = "$PROJECT_FILE" ]; then
+            PROJECT_DIR="."
+          fi
+
+          echo "Projeto localizado: $PROJECT_DIR"
+
+          test -f "$PROJECT_DIR/app/build.gradle" || {
+            echo "ERRO: app/build.gradle ausente."
+            exit 1
+          }
+
+          test -f "$PROJECT_DIR/app/src/main/assets/index.html" || {
+            echo "ERRO: index.html ausente."
+            exit 1
+          }
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Compilar APK
         run: |
-          set -e
-          gradle --no-daemon -p cao-fujao-project assembleDebug
+          gradle --no-daemon -p "$PROJECT_DIR" assembleDebug
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: CAO-FUJAO-2.0-APK
-          path: cao-fujao-project/app/build/outputs/apk/debug/app-debug.apk
+          path: '**/build/outputs/apk/debug/app-debug.apk'
           if-no-files-found: error
           
