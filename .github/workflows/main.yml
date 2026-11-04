@@ -3,151 +3,52 @@ name: CAO FUJAO - GERAR APK ATUALIZADO
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 permissions:
   contents: read
 
 jobs:
   build:
-    name: Compilar Cão Fujão
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar repositório
+      - name: Baixar codigo fonte
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
+
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v3
 
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Configurar Android SDK manualmente
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          SDK_ROOT="/usr/local/lib/android/sdk"
-          export ANDROID_HOME="$SDK_ROOT"
-          export ANDROID_SDK_ROOT="$SDK_ROOT"
-
-          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
-
-          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" \
-            -type f -name sdkmanager -print -quit)"
-
-          if [ -z "$SDKMANAGER" ]; then
-            echo "ERRO: sdkmanager não encontrado."
-            exit 1
-          fi
-
-          echo "SDK: $SDK_ROOT"
-          echo "Gerenciador: $SDKMANAGER"
-
-          set +o pipefail
-          yes | bash "$SDKMANAGER" \
-            --sdk_root="$SDK_ROOT" --licenses || true
-          set -o pipefail
-
-          bash "$SDKMANAGER" --sdk_root="$SDK_ROOT" \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;34.0.0"
-
-          echo "SDK configurado."
-
-      - name: Extrair projeto atualizado
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          ZIP="./CAO-FUJAO-ATUALIZACAO-MENU-DIFICULDADES-ICONE.zip"
-
-          if [ ! -f "$ZIP" ]; then
-            echo "ERRO: ZIP atualizado não encontrado."
-            exit 1
-          fi
-
-          mkdir -p /tmp/cao-fujao
-          unzip -oq "$ZIP" -d /tmp/cao-fujao
-
-          PROJECT=""
-
-          while IFS= read -r FILE; do
-            DIR="$(dirname "$FILE")"
-
-            if [ -f "$DIR/app/build.gradle" ] &&
-               grep -Rq 'com.caofujao.game' "$DIR/app"; then
-              PROJECT="$DIR"
-              break
-            fi
-          done < <(find /tmp/cao-fujao -name settings.gradle -type f)
-
-          if [ -z "$PROJECT" ]; then
-            echo "ERRO: projeto Android não encontrado."
-            find /tmp/cao-fujao -maxdepth 4 -type f | head -100
-            exit 1
-          fi
-
-          echo "PROJECT_DIR=$PROJECT" >> "$GITHUB_ENV"
-          echo "Projeto encontrado: $PROJECT"
-
       - name: Verificar projeto
-        shell: bash
         run: |
-          set -Eeuo pipefail
-
-          cd "$PROJECT_DIR"
-
           test -f settings.gradle
-          test -f build.gradle
           test -f app/build.gradle
           test -f app/src/main/AndroidManifest.xml
-
-          if ! grep -Rq 'com.caofujao.game' app; then
-            echo "ERRO: pacote do Cão Fujão não encontrado."
-            exit 1
-          fi
-
-          echo "Projeto validado."
+          test -f app/src/main/assets/index.html
 
       - name: Compilar APK
-        shell: bash
         run: |
-          set -Eeuo pipefail
-
-          gradle --no-daemon \
-            -p "$PROJECT_DIR" \
-            assembleDebug
-
-      - name: Preparar APK
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          APK="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
-
-          if [ ! -f "$APK" ]; then
-            echo "ERRO: APK não foi gerado."
-            find "$PROJECT_DIR" -path '*build/outputs/apk*' -type f
-            exit 1
-          fi
-
-          mkdir -p entrega
-          cp "$APK" entrega/CAO-FUJAO-ATUALIZADO.apk
-
-          ls -lh entrega/
+          gradle clean
+          gradle :app:assembleDebug --stacktrace
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: CAO-FUJAO-ATUALIZADO
-          path: entrega/CAO-FUJAO-ATUALIZADO.apk
+          name: CAO-FUJAO-ATUALIZADO-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          retention-days: 30
           
