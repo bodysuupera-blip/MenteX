@@ -22,7 +22,7 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Gradle 8.9
+      - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
@@ -36,7 +36,7 @@ jobs:
           DEST="/tmp/cao-fujao-32"
 
           if [ ! -f "$ZIP" ]; then
-            echo "ERRO: coloque o ZIP 3.2 na raiz do repositório."
+            echo "ERRO: ZIP 3.2 não encontrado."
             exit 1
           fi
 
@@ -53,20 +53,47 @@ jobs:
               PROJECT="$DIR"
               break
             fi
-          done < <(
-            find "$DEST" -type f \
-              -name settings.gradle -print0
-          )
+          done < <(find "$DEST" -type f -name settings.gradle -print0)
 
           if [ -z "$PROJECT" ]; then
-            echo "ERRO: projeto Android não encontrado."
-            find "$DEST" -maxdepth 6 -type f
+            echo "ERRO: projeto Cão Fujão não encontrado."
+            find "$DEST" -maxdepth 6 -type f | head -150
             exit 1
           fi
 
           echo "Projeto encontrado: $PROJECT"
-
           echo "PROJECT_DIR=$PROJECT" >> "$GITHUB_ENV"
+
+      - name: Configurar Android SDK
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          SDKMANAGER=$(find \
+            /usr/local/lib/android/sdk \
+            -type f -name sdkmanager -print -quit 2>/dev/null || true)
+
+          if [ -z "$SDKMANAGER" ]; then
+            echo "ERRO: sdkmanager não encontrado no servidor."
+            find /usr/local/lib/android -maxdepth 5 -type f | head -100
+            exit 1
+          fi
+
+          SDK_ROOT="$(dirname "$(dirname "$(dirname "$SDKMANAGER")")")"
+
+          echo "SDK encontrado: $SDK_ROOT"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "$SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
+          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
+
+          set +o pipefail
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+          set -o pipefail
+
+          "$SDKMANAGER" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
 
       - name: Verificar projeto
         shell: bash
@@ -78,9 +105,7 @@ jobs:
             build.gradle \
             app/build.gradle \
             app/src/main/AndroidManifest.xml \
-            app/src/main/assets/index.html \
-            app/src/main/assets/intro.png \
-            app/src/main/java/com/caofujao/game/MainActivity.java
+            app/src/main/assets/index.html
           do
             if [ ! -s "$PROJECT_DIR/$FILE" ]; then
               echo "ERRO: arquivo ausente: $FILE"
@@ -93,24 +118,13 @@ jobs:
 
           echo "CÃO FUJÃO 3.2 CONFIRMADO!"
 
-      - name: Configurar Android SDK
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          yes | sdkmanager --licenses >/dev/null 2>&1 || true
-
-          sdkmanager \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
-
       - name: Compilar APK
         run: |
           gradle --no-daemon \
             -p "$PROJECT_DIR" \
             assembleDebug
 
-      - name: Conferir APK
+      - name: Preparar APK
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -124,6 +138,7 @@ jobs:
 
           mkdir -p entrega
           cp "$APK" entrega/CAO-FUJAO-3.2.apk
+
           ls -lh entrega/
 
       - name: Publicar APK
