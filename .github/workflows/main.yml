@@ -1,5 +1,5 @@
 
-name: CAO FUJAO 2.1 - GERAR APK
+name: CAO FUJAO 2.2 - GERAR APK
 
 on:
   workflow_dispatch:
@@ -9,82 +9,41 @@ permissions:
 
 jobs:
   build:
-    name: Compilar Cão Fujão 2.1
+    name: Compilar Cão Fujão 2.2
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar projeto
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Configurar Java 17
+      - name: Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Gradle
+      - name: Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
-      - name: Verificar Android SDK
-        run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          test -d "$ANDROID_HOME/platform-tools"
-          echo "Android SDK disponível!"
-
-      - name: Extrair Cão Fujão 2.1
-        shell: bash
+      - name: Verificar projeto
         run: |
           set -Eeuo pipefail
-
-          ZIP="./CAO-FUJAO-2.1-ATUALIZACAO-PARA-GERAR-APK.zip"
-
-          if [ ! -f "$ZIP" ]; then
-            echo "ERRO: ZIP 2.1 não encontrado!"
-            exit 1
-          fi
-
-          mkdir -p /tmp/cao-fujao-21
-          unzip -oq "$ZIP" -d /tmp/cao-fujao-21
-
-          PROJECT="/tmp/cao-fujao-21"
-
-          SETTINGS=$(find "$PROJECT" -name settings.gradle -print -quit)
-
-          if [ -z "$SETTINGS" ]; then
-            echo "ERRO: settings.gradle não encontrado!"
-            exit 1
-          fi
-
-          PROJECT="$(dirname "$SETTINGS")"
-
-          test -f "$PROJECT/build.gradle"
-          test -f "$PROJECT/app/build.gradle"
-          test -f "$PROJECT/app/src/main/AndroidManifest.xml"
-          test -f "$PROJECT/app/src/main/assets/index.html"
-
-          grep -q 'com.caofujao.game' "$PROJECT/app/build.gradle"
-
-          echo "PROJECT_DIR=$PROJECT" >> "$GITHUB_ENV"
-          echo "Cão Fujão 2.1 confirmado!"
+          test -f settings.gradle
+          test -f app/build.gradle
+          test -f app/src/main/assets/index.html
+          test -f app/src/main/assets/intro.png
+          grep -q 'com.caofujao.game' app/build.gradle
+          grep -q "versionName '2.2'" app/build.gradle
+          echo "CÃO FUJÃO 2.2 CONFIRMADO"
 
       - name: Compilar APK
-        run: |
-          gradle --no-daemon \
-            -p "$PROJECT_DIR" \
-            assembleDebug
-
-      - name: Verificar APK
-        run: |
-          APK="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
-          test -f "$APK"
-          ls -lh "$APK"
+        run: gradle --no-daemon assembleDebug
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: CAO-FUJAO-2.1-APK
-          path: /tmp/cao-fujao-21/**/build/outputs/apk/debug/app-debug.apk
+          name: CAO-FUJAO-2.2-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           
