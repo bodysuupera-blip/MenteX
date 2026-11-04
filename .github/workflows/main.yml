@@ -1,5 +1,5 @@
 
-name: CAO FUJAO 3.1 - GERAR APK
+name: CAO FUJAO 3.2 - GERAR APK
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   build:
-    name: Compilar Cão Fujão 3.1
+    name: Compilar Cão Fujão 3.2
     runs-on: ubuntu-22.04
 
     steps:
@@ -22,74 +22,87 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Gradle
+      - name: Configurar Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.7'
+          gradle-version: '8.9'
 
-      - name: Extrair ZIP correto
+      - name: Localizar e extrair Cão Fujão 3.2
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          ZIP=$(find . -type f \
-            -name 'CAO-FUJAO-3.1-ATUALIZACAO-PARA-GERAR-APK.zip' \
-            -not -path './.git/*' -print -quit)
+          ZIP="./CAO-FUJAO-3.2-PROJETO-COMPLETO.zip"
+          DEST="/tmp/cao-fujao-32"
 
-          if [ -z "$ZIP" ]; then
-            echo "ERRO: ZIP Cão Fujão 3.1 não encontrado."
+          if [ ! -f "$ZIP" ]; then
+            echo "ERRO: coloque o ZIP 3.2 na raiz do repositório."
             exit 1
           fi
 
-          mkdir -p /tmp/cao-fujao-31
-          unzip -oq "$ZIP" -d /tmp/cao-fujao-31
-
-          echo "ZIP extraído: $ZIP"
-
-      - name: Localizar projeto Android
-        shell: bash
-        run: |
-          set -Eeuo pipefail
+          mkdir -p "$DEST"
+          unzip -oq "$ZIP" -d "$DEST"
 
           PROJECT=""
 
-          while IFS= read -r -d '' SETTINGS; do
-            DIR="$(dirname "$SETTINGS")"
+          while IFS= read -r -d '' FILE; do
+            DIR="$(dirname "$FILE")"
 
             if [ -f "$DIR/app/build.gradle" ] &&
-               grep -Rq 'com.caofujao.game' "$DIR/app"; then
+               grep -q "com.caofujao.game" "$DIR/app/build.gradle"; then
               PROJECT="$DIR"
               break
             fi
           done < <(
-            find /tmp/cao-fujao-31 \
-              -type f \
-              \( -name settings.gradle -o -name settings.gradle.kts \) \
-              -print0
+            find "$DEST" -type f \
+              -name settings.gradle -print0
           )
 
           if [ -z "$PROJECT" ]; then
-            echo "ERRO: projeto Android do Cão Fujão não encontrado."
-            find /tmp/cao-fujao-31 -maxdepth 6 -type f | head -150
+            echo "ERRO: projeto Android não encontrado."
+            find "$DEST" -maxdepth 6 -type f
             exit 1
           fi
 
           echo "Projeto encontrado: $PROJECT"
+
           echo "PROJECT_DIR=$PROJECT" >> "$GITHUB_ENV"
 
-      - name: Conferir identidade do jogo
+      - name: Verificar projeto
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          test -s "$PROJECT_DIR/build.gradle"
-          test -s "$PROJECT_DIR/app/build.gradle"
-          test -s "$PROJECT_DIR/app/src/main/AndroidManifest.xml"
-          test -s "$PROJECT_DIR/app/src/main/assets/index.html"
+          for FILE in \
+            settings.gradle \
+            build.gradle \
+            app/build.gradle \
+            app/src/main/AndroidManifest.xml \
+            app/src/main/assets/index.html \
+            app/src/main/assets/intro.png \
+            app/src/main/java/com/caofujao/game/MainActivity.java
+          do
+            if [ ! -s "$PROJECT_DIR/$FILE" ]; then
+              echo "ERRO: arquivo ausente: $FILE"
+              exit 1
+            fi
+          done
 
-          grep -Rq 'com.caofujao.game' "$PROJECT_DIR/app"
+          grep -q "com.caofujao.game" \
+            "$PROJECT_DIR/app/build.gradle"
 
-          echo "Identidade Cão Fujão confirmada."
+          echo "CÃO FUJÃO 3.2 CONFIRMADO!"
+
+      - name: Configurar Android SDK
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+
+          sdkmanager \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
 
       - name: Compilar APK
         run: |
@@ -97,27 +110,26 @@ jobs:
             -p "$PROJECT_DIR" \
             assembleDebug
 
-      - name: Preparar APK
+      - name: Conferir APK
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          APK=$(find "$PROJECT_DIR/app/build/outputs/apk" \
-            -type f -name '*.apk' -print -quit)
+          APK="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
 
-          if [ -z "$APK" ]; then
+          if [ ! -s "$APK" ]; then
             echo "ERRO: APK não foi gerado."
             exit 1
           fi
 
           mkdir -p entrega
-          cp "$APK" entrega/CAO-FUJAO-3.1.apk
+          cp "$APK" entrega/CAO-FUJAO-3.2.apk
           ls -lh entrega/
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: CAO-FUJAO-3.1-APK
-          path: entrega/CAO-FUJAO-3.1.apk
+          name: CAO-FUJAO-3.2-APK
+          path: entrega/CAO-FUJAO-3.2.apk
           if-no-files-found: error
           
