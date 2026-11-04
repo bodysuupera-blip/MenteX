@@ -1,5 +1,5 @@
 
-name: CAO FUJAO 2.9 - GERAR APK
+name: CAO FUJAO 3.0 - GERAR APK
 
 on:
   workflow_dispatch:
@@ -74,25 +74,24 @@ jobs:
 
           SDKMANAGER="$(command -v sdkmanager)"
 
-          if [ -z "$SDKMANAGER" ]; then
-            echo "ERRO: sdkmanager nao encontrado."
-            exit 1
-          fi
-
           "$SDKMANAGER" --install "platforms;android-35"
           "$SDKMANAGER" --install "build-tools;35.0.0"
 
-      - name: Configurar Gradle
+      - name: Configurar Gradle 8.13
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.9'
+          gradle-version: '8.13'
 
-      - name: Compilar APK
+      - name: Compilar aplicativo
         shell: bash
         run: |
           set -euo pipefail
 
           cd "$PROJECT_DIR"
+
+          echo "Compilando com Gradle 8.13..."
+
+          gradle --version
 
           gradle --no-daemon clean :app:assembleDebug
 
@@ -108,12 +107,13 @@ jobs:
 
           cp "$APK" "$GITHUB_WORKSPACE/resultado/CAO-FUJAO.apk"
 
+          echo "APK gerado com sucesso."
           ls -lh "$GITHUB_WORKSPACE/resultado/CAO-FUJAO.apk"
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: CAO-FUJAO-2.9-APK
+          name: CAO-FUJAO-3.0-APK
           path: resultado/CAO-FUJAO.apk
           if-no-files-found: error
           retention-days: 30
