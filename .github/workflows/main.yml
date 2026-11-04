@@ -1,33 +1,37 @@
 
-name: CAO FUJAO 2.7 - GERAR APK
+name: CAO FUJAO 2.8 - GERAR APK
 
 on:
   workflow_dispatch:
   push:
-    branches: [main, master]
+    branches:
+      - main
+      - master
 
 permissions:
   contents: read
 
 jobs:
   build:
-    name: Compilar Cao Fujão
+    name: Compilar aplicativo Cao Fujão
     runs-on: ubuntu-22.04
 
     steps:
       - name: Baixar projeto
         uses: actions/checkout@v4
 
-      - name: Configurar Java
+      - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Localizar projeto
+      - name: Localizar projeto Android
         shell: bash
         run: |
           set -euo pipefail
+
+          echo "Procurando arquivos do projeto..."
 
           while IFS= read -r -d '' arquivo; do
             pasta="extraido_$(basename "$arquivo" .zip)"
@@ -40,25 +44,34 @@ jobs:
           while IFS= read -r -d '' arquivo; do
             pasta="$(dirname "$arquivo")"
 
-            if { [ -f "$pasta/app/build.gradle" ] || [ -f "$pasta/app/build.gradle.kts" ]; } &&
+            if { [ -f "$pasta/app/build.gradle" ] || \
+                 [ -f "$pasta/app/build.gradle.kts" ]; } && \
                [ -f "$pasta/app/src/main/AndroidManifest.xml" ]; then
+
               PROJETO="$pasta"
               break
             fi
-          done < <(find . -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print0)
+          done < <(find . -type f \( \
+            -name settings.gradle -o \
+            -name settings.gradle.kts \
+          \) -print0)
 
           if [ -z "$PROJETO" ]; then
             echo "ERRO: Projeto Android nao encontrado."
+            echo "Confira os arquivos enviados ao repositorio."
             exit 1
           fi
 
-          echo "PROJECT_DIR=$GITHUB_WORKSPACE/$PROJETO" >> "$GITHUB_ENV"
           echo "Projeto encontrado: $PROJETO"
+
+          echo "PROJECT_DIR=$GITHUB_WORKSPACE/$PROJETO" >> "$GITHUB_ENV"
 
       - name: Configurar Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          accept-android-sdk-licenses: true
 
-      - name: Instalar componentes Android
+      - name: Verificar e instalar Android SDK
         shell: bash
         run: |
           set -euo pipefail
@@ -70,19 +83,20 @@ jobs:
             exit 1
           fi
 
-          echo "SDK encontrado em: $SDK"
+          echo "Android SDK: $SDK"
 
-          SDKMANAGER="$(find "$SDK/cmdline-tools" -type f -name sdkmanager 2>/dev/null | head -n 1 || true)"
+          SDKMANAGER="$(find "$SDK/cmdline-tools" \
+            -type f -name sdkmanager -print -quit)"
 
           if [ -z "$SDKMANAGER" ]; then
-            echo "ERRO: sdkmanager nao localizado."
-            find "$SDK" -maxdepth 5 -type f -name sdkmanager -print
+            echo "ERRO: sdkmanager nao encontrado."
             exit 1
           fi
 
-          echo "sdkmanager encontrado: $SDKMANAGER"
+          echo "SDK Manager: $SDKMANAGER"
 
           yes | "$SDKMANAGER" --licenses || true
+
           "$SDKMANAGER" --install "platform-tools"
           "$SDKMANAGER" --install "platforms;android-35"
           "$SDKMANAGER" --install "build-tools;35.0.0"
@@ -92,24 +106,36 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Compilar APK
+      - name: Compilar aplicativo
         shell: bash
         run: |
           set -euo pipefail
+
           cd "$PROJECT_DIR"
+
+          echo "Iniciando compilacao do Cao Fujão..."
 
           gradle --no-daemon clean :app:assembleDebug
 
           APK="app/build/outputs/apk/debug/app-debug.apk"
-          test -s "$APK"
+
+          if [ ! -s "$APK" ]; then
+            echo "ERRO: APK nao foi gerado."
+            find app/build/outputs -type f -name "*.apk" -print
+            exit 1
+          fi
 
           mkdir -p "$GITHUB_WORKSPACE/resultado"
+
           cp "$APK" "$GITHUB_WORKSPACE/resultado/CAO-FUJAO.apk"
 
-      - name: Publicar APK
+          echo "APK gerado:"
+          ls -lh "$GITHUB_WORKSPACE/resultado/CAO-FUJAO.apk"
+
+      - name: Publicar APK para download
         uses: actions/upload-artifact@v4
         with:
-          name: CAO-FUJAO-2.7-APK
+          name: CAO-FUJAO-2.8-APK
           path: resultado/CAO-FUJAO.apk
           if-no-files-found: error
           retention-days: 30
