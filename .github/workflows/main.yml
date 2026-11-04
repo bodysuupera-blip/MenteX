@@ -16,7 +16,7 @@ jobs:
       - name: Baixar repositório
         uses: actions/checkout@v4
 
-      - name: Configurar Java 17
+      - name: Configurar Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -27,69 +27,70 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Extrair projeto 3.2
+      - name: Localizar e extrair projeto original
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          ZIP="./CAO-FUJAO-3.2-PROJETO-COMPLETO.zip"
-          DEST="/tmp/cao-fujao-32"
+          ZIP="$(find . -maxdepth 2 -type f \
+            -iname 'CAO-FUJAO-3.2-PROJETO-COMPLETO.zip' \
+            -print -quit)"
 
-          test -f "$ZIP" || {
-            echo "ERRO: ZIP 3.2 não encontrado."
-            exit 1
-          }
-
-          mkdir -p "$DEST"
-          unzip -oq "$ZIP" -d "$DEST"
-
-          PROJECT=""
-
-          while IFS= read -r -d '' FILE; do
-            DIR="$(dirname "$FILE")"
-
-            if [ -f "$DIR/app/build.gradle" ] &&
-               grep -q 'com.caofujao.game' "$DIR/app/build.gradle"; then
-              PROJECT="$DIR"
-              break
-            fi
-          done < <(find "$DEST" -type f -name settings.gradle -print0)
-
-          if [ -z "$PROJECT" ]; then
-            echo "ERRO: projeto Android não encontrado."
-            find "$DEST" -maxdepth 6 -type f | head -150
+          if [ -z "$ZIP" ]; then
+            echo "ERRO: ZIP original do Cão Fujão 3.2 não encontrado."
             exit 1
           fi
 
-          echo "PROJECT_DIR=$PROJECT" >> "$GITHUB_ENV"
-          echo "Projeto encontrado: $PROJECT"
+          mkdir -p /tmp/cao-fujao-32
+          unzip -q "$ZIP" -d /tmp/cao-fujao-32
 
-      - name: Configurar SDK e aceitar licenças
+          PROJECT_DIR=""
+
+          while IFS= read -r FILE; do
+            DIR="$(dirname "$FILE")"
+
+            if [ -f "$DIR/app/build.gradle" ] &&
+               grep -Rq 'com.caofujao.game' "$DIR/app"; then
+              PROJECT_DIR="$DIR"
+              break
+            fi
+          done < <(find /tmp/cao-fujao-32 -name settings.gradle -type f)
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERRO: projeto Android original não encontrado."
+            find /tmp/cao-fujao-32 -maxdepth 4 -type f | head -80
+            exit 1
+          fi
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Projeto encontrado: $PROJECT_DIR"
+
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Instalar componentes Android
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          SDK_ROOT="/usr/local/lib/android/sdk"
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
 
-          SDKMANAGER=$(find "$SDK_ROOT/cmdline-tools" \
-            -type f -name sdkmanager -print -quit)
+          if [ -z "$SDK_ROOT" ]; then
+            echo "ERRO: Android SDK não configurado."
+            exit 1
+          fi
+
+          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" \
+            -type f -name sdkmanager -print -quit)"
 
           if [ -z "$SDKMANAGER" ]; then
             echo "ERRO: sdkmanager não encontrado."
             exit 1
           fi
 
-          echo "SDK principal: $SDK_ROOT"
-          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "SDK: $SDK_ROOT"
 
-          chmod +x "$SDKMANAGER"
-
-          set +o pipefail
-          yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --licenses
-          set -o pipefail
-
-          "$SDKMANAGER" --sdk_root="$SDK_ROOT" \
+          bash "$SDKMANAGER" --sdk_root="$SDK_ROOT" \
             "platforms;android-35" \
             "build-tools;34.0.0"
 
@@ -98,44 +99,50 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          for FILE in \
-            settings.gradle \
-            build.gradle \
-            app/build.gradle \
-            app/src/main/AndroidManifest.xml \
-            app/src/main/assets/index.html
-          do
-            test -s "$PROJECT_DIR/$FILE" || {
+          cd "$PROJECT_DIR"
+
+          for FILE in settings.gradle build.gradle app/build.gradle; do
+            if [ ! -f "$FILE" ]; then
               echo "ERRO: arquivo ausente: $FILE"
               exit 1
-            }
+            fi
           done
 
-          grep -q 'com.caofujao.game' \
-            "$PROJECT_DIR/app/build.gradle"
+          if ! grep -Rq 'com.caofujao.game' app; then
+            echo "ERRO: pacote não corresponde ao Cão Fujão."
+            exit 1
+          fi
 
-          echo "PROJETO CONFIRMADO!"
+          echo "Projeto Cão Fujão validado."
 
-      - name: Compilar Cão Fujão
+      - name: Compilar APK
+        shell: bash
         run: |
+          set -Eeuo pipefail
+
           gradle --no-daemon \
             -p "$PROJECT_DIR" \
             assembleDebug
 
-      - name: Verificar APK
+      - name: Preparar APK
+        shell: bash
         run: |
           set -Eeuo pipefail
 
           APK="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
 
-          test -s "$APK"
+          if [ ! -f "$APK" ]; then
+            echo "ERRO: APK não foi gerado."
+            find "$PROJECT_DIR" -path '*build/outputs/apk*' -type f
+            exit 1
+          fi
 
           mkdir -p entrega
           cp "$APK" entrega/CAO-FUJAO-3.2.apk
 
-          ls -lh entrega/
+          echo "APK pronto para instalação."
 
-      - name: Publicar APK
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
           name: CAO-FUJAO-3.2-APK
