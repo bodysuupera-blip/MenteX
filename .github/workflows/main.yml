@@ -1,5 +1,5 @@
 
-name: CAO FUJAO 2.5 - GERAR APK
+name: CAO FUJAO 2.6 - GERAR APK
 
 on:
   workflow_dispatch:
@@ -13,25 +13,23 @@ permissions:
 
 jobs:
   build:
-    name: Compilar aplicativo Android
+    name: Compilar Cao Fujão
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar repositorio
+      - name: Baixar projeto
         uses: actions/checkout@v4
 
-      - name: Configurar Java 17
+      - name: Configurar Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Preparar e localizar projeto
+      - name: Localizar projeto
         shell: bash
         run: |
           set -euo pipefail
-
-          echo "Extraindo arquivos ZIP..."
 
           while IFS= read -r -d '' arquivo; do
             pasta="extraido_$(basename "$arquivo" .zip)"
@@ -39,19 +37,16 @@ jobs:
             unzip -oq "$arquivo" -d "$pasta"
           done < <(find . -type f -name "*.zip" -print0)
 
-          echo "Procurando projeto Android..."
-
           PROJETO=""
 
           while IFS= read -r -d '' arquivo; do
             pasta="$(dirname "$arquivo")"
 
-            if [ -f "$pasta/app/build.gradle" ] || \
-               [ -f "$pasta/app/build.gradle.kts" ]; then
-              if [ -f "$pasta/app/src/main/AndroidManifest.xml" ]; then
-                PROJETO="$pasta"
-                break
-              fi
+            if { [ -f "$pasta/app/build.gradle" ] || \
+                 [ -f "$pasta/app/build.gradle.kts" ]; } && \
+               [ -f "$pasta/app/src/main/AndroidManifest.xml" ]; then
+              PROJETO="$pasta"
+              break
             fi
           done < <(find . -type f \( \
             -name settings.gradle -o \
@@ -60,35 +55,37 @@ jobs:
 
           if [ -z "$PROJETO" ]; then
             echo "ERRO: Projeto Android nao encontrado."
-            echo "Confira se enviou os arquivos do projeto."
             exit 1
           fi
 
           echo "Projeto encontrado: $PROJETO"
 
-          echo "===== IDENTIFICACAO ====="
-
-          grep -nE "namespace|applicationId" \
-            "$PROJETO/app/build.gradle" || true
-
-          if [ -f "$PROJETO/app/build.gradle.kts" ]; then
-            grep -nE "namespace|applicationId" \
-              "$PROJETO/app/build.gradle.kts" || true
-          fi
-
           echo "PROJECT_DIR=$GITHUB_WORKSPACE/$PROJETO" >> "$GITHUB_ENV"
 
       - name: Configurar Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          accept-android-sdk-licenses: true
-
-      - name: Instalar componentes Android
         shell: bash
         run: |
           set -euo pipefail
 
-          SDKMANAGER="$(command -v sdkmanager)"
+          SDK="/usr/local/lib/android/sdk"
+
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+
+          echo "$SDK/platform-tools" >> "$GITHUB_PATH"
+          echo "$SDK/cmdline-tools/16.0/bin" >> "$GITHUB_PATH"
+
+      - name: Aceitar licencas e instalar componentes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SDKMANAGER="/usr/local/lib/android/sdk/cmdline-tools/16.0/bin/sdkmanager"
+
+          if [ ! -x "$SDKMANAGER" ]; then
+            echo "ERRO: sdkmanager nao encontrado."
+            exit 1
+          fi
 
           yes | "$SDKMANAGER" --licenses || true
 
@@ -101,35 +98,26 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Gerar APK
+      - name: Compilar APK
         shell: bash
         run: |
           set -euo pipefail
 
           cd "$PROJECT_DIR"
 
-          echo "Iniciando compilacao..."
-
           gradle --no-daemon clean :app:assembleDebug
 
           APK="app/build/outputs/apk/debug/app-debug.apk"
 
-          if [ ! -s "$APK" ]; then
-            echo "ERRO: APK nao encontrado."
-            find app/build/outputs -type f -name "*.apk" -print
-            exit 1
-          fi
+          test -s "$APK"
 
           mkdir -p "$GITHUB_WORKSPACE/resultado"
-
           cp "$APK" "$GITHUB_WORKSPACE/resultado/CAO-FUJAO.apk"
 
-          echo "APK encontrado e copiado!"
-
-      - name: Disponibilizar aplicativo
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: CAO-FUJAO-2.5-APK
+          name: CAO-FUJAO-2.6-APK
           path: resultado/CAO-FUJAO.apk
           if-no-files-found: error
           retention-days: 30
