@@ -1,5 +1,5 @@
 
-name: CAO FUJAO 2.8 - GERAR APK
+name: CAO FUJAO 2.9 - GERAR APK
 
 on:
   workflow_dispatch:
@@ -31,8 +31,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "Procurando arquivos do projeto..."
-
           while IFS= read -r -d '' arquivo; do
             pasta="extraido_$(basename "$arquivo" .zip)"
             mkdir -p "$pasta"
@@ -47,7 +45,6 @@ jobs:
             if { [ -f "$pasta/app/build.gradle" ] || \
                  [ -f "$pasta/app/build.gradle.kts" ]; } && \
                [ -f "$pasta/app/src/main/AndroidManifest.xml" ]; then
-
               PROJETO="$pasta"
               break
             fi
@@ -58,46 +55,30 @@ jobs:
 
           if [ -z "$PROJETO" ]; then
             echo "ERRO: Projeto Android nao encontrado."
-            echo "Confira os arquivos enviados ao repositorio."
             exit 1
           fi
 
           echo "Projeto encontrado: $PROJETO"
-
           echo "PROJECT_DIR=$GITHUB_WORKSPACE/$PROJETO" >> "$GITHUB_ENV"
 
       - name: Configurar Android SDK
         uses: android-actions/setup-android@v3
         with:
           accept-android-sdk-licenses: true
+          packages: 'platform-tools'
 
-      - name: Verificar e instalar Android SDK
+      - name: Instalar plataforma Android 35
         shell: bash
         run: |
           set -euo pipefail
 
-          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
-
-          if [ -z "$SDK" ]; then
-            echo "ERRO: Android SDK nao configurado."
-            exit 1
-          fi
-
-          echo "Android SDK: $SDK"
-
-          SDKMANAGER="$(find "$SDK/cmdline-tools" \
-            -type f -name sdkmanager -print -quit)"
+          SDKMANAGER="$(command -v sdkmanager)"
 
           if [ -z "$SDKMANAGER" ]; then
             echo "ERRO: sdkmanager nao encontrado."
             exit 1
           fi
 
-          echo "SDK Manager: $SDKMANAGER"
-
-          yes | "$SDKMANAGER" --licenses || true
-
-          "$SDKMANAGER" --install "platform-tools"
           "$SDKMANAGER" --install "platforms;android-35"
           "$SDKMANAGER" --install "build-tools;35.0.0"
 
@@ -106,14 +87,12 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Compilar aplicativo
+      - name: Compilar APK
         shell: bash
         run: |
           set -euo pipefail
 
           cd "$PROJECT_DIR"
-
-          echo "Iniciando compilacao do Cao Fujão..."
 
           gradle --no-daemon clean :app:assembleDebug
 
@@ -129,13 +108,12 @@ jobs:
 
           cp "$APK" "$GITHUB_WORKSPACE/resultado/CAO-FUJAO.apk"
 
-          echo "APK gerado:"
           ls -lh "$GITHUB_WORKSPACE/resultado/CAO-FUJAO.apk"
 
-      - name: Publicar APK para download
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: CAO-FUJAO-2.8-APK
+          name: CAO-FUJAO-2.9-APK
           path: resultado/CAO-FUJAO.apk
           if-no-files-found: error
           retention-days: 30
