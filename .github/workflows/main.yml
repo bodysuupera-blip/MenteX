@@ -1,18 +1,23 @@
 
-name: LABIRINTO MORTAL - Gerar APK Sombrio 2.0
+name: CAO FUJAO - GERAR APK
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - 'CAO_FUJAO/**'
+      - '.github/workflows/gerar-cao-fujao.yml'
 
 permissions:
   contents: read
 
 jobs:
-  construir:
+  build:
+    name: Compilar Cão Fujão
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar arquivos
+      - name: Baixar projeto
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -21,72 +26,19 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Instalar ferramentas
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y unzip
-
-      - name: Encontrar projeto correto
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          mkdir -p /tmp/labirinto
-
-          PROJECT=""
-
-          if [ -f "LabirintoMortal/settings.gradle" ] && \
-             [ -f "LabirintoMortal/app/build.gradle" ]; then
-            PROJECT="$GITHUB_WORKSPACE/LabirintoMortal"
-          elif [ -f "settings.gradle" ] && \
-               [ -f "app/build.gradle" ]; then
-            PROJECT="$GITHUB_WORKSPACE"
-          else
-            ZIP="./LABIRINTO-MORTAL-EDICAO-SOMBRIA-2.0.zip"
-
-            if [ ! -f "$ZIP" ]; then
-              ZIP="./LABIRINTO-MORTAL-PROJETO-ANDROID.zip"
-            fi
-
-            if [ ! -f "$ZIP" ]; then
-              echo "ERRO: ZIP do Labirinto Mortal não encontrado."
-              exit 1
-            fi
-
-            unzip -oq "$ZIP" -d /tmp/labirinto
-
-            if [ -f "/tmp/labirinto/LabirintoMortal/settings.gradle" ] && \
-               [ -f "/tmp/labirinto/LabirintoMortal/app/build.gradle" ]; then
-              PROJECT="/tmp/labirinto/LabirintoMortal"
-            elif [ -f "/tmp/labirinto/settings.gradle" ] && \
-                 [ -f "/tmp/labirinto/app/build.gradle" ]; then
-              PROJECT="/tmp/labirinto"
-            else
-              echo "ERRO: estrutura Android inválida no ZIP."
-              find /tmp/labirinto -maxdepth 4 -type f -print
-              exit 1
-            fi
-          fi
-
-          echo "Projeto selecionado: $PROJECT"
-          echo "PROJECT_DIR=$PROJECT" >> "$GITHUB_ENV"
-
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
       - name: Compilar APK
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd "$PROJECT_DIR"
-          gradle --no-daemon assembleDebug --stacktrace
+        working-directory: CAO_FUJAO
+        run: gradle assembleDebug
 
-      - name: Disponibilizar APK
+      - name: Salvar APK
         uses: actions/upload-artifact@v4
         with:
-          name: LABIRINTO-MORTAL-SOMBRIO-2.0-APK
-          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
+          name: CAO-FUJAO-APK
+          path: CAO_FUJAO/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           
