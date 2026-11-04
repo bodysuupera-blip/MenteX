@@ -1,5 +1,5 @@
 
-name: CAO FUJAO 2.2 - GERAR APK
+name: CAO FUJAO 2.3 - GERAR APK
 
 on:
   workflow_dispatch:
@@ -17,27 +17,64 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar projeto
+      - name: Baixar arquivos do repositorio
         uses: actions/checkout@v4
 
-      - name: Conferir projeto
-        run: |
-          set -e
-          test -f settings.gradle
-          test -f build.gradle
-          test -f app/build.gradle
-          test -f app/src/main/AndroidManifest.xml
-          test -f app/src/main/assets/index.html
-          grep -q "com.caofujao.game" app/build.gradle
-          echo "Projeto Cao Fujão confirmado!"
-
-      - name: Configurar Java 17
+      - name: Configurar Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Android SDK e aceitar licencas
+      - name: Preparar projeto
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Procurando arquivos do Cao Fujão..."
+
+          find . -type f -name "*.zip" -print0 |
+          while IFS= read -r -d '' arquivo; do
+            echo "Extraindo: $arquivo"
+            pasta="extraido_$(basename "$arquivo" .zip)"
+            mkdir -p "$pasta"
+            unzip -oq "$arquivo" -d "$pasta"
+          done
+
+          echo "Procurando projeto Android..."
+
+          PROJETO=""
+
+          while IFS= read -r arquivo; do
+            pasta="$(dirname "$arquivo")"
+
+            if [ -f "$pasta/app/build.gradle" ] || \
+               [ -f "$pasta/app/build.gradle.kts" ]; then
+              PROJETO="$pasta"
+              break
+            fi
+          done < <(find . -type f \( \
+            -name settings.gradle -o \
+            -name settings.gradle.kts \
+          \))
+
+          if [ -z "$PROJETO" ]; then
+            echo "ERRO: Projeto Android nao encontrado."
+            echo "Arquivos encontrados:"
+            find . -maxdepth 5 -type f | head -200
+            exit 1
+          fi
+
+          echo "Projeto encontrado em: $PROJETO"
+
+          if [ ! -f "$PROJETO/app/src/main/AndroidManifest.xml" ]; then
+            echo "ERRO: AndroidManifest.xml nao encontrado."
+            exit 1
+          fi
+
+          echo "PROJECT_DIR=$GITHUB_WORKSPACE/$PROJETO" >> "$GITHUB_ENV"
+
+      - name: Configurar Android SDK
         uses: android-actions/setup-android@v3
         with:
           accept-android-sdk-licenses: true
@@ -51,20 +88,35 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Compilar aplicativo
+      - name: Compilar APK
+        shell: bash
         run: |
+          set -euo pipefail
+          cd "$PROJECT_DIR"
+
+          echo "Compilando Cao Fujão..."
+
           gradle --no-daemon clean :app:assembleDebug
 
-      - name: Conferir APK
-        run: |
-          test -s app/build/outputs/apk/debug/app-debug.apk
-          ls -lh app/build/outputs/apk/debug/app-debug.apk
+          echo "Procurando APK gerado..."
 
-      - name: Disponibilizar aplicativo
+          APK="$(find app/build/outputs/apk -type f -name '*.apk' | head -1)"
+
+          if [ -z "$APK" ]; then
+            echo "ERRO: APK nao foi gerado."
+            exit 1
+          fi
+
+          mkdir -p "$GITHUB_WORKSPACE/resultado"
+          cp "$APK" "$GITHUB_WORKSPACE/resultado/CAO-FUJAO.apk"
+
+          echo "APK gerado com sucesso!"
+
+      - name: Publicar aplicativo APK
         uses: actions/upload-artifact@v4
         with:
-          name: CAO-FUJAO-2.2-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: CAO-FUJAO-2.3-APK
+          path: resultado/CAO-FUJAO.apk
           if-no-files-found: error
           retention-days: 30
           
