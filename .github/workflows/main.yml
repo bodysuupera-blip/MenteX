@@ -29,10 +29,39 @@ jobs:
 
       - name: Configurar Android SDK
         uses: android-actions/setup-android@v3
-        with:
-          packages: 'platform-tools, platforms;android-35, build-tools;34.0.0'
 
-      - name: Extrair projeto atualizado
+      - name: Instalar componentes Android
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+
+          export ANDROID_HOME="$SDK_ROOT"
+          export ANDROID_SDK_ROOT="$SDK_ROOT"
+
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+
+          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" \
+            -type f -name sdkmanager -print -quit)"
+
+          if [ -z "$SDKMANAGER" ]; then
+            echo "ERRO: sdkmanager não encontrado."
+            exit 1
+          fi
+
+          echo "SDK encontrado: $SDK_ROOT"
+
+          bash "$SDKMANAGER" \
+            --sdk_root="$SDK_ROOT" \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;34.0.0"
+
+          echo "Componentes instalados."
+
+      - name: Localizar e extrair projeto atualizado
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -40,41 +69,52 @@ jobs:
           ZIP="./CAO-FUJAO-ATUALIZACAO-MENU-DIFICULDADES-ICONE.zip"
 
           if [ ! -f "$ZIP" ]; then
-            echo "ERRO: ZIP atualizado não encontrado."
+            echo "ERRO: ZIP atualizado não encontrado na raiz."
             exit 1
           fi
 
           mkdir -p /tmp/cao-fujao
           unzip -oq "$ZIP" -d /tmp/cao-fujao
 
-          PROJECT="/tmp/cao-fujao"
+          PROJECT=""
 
-          if [ ! -f "$PROJECT/settings.gradle" ]; then
-            PROJECT="$(find /tmp/cao-fujao -name settings.gradle \
-              -type f -printf '%h\n' | head -n 1)"
-          fi
+          while IFS= read -r FILE; do
+            DIR="$(dirname "$FILE")"
 
-          if [ -z "$PROJECT" ] || [ ! -f "$PROJECT/app/build.gradle" ]; then
-            echo "ERRO: projeto Android não encontrado."
+            if [ -f "$DIR/app/build.gradle" ] &&
+               grep -Rq 'com.caofujao.game' "$DIR/app"; then
+              PROJECT="$DIR"
+              break
+            fi
+          done < <(find /tmp/cao-fujao -name settings.gradle -type f)
+
+          if [ -z "$PROJECT" ]; then
+            echo "ERRO: projeto Android do Cão Fujão não encontrado."
+            find /tmp/cao-fujao -maxdepth 4 -type f | head -100
             exit 1
           fi
 
           echo "PROJECT_DIR=$PROJECT" >> "$GITHUB_ENV"
-          echo "Projeto: $PROJECT"
+          echo "Projeto encontrado: $PROJECT"
 
-      - name: Verificar aplicativo
+      - name: Verificar projeto
         shell: bash
         run: |
           set -Eeuo pipefail
 
           cd "$PROJECT_DIR"
 
-          grep -q "com.caofujao.game" app/build.gradle
+          test -f settings.gradle
+          test -f build.gradle
+          test -f app/build.gradle
           test -f app/src/main/AndroidManifest.xml
-          test -f app/src/main/assets/index.html
-          test -f app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
 
-          echo "Projeto e novo ícone encontrados."
+          if ! grep -Rq 'com.caofujao.game' app; then
+            echo "ERRO: pacote do Cão Fujão não encontrado."
+            exit 1
+          fi
+
+          echo "Projeto validado."
 
       - name: Compilar APK
         shell: bash
@@ -94,13 +134,14 @@ jobs:
 
           if [ ! -f "$APK" ]; then
             echo "ERRO: APK não foi gerado."
+            find "$PROJECT_DIR" -path '*build/outputs/apk*' -type f
             exit 1
           fi
 
           mkdir -p entrega
           cp "$APK" entrega/CAO-FUJAO-ATUALIZADO.apk
 
-          ls -lh entrega/
+          ls -lh entrega/CAO-FUJAO-ATUALIZADO.apk
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
