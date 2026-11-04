@@ -1,5 +1,5 @@
 
-name: CAO FUJAO 2.0 - GERAR APK
+name: CAO FUJAO 2.1 - GERAR APK
 
 on:
   workflow_dispatch:
@@ -13,22 +13,57 @@ permissions:
 
 jobs:
   build:
-    name: Compilar aplicativo Cao Fujao
+    name: Compilar somente Cao Fujão
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar projeto Cao Fujão
+      - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Conferir arquivos do projeto
+      - name: Extrair projeto se estiver em ZIP
+        shell: bash
         run: |
-          test -f settings.gradle
-          test -f build.gradle
-          test -f app/build.gradle
-          test -f app/src/main/AndroidManifest.xml
-          test -f app/src/main/assets/index.html
-          test -f app/src/main/java/com/caofujao/game/MainActivity.java
-          echo "Projeto Cao Fujão encontrado!"
+          set -e
+          if ! find . -name settings.gradle \
+            -not -path './.git/*' | grep -q .; then
+
+            echo "Procurando ZIP do Cao Fujão..."
+            mkdir -p cao_fujao_extraido
+
+            FOUND=0
+            while IFS= read -r arquivo; do
+              unzip -oq "$arquivo" -d cao_fujao_extraido
+              FOUND=1
+            done < <(find . -maxdepth 2 -type f \
+              -iname 'Cao_Fujao*.zip' \
+              -not -path './cao_fujao_extraido/*')
+
+            if [ "$FOUND" -eq 0 ]; then
+              echo "ERRO: Envie o ZIP do Cao Fujão para o repositorio."
+              exit 1
+            fi
+          fi
+
+      - name: Localizar projeto Cao Fujão
+        shell: bash
+        run: |
+          set -e
+          PROJECT_DIR=$(dirname "$(find . -type f \
+            -name settings.gradle \
+            -not -path './.git/*' \
+            -print -quit)")
+
+          if [ -z "$PROJECT_DIR" ] || \
+             [ ! -f "$PROJECT_DIR/app/build.gradle" ]; then
+            echo "ERRO: Estrutura Android nao encontrada."
+            exit 1
+          fi
+
+          grep -q 'com.caofujao.game' \
+            "$PROJECT_DIR/app/build.gradle"
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Projeto encontrado: $PROJECT_DIR"
 
       - name: Configurar Java 17
         uses: actions/setup-java@v4
@@ -44,33 +79,28 @@ jobs:
       - name: Configurar Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Instalar componentes Android
+      - name: Instalar SDK Android
         run: |
           sdkmanager --install \
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-      - name: Aceitar licencas Android
-        run: yes | sdkmanager --licenses || true
-
-      - name: Verificar Gradle
-        run: gradle --version
-
-      - name: Compilar APK do Cao Fujão
+      - name: Compilar aplicativo Cao Fujão
         run: |
-          gradle --no-daemon clean :app:assembleDebug
+          gradle -p "$PROJECT_DIR" \
+            --no-daemon clean :app:assembleDebug
 
-      - name: Verificar APK gerado
+      - name: Conferir APK
         run: |
-          test -f app/build/outputs/apk/debug/app-debug.apk
-          ls -lh app/build/outputs/apk/debug/app-debug.apk
+          test -f "$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
+          ls -lh "$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
 
-      - name: Disponibilizar aplicativo APK
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: CAO-FUJAO-2.0-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: CAO-FUJAO-2.1-APK
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
           
