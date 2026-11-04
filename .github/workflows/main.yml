@@ -27,7 +27,7 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Localizar e extrair projeto original
+      - name: Localizar e extrair projeto
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -37,7 +37,7 @@ jobs:
             -print -quit)"
 
           if [ -z "$ZIP" ]; then
-            echo "ERRO: ZIP original do Cão Fujão 3.2 não encontrado."
+            echo "ERRO: ZIP do Cão Fujão 3.2 não encontrado."
             exit 1
           fi
 
@@ -57,28 +57,25 @@ jobs:
           done < <(find /tmp/cao-fujao-32 -name settings.gradle -type f)
 
           if [ -z "$PROJECT_DIR" ]; then
-            echo "ERRO: projeto Android original não encontrado."
-            find /tmp/cao-fujao-32 -maxdepth 4 -type f | head -80
+            echo "ERRO: projeto Android do Cão Fujão não encontrado."
             exit 1
           fi
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           echo "Projeto encontrado: $PROJECT_DIR"
 
-      - name: Configurar Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Instalar componentes Android
+      - name: Configurar SDK e aceitar todas as licenças
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          SDK_ROOT="/usr/local/lib/android/sdk"
 
-          if [ -z "$SDK_ROOT" ]; then
-            echo "ERRO: Android SDK não configurado."
-            exit 1
-          fi
+          export ANDROID_HOME="$SDK_ROOT"
+          export ANDROID_SDK_ROOT="$SDK_ROOT"
+
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
 
           SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" \
             -type f -name sdkmanager -print -quit)"
@@ -89,10 +86,20 @@ jobs:
           fi
 
           echo "SDK: $SDK_ROOT"
+          echo "Gerenciador: $SDKMANAGER"
+
+          mkdir -p "$SDK_ROOT/licenses"
+
+          set +o pipefail
+          yes | bash "$SDKMANAGER" \
+            --sdk_root="$SDK_ROOT" --licenses
+          set -o pipefail
 
           bash "$SDKMANAGER" --sdk_root="$SDK_ROOT" \
             "platforms;android-35" \
             "build-tools;34.0.0"
+
+          echo "Licenças e componentes configurados."
 
       - name: Verificar projeto
         shell: bash
@@ -101,19 +108,16 @@ jobs:
 
           cd "$PROJECT_DIR"
 
-          for FILE in settings.gradle build.gradle app/build.gradle; do
-            if [ ! -f "$FILE" ]; then
-              echo "ERRO: arquivo ausente: $FILE"
-              exit 1
-            fi
-          done
+          test -f settings.gradle
+          test -f build.gradle
+          test -f app/build.gradle
 
           if ! grep -Rq 'com.caofujao.game' app; then
-            echo "ERRO: pacote não corresponde ao Cão Fujão."
+            echo "ERRO: pacote do Cão Fujão não encontrado."
             exit 1
           fi
 
-          echo "Projeto Cão Fujão validado."
+          echo "Projeto validado."
 
       - name: Compilar APK
         shell: bash
@@ -133,14 +137,13 @@ jobs:
 
           if [ ! -f "$APK" ]; then
             echo "ERRO: APK não foi gerado."
-            find "$PROJECT_DIR" -path '*build/outputs/apk*' -type f
             exit 1
           fi
 
           mkdir -p entrega
           cp "$APK" entrega/CAO-FUJAO-3.2.apk
 
-          echo "APK pronto para instalação."
+          ls -lh entrega/CAO-FUJAO-3.2.apk
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
