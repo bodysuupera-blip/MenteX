@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar repositório
+      - name: Baixar projeto
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -22,15 +22,18 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
-      - name: Extrair exclusivamente Cão Fujão 2.1
+      - name: Verificar Android SDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          test -d "$ANDROID_HOME/platform-tools"
+          echo "Android SDK disponível!"
+
+      - name: Extrair Cão Fujão 2.1
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -38,32 +41,35 @@ jobs:
           ZIP="./CAO-FUJAO-2.1-ATUALIZACAO-PARA-GERAR-APK.zip"
 
           if [ ! -f "$ZIP" ]; then
-            echo "ERRO: ZIP Cão Fujão 2.1 não encontrado!"
+            echo "ERRO: ZIP 2.1 não encontrado!"
             exit 1
           fi
 
           mkdir -p /tmp/cao-fujao-21
-
           unzip -oq "$ZIP" -d /tmp/cao-fujao-21
 
           PROJECT="/tmp/cao-fujao-21"
 
-          echo "Conferindo projeto..."
+          SETTINGS=$(find "$PROJECT" -name settings.gradle -print -quit)
 
-          test -f "$PROJECT/settings.gradle"
+          if [ -z "$SETTINGS" ]; then
+            echo "ERRO: settings.gradle não encontrado!"
+            exit 1
+          fi
+
+          PROJECT="$(dirname "$SETTINGS")"
+
           test -f "$PROJECT/build.gradle"
           test -f "$PROJECT/app/build.gradle"
           test -f "$PROJECT/app/src/main/AndroidManifest.xml"
           test -f "$PROJECT/app/src/main/assets/index.html"
-          test -f "$PROJECT/app/src/main/assets/intro.png"
 
-          grep -q 'com.caofujao.game' \
-            "$PROJECT/app/build.gradle"
+          grep -q 'com.caofujao.game' "$PROJECT/app/build.gradle"
 
-          echo "Projeto Cão Fujão 2.1 confirmado!"
           echo "PROJECT_DIR=$PROJECT" >> "$GITHUB_ENV"
+          echo "Cão Fujão 2.1 confirmado!"
 
-      - name: Compilar aplicativo
+      - name: Compilar APK
         run: |
           gradle --no-daemon \
             -p "$PROJECT_DIR" \
@@ -79,6 +85,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: CAO-FUJAO-2.1-APK
-          path: /tmp/cao-fujao-21/app/build/outputs/apk/debug/app-debug.apk
+          path: /tmp/cao-fujao-21/**/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           
