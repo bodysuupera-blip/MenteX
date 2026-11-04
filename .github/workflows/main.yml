@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  construir:
     runs-on: ubuntu-22.04
 
     steps:
@@ -25,30 +25,60 @@ jobs:
           java-version: '17'
 
       - name: Configurar Android SDK
-        uses: android-actions/setup-android@v3
+        run: |
+          set -e
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
 
-      - name: Configurar Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" \
+            -type f -name sdkmanager | sort -V | tail -n 1)
+
+          if [ -z "$SDKMANAGER" ]; then
+            echo "ERRO: sdkmanager nao encontrado"
+            exit 1
+          fi
+
+          echo "SDKMANAGER=$SDKMANAGER" >> $GITHUB_ENV
+
+          echo "Aceitando licencas automaticamente..."
+          yes | "$SDKMANAGER" --licenses
+
+          echo "Instalando componentes Android..."
+          "$SDKMANAGER" \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
 
       - name: Verificar projeto
         run: |
-          test -f settings.gradle
-          test -f app/build.gradle
-          test -f app/src/main/AndroidManifest.xml
-          test -f app/src/main/assets/index.html
+          set -e
+          find . -name settings.gradle -o -name settings.gradle.kts
+          find . -name AndroidManifest.xml
+
+          if [ ! -f app/build.gradle ] && \
+             [ ! -f app/build.gradle.kts ]; then
+            echo "ERRO: projeto Android nao encontrado na raiz"
+            exit 1
+          fi
+
+      - name: Preparar Gradle
+        run: |
+          if [ ! -f gradlew ]; then
+            echo "ERRO: gradlew nao encontrado na raiz"
+            exit 1
+          fi
+          chmod +x gradlew
 
       - name: Compilar APK
         run: |
-          gradle clean
-          gradle :app:assembleDebug --stacktrace
+          ./gradlew clean
+          ./gradlew assembleDebug --stacktrace
 
-      - name: Disponibilizar APK
+      - name: Salvar APK
         uses: actions/upload-artifact@v4
         with:
-          name: CAO-FUJAO-ATUALIZADO-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: CAO-FUJAO-APK-ATUALIZADO
+          path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 30
           
