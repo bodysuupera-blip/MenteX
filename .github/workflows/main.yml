@@ -27,7 +27,7 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Localizar e extrair Cão Fujão 3.2
+      - name: Extrair projeto 3.2
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -35,10 +35,10 @@ jobs:
           ZIP="./CAO-FUJAO-3.2-PROJETO-COMPLETO.zip"
           DEST="/tmp/cao-fujao-32"
 
-          if [ ! -f "$ZIP" ]; then
+          test -f "$ZIP" || {
             echo "ERRO: ZIP 3.2 não encontrado."
             exit 1
-          fi
+          }
 
           mkdir -p "$DEST"
           unzip -oq "$ZIP" -d "$DEST"
@@ -49,51 +49,49 @@ jobs:
             DIR="$(dirname "$FILE")"
 
             if [ -f "$DIR/app/build.gradle" ] &&
-               grep -q "com.caofujao.game" "$DIR/app/build.gradle"; then
+               grep -q 'com.caofujao.game' "$DIR/app/build.gradle"; then
               PROJECT="$DIR"
               break
             fi
           done < <(find "$DEST" -type f -name settings.gradle -print0)
 
           if [ -z "$PROJECT" ]; then
-            echo "ERRO: projeto Cão Fujão não encontrado."
+            echo "ERRO: projeto Android não encontrado."
             find "$DEST" -maxdepth 6 -type f | head -150
             exit 1
           fi
 
-          echo "Projeto encontrado: $PROJECT"
           echo "PROJECT_DIR=$PROJECT" >> "$GITHUB_ENV"
+          echo "Projeto encontrado: $PROJECT"
 
-      - name: Configurar Android SDK
+      - name: Configurar SDK e aceitar licenças
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          SDKMANAGER=$(find \
-            /usr/local/lib/android/sdk \
-            -type f -name sdkmanager -print -quit 2>/dev/null || true)
+          SDK_ROOT="/usr/local/lib/android/sdk"
+
+          SDKMANAGER=$(find "$SDK_ROOT/cmdline-tools" \
+            -type f -name sdkmanager -print -quit)
 
           if [ -z "$SDKMANAGER" ]; then
-            echo "ERRO: sdkmanager não encontrado no servidor."
-            find /usr/local/lib/android -maxdepth 5 -type f | head -100
+            echo "ERRO: sdkmanager não encontrado."
             exit 1
           fi
 
-          SDK_ROOT="$(dirname "$(dirname "$(dirname "$SDKMANAGER")")")"
-
-          echo "SDK encontrado: $SDK_ROOT"
+          echo "SDK principal: $SDK_ROOT"
           echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
-          echo "$SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
-          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
+
+          chmod +x "$SDKMANAGER"
 
           set +o pipefail
-          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+          yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --licenses
           set -o pipefail
 
-          "$SDKMANAGER" \
+          "$SDKMANAGER" --sdk_root="$SDK_ROOT" \
             "platforms;android-35" \
-            "build-tools;35.0.0"
+            "build-tools;34.0.0"
 
       - name: Verificar projeto
         shell: bash
@@ -107,34 +105,30 @@ jobs:
             app/src/main/AndroidManifest.xml \
             app/src/main/assets/index.html
           do
-            if [ ! -s "$PROJECT_DIR/$FILE" ]; then
+            test -s "$PROJECT_DIR/$FILE" || {
               echo "ERRO: arquivo ausente: $FILE"
               exit 1
-            fi
+            }
           done
 
-          grep -q "com.caofujao.game" \
+          grep -q 'com.caofujao.game' \
             "$PROJECT_DIR/app/build.gradle"
 
-          echo "CÃO FUJÃO 3.2 CONFIRMADO!"
+          echo "PROJETO CONFIRMADO!"
 
-      - name: Compilar APK
+      - name: Compilar Cão Fujão
         run: |
           gradle --no-daemon \
             -p "$PROJECT_DIR" \
             assembleDebug
 
-      - name: Preparar APK
-        shell: bash
+      - name: Verificar APK
         run: |
           set -Eeuo pipefail
 
           APK="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
 
-          if [ ! -s "$APK" ]; then
-            echo "ERRO: APK não foi gerado."
-            exit 1
-          fi
+          test -s "$APK"
 
           mkdir -p entrega
           cp "$APK" entrega/CAO-FUJAO-3.2.apk
