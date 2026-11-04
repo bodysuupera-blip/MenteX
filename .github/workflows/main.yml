@@ -13,15 +13,16 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Baixar projeto
+        uses: actions/checkout@v4
 
-      - name: Java 17
+      - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Gradle 8.7
+      - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
@@ -29,15 +30,18 @@ jobs:
       - name: Verificar projeto
         run: |
           set -Eeuo pipefail
+
           test -f settings.gradle
           test -f build.gradle
           test -f app/build.gradle
           test -f app/src/main/AndroidManifest.xml
           test -f app/src/main/assets/index.html
           test -s app/src/main/assets/intro.png
+
           grep -q 'com.caofujao.game' app/build.gradle
           grep -q "versionName '3.1'" app/build.gradle
-          echo "CÃO FUJÃO 3.1 CONFIRMADO"
+
+          echo "PROJETO CAO FUJAO 3.1 CONFIRMADO"
 
       - name: Compilar APK
         run: gradle --no-daemon assembleDebug
