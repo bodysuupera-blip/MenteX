@@ -1,5 +1,5 @@
 
-name: CAO FUJAO 2.0 - GERAR APK
+name: CAO FUJAO 2.1 - GERAR APK
 
 on:
   workflow_dispatch:
@@ -9,11 +9,11 @@ permissions:
 
 jobs:
   build:
-    name: Compilar Cão Fujão 2.0
+    name: Compilar Cão Fujão 2.1
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar repositorio
+      - name: Baixar projeto
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -22,76 +22,42 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Gradle
+      - name: Configurar Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
-      - name: Extrair e localizar projeto
+      - name: Conferir projeto Cão Fujão
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          mkdir -p _cao_source
+          echo "Verificando arquivos..."
 
-          PROJECT_FILE=$(find . -type f \
-            \( -name settings.gradle -o -name settings.gradle.kts \) \
-            -not -path './.git/*' -print -quit || true)
+          test -f settings.gradle
+          test -f build.gradle
+          test -f app/build.gradle
+          test -f app/src/main/AndroidManifest.xml
+          test -f app/src/main/assets/index.html
+          test -f app/src/main/assets/intro.png
+          test -f app/src/main/java/com/caofujao/game/MainActivity.java
 
-          if [ -z "$PROJECT_FILE" ]; then
-            echo "Projeto ainda nao extraido. Procurando ZIP..."
+          grep -q "com.caofujao.game" app/build.gradle
 
-            FOUND=false
-
-            while IFS= read -r -d '' ZIP; do
-              if unzip -Z1 "$ZIP" | grep -qE '(^|/)settings.gradle$'; then
-                echo "Extraindo: $ZIP"
-                unzip -oq "$ZIP" -d _cao_source
-                FOUND=true
-                break
-              fi
-            done < <(find . -type f -name '*.zip' \
-              -not -path './.git/*' -print0)
-
-            if [ "$FOUND" = false ]; then
-              echo "ERRO: nenhum ZIP de projeto Android encontrado."
-              find . -maxdepth 4 -type f
-              exit 1
-            fi
-          fi
-
-          PROJECT_FILE=$(find . -type f \
-            \( -name settings.gradle -o -name settings.gradle.kts \) \
-            -not -path './.git/*' -print -quit)
-
-          PROJECT_DIR="${PROJECT_FILE%/*}"
-
-          if [ "$PROJECT_DIR" = "$PROJECT_FILE" ]; then
-            PROJECT_DIR="."
-          fi
-
-          echo "Projeto localizado: $PROJECT_DIR"
-
-          test -f "$PROJECT_DIR/app/build.gradle" || {
-            echo "ERRO: app/build.gradle ausente."
-            exit 1
-          }
-
-          test -f "$PROJECT_DIR/app/src/main/assets/index.html" || {
-            echo "ERRO: index.html ausente."
-            exit 1
-          }
-
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Projeto Cão Fujão confirmado!"
 
       - name: Compilar APK
+        run: gradle --no-daemon assembleDebug
+
+      - name: Conferir APK
         run: |
-          gradle --no-daemon -p "$PROJECT_DIR" assembleDebug
+          test -f app/build/outputs/apk/debug/app-debug.apk
+          ls -lh app/build/outputs/apk/debug/app-debug.apk
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: CAO-FUJAO-2.0-APK
-          path: '**/build/outputs/apk/debug/app-debug.apk'
+          name: CAO-FUJAO-2.1-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           
