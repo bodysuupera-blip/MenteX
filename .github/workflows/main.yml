@@ -13,37 +13,89 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Baixar repositorio
+        uses: actions/checkout@v4
 
-      - name: Java 17
+      - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Gradle 8.7
+      - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
-      - name: Verificar projeto
+      - name: Localizar projeto 2.2
+        shell: bash
         run: |
           set -Eeuo pipefail
-          test -f settings.gradle
-          test -f app/build.gradle
-          test -f app/src/main/assets/index.html
-          test -f app/src/main/assets/intro.png
-          grep -q 'com.caofujao.game' app/build.gradle
-          grep -q "versionName '2.2'" app/build.gradle
-          echo "CÃO FUJÃO 2.2 CONFIRMADO"
 
-      - name: Compilar APK
-        run: gradle --no-daemon assembleDebug
+          mkdir -p /tmp/cao22
 
-      - name: Publicar APK
+          ZIP="./CAO-FUJAO-2.2-PROJETO-CORRIGIDO.zip"
+
+          if [ -f "$ZIP" ]; then
+            echo "Extraindo projeto 2.2..."
+            unzip -oq "$ZIP" -d /tmp/cao22
+          fi
+
+          PROJECT=""
+
+          while IFS= read -r -d '' FILE; do
+            DIR="$(dirname "$FILE")"
+
+            if [ -f "$DIR/app/build.gradle" ] &&
+               grep -q "com.caofujao.game" "$DIR/app/build.gradle"; then
+              PROJECT="$DIR"
+              break
+            fi
+          done < <(find /tmp/cao22 . \
+            -type f -name settings.gradle \
+            -not -path './.git/*' \
+            -not -path './_cao_source/*' -print0)
+
+          if [ -z "$PROJECT" ]; then
+            echo "ERRO: projeto Cão Fujão 2.2 não encontrado."
+            echo "Arquivos encontrados:"
+            find /tmp/cao22 . -maxdepth 5 -type f | head -150
+            exit 1
+          fi
+
+          echo "Projeto encontrado: $PROJECT"
+
+          for FILE in \
+            build.gradle \
+            app/build.gradle \
+            app/src/main/AndroidManifest.xml \
+            app/src/main/assets/index.html
+          do
+            if [ ! -f "$PROJECT/$FILE" ]; then
+              echo "ERRO: arquivo ausente: $FILE"
+              exit 1
+            fi
+          done
+
+          grep -q "com.caofujao.game" "$PROJECT/app/build.gradle"
+
+          echo "PROJECT_DIR=$PROJECT" >> "$GITHUB_ENV"
+
+      - name: Compilar aplicativo
+        run: |
+          gradle --no-daemon \
+            -p "$PROJECT_DIR" \
+            assembleDebug
+
+      - name: Conferir APK
+        run: |
+          test -s "$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
+          ls -lh "$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
+
+      - name: Publicar Cão Fujão 2.2
         uses: actions/upload-artifact@v4
         with:
           name: CAO-FUJAO-2.2-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: /tmp/cao22/**/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           
