@@ -1,4 +1,5 @@
-name: CAO FUJAO - GERAR APK
+
+name: CAO FUJAO 500 FASES - GERAR APK
 
 on:
   workflow_dispatch:
@@ -21,138 +22,78 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Android SDK e aceitar licenças
+      - name: Configurar Android SDK
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          export ANDROID_HOME=/usr/local/lib/android/sdk
-          export ANDROID_SDK_ROOT="$ANDROID_HOME"
+          echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=/usr/local/lib/android/sdk" >> "$GITHUB_ENV"
 
-          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
-          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+          SDKMANAGER="/usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager"
 
-          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" \
-            -type f -name sdkmanager | sort -V | tail -n 1)"
+          if [ ! -f "$SDKMANAGER" ]; then
+            SDKMANAGER=$(find /usr/local/lib/android/sdk -name sdkmanager -type f | head -n 1)
+          fi
 
           if [ -z "$SDKMANAGER" ]; then
             echo "ERRO: sdkmanager não encontrado."
             exit 1
           fi
 
-          echo "Aceitando licenças Android..."
           yes | "$SDKMANAGER" --licenses || true
 
-          echo "Instalando ferramentas Android..."
           "$SDKMANAGER" \
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-      - name: Configurar Gradle 8.9
+      - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Localizar e extrair projeto
+      - name: Extrair projeto do jogo
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          ZIP="Cao_Fujao_ATUALIZADO_GOOGLE_PLAY.zip"
+          ZIP=$(find . -maxdepth 3 -type f \
+            \( -name 'CAO-FUJAO-500-FASES-ATUALIZADO.zip' \
+            -o -name 'Cao_Fujao_ATUALIZADO_GOOGLE_PLAY.zip' \) \
+            | head -n 1)
 
-          if [ ! -f "$ZIP" ]; then
-            echo "ERRO: $ZIP não encontrado no repositório."
+          if [ -z "$ZIP" ]; then
+            echo "ERRO: ZIP do projeto Cão Fujão não encontrado."
+            echo "Coloque o ZIP do projeto na raiz do repositório."
             exit 1
           fi
 
-          mkdir -p "$RUNNER_TEMP/build-cao-fujao"
-          unzip -q "$ZIP" -d "$RUNNER_TEMP/build-cao-fujao"
+          echo "Projeto encontrado: $ZIP"
 
-          PROJECT=""
+          mkdir -p /tmp/cao-fujao
+          unzip -q "$ZIP" -d /tmp/cao-fujao
 
-          while IFS= read -r FILE; do
-            DIR="$(dirname "$FILE")"
+          SETTINGS=$(find /tmp/cao-fujao -type f \
+            \( -name settings.gradle -o -name settings.gradle.kts \) \
+            | head -n 1)
 
-            if [ -f "$DIR/app/build.gradle" ] || \
-               [ -f "$DIR/app/build.gradle.kts" ]; then
-              PROJECT="$DIR"
-              break
-            fi
-          done < <(
-            find "$RUNNER_TEMP/build-cao-fujao" \
-              -type f \( \
-                -name settings.gradle -o \
-                -name settings.gradle.kts \
-              \)
-          )
-
-          if [ -z "$PROJECT" ]; then
-            echo "ERRO: Projeto Android não encontrado no ZIP."
-            find "$RUNNER_TEMP/build-cao-fujao" -maxdepth 5 -type f
+          if [ -z "$SETTINGS" ]; then
+            echo "ERRO: settings.gradle não encontrado."
             exit 1
           fi
 
-          echo "PROJECT_DIR=$PROJECT" >> "$GITHUB_ENV"
-          echo "Projeto encontrado: $PROJECT"
+          PROJECT_DIR=$(dirname "$SETTINGS")
 
-      - name: Corrigir compatibilidade Billing
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          JAVA_FILE="$(find "$PROJECT_DIR" \
-            -name MainActivity.java -print -quit)"
-
-          if [ -z "$JAVA_FILE" ]; then
-            echo "ERRO: MainActivity.java não encontrado."
+          if [ ! -f "$PROJECT_DIR/app/build.gradle" ] && \
+             [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
+            echo "ERRO: módulo Android app não encontrado."
             exit 1
           fi
 
-          python3 - "$JAVA_FILE" <<'PY'
-          import sys
-          from pathlib import Path
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-          p = Path(sys.argv[1])
-          s = p.read_text(encoding="utf-8")
-
-          s = s.replace(
-              "queryResult.getProductDetailsList().isEmpty()",
-              "queryResult.isEmpty()"
-          )
-          s = s.replace(
-              "queryResult.getProductDetailsList().get(0)",
-              "queryResult.get(0)"
-          )
-          s = s.replace(
-              "queryResult.getProductDetailsList()",
-              "queryResult"
-          )
-
-          if "getProductDetailsList()" in s:
-              raise SystemExit("ERRO: compatibilidade Billing não corrigida.")
-
-          p.write_text(s, encoding="utf-8")
-          print("Billing verificado.")
-          PY
-
-      - name: Verificar projeto e jogo
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          test -f "$PROJECT_DIR/app/src/main/AndroidManifest.xml"
-
-          HTML="$(find "$PROJECT_DIR/app/src/main/assets" \
-            -name index.html -print -quit)"
-
-          if [ -z "$HTML" ]; then
-            echo "ERRO: index.html não encontrado."
-            exit 1
-          fi
-
-          echo "Jogo encontrado: $HTML"
+          echo "Projeto Android localizado em: $PROJECT_DIR"
 
       - name: Compilar APK
         shell: bash
@@ -161,32 +102,36 @@ jobs:
 
           cd "$PROJECT_DIR"
 
-          gradle --no-daemon clean :app:assembleDebug
+          if [ -f gradlew ]; then
+            chmod +x gradlew
+            ./gradlew --no-daemon clean :app:assembleDebug
+          else
+            gradle --no-daemon clean :app:assembleDebug
+          fi
 
-      - name: Preparar APK
+      - name: Localizar APK
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          APK="$(find "$PROJECT_DIR/app/build/outputs/apk/debug" \
-            -name '*.apk' -print -quit)"
+          APK=$(find "$PROJECT_DIR" -type f \
+            -path '*/build/outputs/apk/debug/*.apk' \
+            | head -n 1)
 
           if [ -z "$APK" ]; then
             echo "ERRO: APK não foi gerado."
             exit 1
           fi
 
-          mkdir -p resultado-cao-fujao
+          mkdir -p saida
+          cp "$APK" saida/CAO-FUJAO-500-FASES.apk
 
-          cp "$APK" \
-            resultado-cao-fujao/CAO-FUJAO-ATUALIZADO.apk
+          ls -lh saida/
 
-          ls -lh resultado-cao-fujao/
-
-      - name: Enviar APK
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: CAO-FUJAO-APK-EXCLUSIVO
-          path: resultado-cao-fujao/CAO-FUJAO-ATUALIZADO.apk
+          name: CAO-FUJAO-500-FASES-APK
+          path: saida/CAO-FUJAO-500-FASES.apk
           if-no-files-found: error
-          retention-days: 30
+          
