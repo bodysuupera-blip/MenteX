@@ -155,4 +155,3 @@ jobs:
           name: CAO-FUJAO-500-FASES-APK
           path: saida/CAO-FUJAO-500-FASES.apk
           if-no-files-found: error
-          
