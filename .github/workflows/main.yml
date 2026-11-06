@@ -44,9 +44,6 @@ jobs:
           echo "Aceitando licenças Android..."
           yes | "$SDKMANAGER" --licenses || true
 
-          echo "Verificando licenças..."
-          "$SDKMANAGER" --licenses
-
           echo "Instalando ferramentas Android..."
           "$SDKMANAGER" \
             "platform-tools" \
@@ -71,7 +68,6 @@ jobs:
           fi
 
           mkdir -p "$RUNNER_TEMP/build-cao-fujao"
-
           unzip -q "$ZIP" -d "$RUNNER_TEMP/build-cao-fujao"
 
           PROJECT=""
@@ -101,7 +97,7 @@ jobs:
           echo "PROJECT_DIR=$PROJECT" >> "$GITHUB_ENV"
           echo "Projeto encontrado: $PROJECT"
 
-      - name: Corrigir compatibilidade Google Play Billing
+      - name: Corrigir compatibilidade Billing
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -125,27 +121,23 @@ jobs:
               "queryResult.getProductDetailsList().isEmpty()",
               "queryResult.isEmpty()"
           )
-
           s = s.replace(
               "queryResult.getProductDetailsList().get(0)",
               "queryResult.get(0)"
           )
-
           s = s.replace(
               "queryResult.getProductDetailsList()",
               "queryResult"
           )
 
           if "getProductDetailsList()" in s:
-              raise SystemExit(
-                  "ERRO: chamadas antigas do Billing continuam no Java."
-              )
+              raise SystemExit("ERRO: compatibilidade Billing não corrigida.")
 
           p.write_text(s, encoding="utf-8")
-          print("Compatibilidade Billing verificada.")
+          print("Billing verificado.")
           PY
 
-      - name: Verificar arquivos do jogo
+      - name: Verificar projeto e jogo
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -162,12 +154,6 @@ jobs:
 
           echo "Jogo encontrado: $HTML"
 
-          if [ ! -f "$PROJECT_DIR/app/src/main/assets/intro.png" ]; then
-            echo "AVISO: intro.png não encontrada."
-          fi
-
-          echo "Arquivos verificados."
-
       - name: Compilar APK
         shell: bash
         run: |
@@ -177,7 +163,7 @@ jobs:
 
           gradle --no-daemon clean :app:assembleDebug
 
-      - name: Preparar APK final
+      - name: Preparar APK
         shell: bash
         run: |
           set -Eeuo pipefail
