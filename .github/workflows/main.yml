@@ -1,122 +1,435 @@
 
-name: CAO FUJAO - GERAR APK
+package com.caofujao.game;
 
-on:
-  workflow_dispatch:
+import android.app.Activity;
+import android.os.Bundle;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import android.webkit.WebChromeClient;
+import android.webkit.JavascriptInterface;
+import android.content.Intent;
 
-permissions:
-  contents: read
+import com.android.billingclient.api.*;
+import org.json.JSONObject;
+import java.util.*;
 
-jobs:
-  build-cao-fujao:
-    name: Compilar Cão Fujão
-    runs-on: ubuntu-22.04
+public class MainActivity extends Activity {
 
-    steps:
-      - name: Baixar repositório
-        uses: actions/checkout@v4
+    private WebView web;
+    private BillingClient billing;
+    private boolean pageReady = false;
 
-      - name: Configurar Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
+    private final List<Purchase> pendingDeliveries = new ArrayList<>();
 
-      - name: Preparar Android SDK
-        run: |
-          set -e
+    private static final String[] PRODUCT_IDS = {
+        "coins_500",
+        "coins_1500",
+        "coins_4000",
+        "coins_10000"
+    };
 
-          echo "ANDROID_HOME=$ANDROID_HOME"
+    @Override
+    public void onCreate(Bundle state) {
+        super.onCreate(state);
 
-          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" \
-            -name sdkmanager -type f | sort -V | tail -n 1)
+        getWindow().setStatusBarColor(
+            android.graphics.Color.rgb(16, 27, 55)
+        );
 
-          if [ -z "$SDKMANAGER" ]; then
-            echo "ERRO: sdkmanager não encontrado."
-            exit 1
-          fi
+        getWindow().setNavigationBarColor(
+            android.graphics.Color.rgb(16, 27, 55)
+        );
 
-          echo "SDK Manager: $SDKMANAGER"
+        web = new WebView(this);
 
-          yes | "$SDKMANAGER" --licenses || true
+        web.getSettings().setJavaScriptEnabled(true);
+        web.getSettings().setDomStorageEnabled(true);
 
-          "$SDKMANAGER" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
+        web.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                pageReady = true;
+                flushPurchases();
+                connectBilling();
+            }
+        });
 
-      - name: Instalar Gradle 8.9
-        run: |
-          set -e
+        web.setWebChromeClient(new WebChromeClient());
 
-          wget -q https://services.gradle.org/distributions/gradle-8.9-bin.zip
-          unzip -q gradle-8.9-bin.zip
+        web.addJavascriptInterface(new Object() {
+            @JavascriptInterface
+            public void share(String message) {
+                runOnUiThread(() -> {
+                    Intent send = new Intent(Intent.ACTION_SEND);
+                    send.setType("text/plain");
+                    send.putExtra(Intent.EXTRA_TEXT, message);
 
-          echo "$PWD/gradle-8.9/bin" >> "$GITHUB_PATH"
+                    startActivity(
+                        Intent.createChooser(send, "Convidar amigos")
+                    );
+                });
+            }
+        }, "AndroidShare");
 
-      - name: Extrair projeto exclusivo
-        run: |
-          set -e
+        web.addJavascriptInterface(new BillingBridge(), "AndroidBilling");
 
-          ZIP="$GITHUB_WORKSPACE/Cao_Fujao_ATUALIZADO_GOOGLE_PLAY.zip"
-          DEST="$RUNNER_TEMP/build-cao-fujao"
+        setContentView(web);
 
-          if [ ! -f "$ZIP" ]; then
-            echo "ERRO: ZIP do Cão Fujão não encontrado."
-            exit 1
-          fi
+        web.loadUrl("file:///android_asset/index.html");
+    }
 
-          mkdir -p "$DEST"
-          unzip -q "$ZIP" -d "$DEST"
+    private class BillingBridge {
 
-          PROJECT=$(find "$DEST" \
-            -name settings.gradle -print -quit)
+        @JavascriptInterface
+        public void buyProduct(String productId) {
+            runOnUiThread(() -> launchPurchase(productId));
+        }
 
-          if [ -z "$PROJECT" ]; then
-            echo "ERRO: settings.gradle não encontrado."
-            exit 1
-          fi
+        @JavascriptInterface
+        public void consumePurchase(String token) {
+            runOnUiThread(() -> consume(token));
+        }
+    }
 
-          PROJECT_DIR=$(dirname "$PROJECT")
+    private void connectBilling() {
 
-          if [ ! -f "$PROJECT_DIR/app/build.gradle" ]; then
-            echo "ERRO: Projeto Android inválido."
-            exit 1
-          fi
+        if (billing != null && billing.isReady()) {
+            queryProducts();
+            queryExistingPurchases();
+            return;
+        }
 
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+        billing = BillingClient.newBuilder(this)
 
-          echo "Projeto Cão Fujão localizado!"
+            .setListener((result, purchases) -> {
 
-      - name: Compilar APK
-        run: |
-          set -e
+                if (
+                    result.getResponseCode() ==
+                    BillingClient.BillingResponseCode.OK
+                    && purchases != null
+                ) {
+                    for (Purchase purchase : purchases) {
+                        handlePurchase(purchase);
+                    }
 
-          cd "$PROJECT_DIR"
+                } else if (
+                    result.getResponseCode() !=
+                    BillingClient.BillingResponseCode.USER_CANCELED
+                ) {
+                    js(
+                        "window.onBillingReady && window.onBillingReady(false," +
+                        JSONObject.quote(
+                            "Não foi possível concluir a compra: " +
+                            result.getDebugMessage()
+                        ) +
+                        ")"
+                    );
+                }
+            })
 
-          gradle --no-daemon clean :app:assembleDebug
+            .enablePendingPurchases(
+                PendingPurchasesParams.newBuilder()
+                    .enableOneTimeProducts()
+                    .build()
+            )
 
-      - name: Conferir APK
-        run: |
-          set -e
+            .build();
 
-          APK="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
+        billing.startConnection(new BillingClientStateListener() {
 
-          if [ ! -f "$APK" ]; then
-            echo "ERRO: APK não foi gerado."
-            exit 1
-          fi
+            @Override
+            public void onBillingSetupFinished(BillingResult result) {
 
-          mkdir -p resultado-cao-fujao
+                if (
+                    result.getResponseCode() ==
+                    BillingClient.BillingResponseCode.OK
+                ) {
+                    js(
+                        "window.onBillingReady && " +
+                        "window.onBillingReady(true,'Google Play conectada')"
+                    );
 
-          cp "$APK" \
-            resultado-cao-fujao/CAO-FUJAO-ATUALIZADO.apk
+                    queryProducts();
+                    queryExistingPurchases();
 
-          ls -lh resultado-cao-fujao/
+                } else {
+                    js(
+                        "window.onBillingReady && " +
+                        "window.onBillingReady(false," +
+                        "'Google Play indisponível. Verifique a instalação pela Play Store.')"
+                    );
+                }
+            }
 
-      - name: Disponibilizar APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: CAO-FUJAO-APK-EXCLUSIVO
-          path: resultado-cao-fujao/CAO-FUJAO-ATUALIZADO.apk
-          if-no-files-found: error
-          
+            @Override
+            public void onBillingServiceDisconnected() {
+                js(
+                    "window.onBillingReady && " +
+                    "window.onBillingReady(false," +
+                    "'Conexão com a Google Play interrompida')"
+                );
+            }
+        });
+    }
+
+    private void queryProducts() {
+
+        if (billing == null || !billing.isReady()) {
+            return;
+        }
+
+        List<QueryProductDetailsParams.Product> products =
+            new ArrayList<>();
+
+        for (String id : PRODUCT_IDS) {
+
+            products.add(
+                QueryProductDetailsParams.Product.newBuilder()
+                    .setProductId(id)
+                    .setProductType(BillingClient.ProductType.INAPP)
+                    .build()
+            );
+        }
+
+        QueryProductDetailsParams params =
+            QueryProductDetailsParams.newBuilder()
+                .setProductList(products)
+                .build();
+
+        billing.queryProductDetailsAsync(
+            params,
+            (result, queryResult) -> {
+
+                if (
+                    result.getResponseCode() !=
+                    BillingClient.BillingResponseCode.OK
+                ) {
+                    return;
+                }
+
+                JSONObject prices = new JSONObject();
+
+                // CORRIGIDO: queryResult já é uma List<ProductDetails>.
+                for (ProductDetails detail : queryResult) {
+
+                    try {
+                        if (
+                            detail.getOneTimePurchaseOfferDetails() != null
+                        ) {
+                            prices.put(
+                                detail.getProductId(),
+                                detail.getOneTimePurchaseOfferDetails()
+                                    .getFormattedPrice()
+                            );
+                        }
+                    } catch (Exception ignored) {
+                    }
+                }
+
+                js(
+                    "window.onBillingProducts && " +
+                    "window.onBillingProducts(" +
+                    JSONObject.quote(prices.toString()) +
+                    ")"
+                );
+            }
+        );
+    }
+
+    private void launchPurchase(String productId) {
+
+        if (!Arrays.asList(PRODUCT_IDS).contains(productId)) {
+            return;
+        }
+
+        if (billing == null || !billing.isReady()) {
+
+            js(
+                "window.onBillingReady && " +
+                "window.onBillingReady(false," +
+                "'Google Play ainda está conectando. Tente novamente.')"
+            );
+
+            connectBilling();
+            return;
+        }
+
+        List<QueryProductDetailsParams.Product> products =
+            Collections.singletonList(
+                QueryProductDetailsParams.Product.newBuilder()
+                    .setProductId(productId)
+                    .setProductType(BillingClient.ProductType.INAPP)
+                    .build()
+            );
+
+        QueryProductDetailsParams params =
+            QueryProductDetailsParams.newBuilder()
+                .setProductList(products)
+                .build();
+
+        billing.queryProductDetailsAsync(
+            params,
+            (result, queryResult) -> {
+
+                // CORRIGIDO: consulta diretamente a lista.
+                if (
+                    result.getResponseCode() !=
+                    BillingClient.BillingResponseCode.OK
+                    || queryResult.isEmpty()
+                ) {
+                    js(
+                        "window.onBillingReady && " +
+                        "window.onBillingReady(false," +
+                        "'Produto não encontrado. Confira o cadastro no Play Console.')"
+                    );
+                    return;
+                }
+
+                // CORRIGIDO: pega o primeiro produto da lista.
+                ProductDetails detail = queryResult.get(0);
+
+                BillingFlowParams flow =
+                    BillingFlowParams.newBuilder()
+                        .setProductDetailsParamsList(
+                            Collections.singletonList(
+                                BillingFlowParams.ProductDetailsParams
+                                    .newBuilder()
+                                    .setProductDetails(detail)
+                                    .build()
+                            )
+                        )
+                        .build();
+
+                billing.launchBillingFlow(this, flow);
+            }
+        );
+    }
+
+    private void queryExistingPurchases() {
+
+        if (billing == null || !billing.isReady()) {
+            return;
+        }
+
+        QueryPurchasesParams params =
+            QueryPurchasesParams.newBuilder()
+                .setProductType(BillingClient.ProductType.INAPP)
+                .build();
+
+        billing.queryPurchasesAsync(
+            params,
+            (result, purchases) -> {
+
+                if (
+                    result.getResponseCode() ==
+                    BillingClient.BillingResponseCode.OK
+                ) {
+                    for (Purchase purchase : purchases) {
+                        handlePurchase(purchase);
+                    }
+                }
+            }
+        );
+    }
+
+    private void handlePurchase(Purchase purchase) {
+
+        if (
+            purchase.getPurchaseState() !=
+            Purchase.PurchaseState.PURCHASED
+        ) {
+            return;
+        }
+
+        if (!pageReady) {
+            pendingDeliveries.add(purchase);
+            return;
+        }
+
+        for (String product : purchase.getProducts()) {
+
+            js(
+                "window.onGooglePurchase && " +
+                "window.onGooglePurchase(" +
+                JSONObject.quote(product) + "," +
+                JSONObject.quote(purchase.getPurchaseToken()) +
+                ")"
+            );
+        }
+    }
+
+    private void flushPurchases() {
+
+        for (
+            Purchase purchase :
+            new ArrayList<>(pendingDeliveries)
+        ) {
+            handlePurchase(purchase);
+        }
+
+        pendingDeliveries.clear();
+    }
+
+    private void consume(String token) {
+
+        if (billing == null || !billing.isReady()) {
+            return;
+        }
+
+        ConsumeParams params =
+            ConsumeParams.newBuilder()
+                .setPurchaseToken(token)
+                .build();
+
+        billing.consumeAsync(
+            params,
+            (result, purchaseToken) -> {
+
+                if (
+                    result.getResponseCode() !=
+                    BillingClient.BillingResponseCode.OK
+                ) {
+                    js(
+                        "window.onBillingReady && " +
+                        "window.onBillingReady(false," +
+                        "'Não foi possível confirmar o consumo da compra.')"
+                    );
+                }
+            }
+        );
+    }
+
+    private void js(String script) {
+
+        runOnUiThread(() -> {
+
+            if (web != null) {
+                web.evaluateJavascript(script, null);
+            }
+        });
+    }
+
+    @Override
+    protected void onDestroy() {
+
+        if (billing != null) {
+            billing.endConnection();
+        }
+
+        if (web != null) {
+            web.destroy();
+        }
+
+        super.onDestroy();
+    }
+
+    @Override
+    public void onBackPressed() {
+
+        if (web != null && web.canGoBack()) {
+            web.goBack();
+        } else {
+            super.onBackPressed();
+        }
+    }
+}
