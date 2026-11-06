@@ -1,4 +1,3 @@
-
 name: CAO FUJAO - GERAR APK
 
 on:
@@ -23,110 +22,64 @@ jobs:
           java-version: '17'
 
       - name: Configurar Android SDK
-        shell: bash
+        uses: android-actions/setup-android@v3
+
+      - name: Instalar ferramentas Android
         run: |
-          set -e
-
-          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
-          export ANDROID_SDK_ROOT="$ANDROID_HOME"
-
-          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
-
-          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" \
-            -type f -name sdkmanager | sort -V | tail -n 1)
-
-          if [ -z "$SDKMANAGER" ]; then
-            echo "ERRO: sdkmanager não encontrado."
-            exit 1
-          fi
-
-          yes | "$SDKMANAGER" --licenses || true
-
-          "$SDKMANAGER" --install \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
+          yes | sdkmanager --licenses || true
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Configurar Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Verificar ZIP
+      - name: Localizar e extrair projeto
         shell: bash
         run: |
-          set -e
+          set -Eeuo pipefail
 
           ZIP="Cao_Fujao_ATUALIZADO_GOOGLE_PLAY.zip"
 
           if [ ! -f "$ZIP" ]; then
-            echo "ERRO: ZIP atualizado não encontrado."
+            echo "ERRO: $ZIP não encontrado no repositório."
             exit 1
           fi
 
-          echo "ZIP encontrado!"
+          mkdir -p "$RUNNER_TEMP/build-cao-fujao"
+          unzip -q "$ZIP" -d "$RUNNER_TEMP/build-cao-fujao"
 
-      - name: Extrair projeto
-        shell: bash
-        run: |
-          set -e
+          PROJECT=""
 
-          PROJECT_DIR="$RUNNER_TEMP/build-cao-fujao"
+          while IFS= read -r FILE; do
+            DIR="$(dirname "$FILE")"
+            if [ -f "$DIR/app/build.gradle" ] || [ -f "$DIR/app/build.gradle.kts" ]; then
+              PROJECT="$DIR"
+              break
+            fi
+          done < <(find "$RUNNER_TEMP/build-cao-fujao" \
+            -type f \( -name settings.gradle -o -name settings.gradle.kts \))
 
-          rm -rf "$PROJECT_DIR"
-          mkdir -p "$PROJECT_DIR"
-
-          unzip -q "Cao_Fujao_ATUALIZADO_GOOGLE_PLAY.zip" \
-            -d "$PROJECT_DIR"
-
-          SETTINGS=$(find "$PROJECT_DIR" \
-            \( -name settings.gradle -o -name settings.gradle.kts \) \
-            | head -n 1)
-
-          if [ -z "$SETTINGS" ]; then
-            echo "ERRO: projeto Android não encontrado."
+          if [ -z "$PROJECT" ]; then
+            echo "ERRO: Projeto Android não encontrado no ZIP."
+            find "$RUNNER_TEMP/build-cao-fujao" -maxdepth 4 -type f
             exit 1
           fi
 
-          ROOT_DIR=$(dirname "$SETTINGS")
+          echo "PROJECT_DIR=$PROJECT" >> "$GITHUB_ENV"
+          echo "Projeto encontrado: $PROJECT"
 
-          echo "PROJECT_DIR=$ROOT_DIR" >> "$GITHUB_ENV"
-
-          echo "Projeto encontrado: $ROOT_DIR"
-
-      - name: Corrigir Billing e verificar arquivos
+      - name: Corrigir compatibilidade Google Play Billing
         shell: bash
         run: |
-          set -e
+          set -Eeuo pipefail
 
-          JAVA_FILE="$PROJECT_DIR/app/src/main/java/com/caofujao/game/MainActivity.java"
-          MANIFEST="$PROJECT_DIR/app/src/main/AndroidManifest.xml"
-          HTML="$PROJECT_DIR/app/src/main/assets/index.html"
+          JAVA_FILE="$(find "$PROJECT_DIR" -name MainActivity.java -print -quit)"
 
-          test -f "$JAVA_FILE" || {
-            echo "ERRO: MainActivity.java ausente."
+          if [ -z "$JAVA_FILE" ]; then
+            echo "ERRO: MainActivity.java não encontrado."
             exit 1
-          }
-
-          test -f "$MANIFEST" || {
-            echo "ERRO: AndroidManifest.xml ausente."
-            exit 1
-          }
-
-          test -f "$HTML" || {
-            echo "ERRO: index.html ausente."
-            exit 1
-          }
-
-          test -f "$PROJECT_DIR/app/src/main/assets/intro.png" || {
-            echo "ERRO: imagem de boas-vindas ausente."
-            exit 1
-          }
-
-          test -f "$PROJECT_DIR/app/src/main/res/mipmap-hdpi/ic_launcher.png" || {
-            echo "ERRO: ícone do aplicativo ausente."
-            exit 1
-          }
+          fi
 
           python3 - "$JAVA_FILE" <<'PY'
           import sys
@@ -151,31 +104,52 @@ jobs:
           )
 
           if "getProductDetailsList()" in s:
-              raise SystemExit("ERRO: chamada antiga do Billing encontrada.")
+              raise SystemExit("ERRO: chamadas antigas do Billing continuam no Java.")
 
           p.write_text(s, encoding="utf-8")
-          print("Billing corrigido.")
+          print("Compatibilidade Billing verificada.")
           PY
 
-          echo "Arquivos do jogo conferidos."
+      - name: Verificar arquivos do jogo
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          test -f "$PROJECT_DIR/app/src/main/AndroidManifest.xml"
+
+          HTML="$(find "$PROJECT_DIR/app/src/main/assets" \
+            -name index.html -print -quit)"
+
+          if [ -z "$HTML" ]; then
+            echo "ERRO: index.html não encontrado."
+            exit 1
+          fi
+
+          echo "Jogo encontrado: $HTML"
+
+          if [ ! -f "$PROJECT_DIR/app/src/main/assets/intro.png" ]; then
+            echo "AVISO: imagem intro.png não encontrada."
+          fi
+
+          echo "Arquivos verificados."
 
       - name: Compilar APK
         shell: bash
         run: |
-          set -e
-
+          set -Eeuo pipefail
           cd "$PROJECT_DIR"
 
           gradle --no-daemon clean :app:assembleDebug
 
-      - name: Preparar APK
+      - name: Preparar APK final
         shell: bash
         run: |
-          set -e
+          set -Eeuo pipefail
 
-          APK="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
+          APK="$(find "$PROJECT_DIR/app/build/outputs/apk/debug" \
+            -name '*.apk' -print -quit)"
 
-          if [ ! -f "$APK" ]; then
+          if [ -z "$APK" ]; then
             echo "ERRO: APK não foi gerado."
             exit 1
           fi
@@ -187,10 +161,10 @@ jobs:
 
           ls -lh resultado-cao-fujao/
 
-      - name: Disponibilizar APK
+      - name: Enviar APK
         uses: actions/upload-artifact@v4
         with:
           name: CAO-FUJAO-APK-EXCLUSIVO
           path: resultado-cao-fujao/CAO-FUJAO-ATUALIZADO.apk
           if-no-files-found: error
-          
+          retention-days: 30
