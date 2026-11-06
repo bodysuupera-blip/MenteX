@@ -53,7 +53,7 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Extrair projeto do jogo
+      - name: Extrair projeto
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -64,12 +64,9 @@ jobs:
             | head -n 1)
 
           if [ -z "$ZIP" ]; then
-            echo "ERRO: ZIP do projeto Cão Fujão não encontrado."
-            echo "Coloque o ZIP do projeto na raiz do repositório."
+            echo "ERRO: ZIP do projeto não encontrado."
             exit 1
           fi
-
-          echo "Projeto encontrado: $ZIP"
 
           mkdir -p /tmp/cao-fujao
           unzip -q "$ZIP" -d /tmp/cao-fujao
@@ -87,13 +84,37 @@ jobs:
 
           if [ ! -f "$PROJECT_DIR/app/build.gradle" ] && \
              [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
-            echo "ERRO: módulo Android app não encontrado."
+            echo "ERRO: módulo app não encontrado."
             exit 1
           fi
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-          echo "Projeto Android localizado em: $PROJECT_DIR"
+          echo "Projeto localizado: $PROJECT_DIR"
+
+      - name: Corrigir compatibilidade Google Play Billing
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          JAVA_FILE="$PROJECT_DIR/app/src/main/java/com/caofujao/game/MainActivity.java"
+
+          if [ ! -f "$JAVA_FILE" ]; then
+            echo "ERRO: MainActivity.java não encontrado."
+            exit 1
+          fi
+
+          sed -i \
+            's/queryResult\.getProductDetailsList()/queryResult/g' \
+            "$JAVA_FILE"
+
+          if grep -q 'queryResult\.getProductDetailsList()' "$JAVA_FILE"; then
+            echo "ERRO: correção do Billing não foi aplicada."
+            exit 1
+          fi
+
+          echo "Compatibilidade Billing corrigida."
+          grep -n "queryResult" "$JAVA_FILE"
 
       - name: Compilar APK
         shell: bash
