@@ -52,7 +52,7 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Localizar ZIP exclusivo do Cão Fujão
+      - name: Localizar ZIP do Cão Fujão
         shell: bash
         run: |
           set -e
@@ -61,13 +61,12 @@ jobs:
 
           if [ ! -f "$ZIP" ]; then
             echo "ERRO: ZIP do Cão Fujão não encontrado."
-            echo "Esperado: $ZIP"
             exit 1
           fi
 
           echo "ZIP encontrado: $ZIP"
 
-      - name: Extrair projeto do Cão Fujão
+      - name: Extrair projeto
         shell: bash
         run: |
           set -e
@@ -81,11 +80,11 @@ jobs:
             -d "$PROJECT_DIR"
 
           SETTINGS=$(find "$PROJECT_DIR" \
-            -name settings.gradle -o -name settings.gradle.kts \
+            \( -name settings.gradle -o -name settings.gradle.kts \) \
             | head -n 1)
 
           if [ -z "$SETTINGS" ]; then
-            echo "ERRO: projeto Android não encontrado no ZIP."
+            echo "ERRO: projeto Android não encontrado."
             exit 1
           fi
 
@@ -97,20 +96,65 @@ jobs:
             exit 1
           fi
 
-          if [ ! -f "$ROOT_DIR/app/src/main/assets/index.html" ]; then
-            echo "ERRO: index.html não encontrado."
+          echo "PROJECT_DIR=$ROOT_DIR" >> "$GITHUB_ENV"
+
+          echo "Projeto encontrado: $ROOT_DIR"
+
+      - name: Corrigir Google Play Billing no Java
+        shell: bash
+        run: |
+          set -e
+
+          JAVA_FILE="$PROJECT_DIR/app/src/main/java/com/caofujao/game/MainActivity.java"
+
+          if [ ! -f "$JAVA_FILE" ]; then
+            echo "ERRO: MainActivity.java não encontrado."
             exit 1
           fi
 
-          echo "PROJECT_DIR=$ROOT_DIR" >> "$GITHUB_ENV"
+          python3 - "$JAVA_FILE" <<'PY'
+          import sys
+          from pathlib import Path
 
-          echo "Projeto localizado em: $ROOT_DIR"
+          path = Path(sys.argv[1])
+          code = path.read_text(encoding="utf-8")
+
+          replacements = {
+              "queryResult.getProductDetailsList().isEmpty()":
+                  "queryResult.isEmpty()",
+
+              "queryResult.getProductDetailsList().get(0)":
+                  "queryResult.get(0)",
+
+              "queryResult.getProductDetailsList()":
+                  "queryResult",
+          }
+
+          for old, new in replacements.items():
+              code = code.replace(old, new)
+
+          if "getProductDetailsList()" in code:
+              raise SystemExit(
+                  "ERRO: ainda existe chamada getProductDetailsList() no Java."
+              )
+
+          path.write_text(code, encoding="utf-8")
+
+          print("MainActivity.java corrigido com sucesso.")
+          PY
+
+          echo "Verificando correção:"
+          if grep -n "getProductDetailsList" "$JAVA_FILE"; then
+            echo "ERRO: chamada antiga ainda existe."
+            exit 1
+          fi
+
+          echo "Nenhuma chamada antiga encontrada."
 
       - name: Compilar APK
         shell: bash
         run: |
           set -e
-
           cd "$PROJECT_DIR"
 
           gradle --no-daemon clean :app:assembleDebug
