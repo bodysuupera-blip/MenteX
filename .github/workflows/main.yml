@@ -1,120 +1,95 @@
 
-name: CAO FUJAO 3.0 - GERAR APK
+name: CAO FUJAO - GERAR APK
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-      - master
 
 permissions:
   contents: read
 
 jobs:
-  build:
-    name: Compilar aplicativo Cao Fujão
+  build-cao-fujao:
+    name: Compilar somente Cão Fujão
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar projeto
+      - name: Baixar repositório
         uses: actions/checkout@v4
 
-      - name: Configurar Java 17
+      - name: Configurar Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Localizar projeto Android
-        shell: bash
+      - name: Configurar Android
+        uses: android-actions/setup-android@v3
+
+      - name: Instalar SDK
         run: |
-          set -euo pipefail
+          yes | sdkmanager --licenses
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
-          while IFS= read -r -d '' arquivo; do
-            pasta="extraido_$(basename "$arquivo" .zip)"
-            mkdir -p "$pasta"
-            unzip -oq "$arquivo" -d "$pasta"
-          done < <(find . -type f -name "*.zip" -print0)
+      - name: Instalar Gradle
+        run: |
+          wget -q https://services.gradle.org/distributions/gradle-8.9-bin.zip
+          unzip -q gradle-8.9-bin.zip
+          echo "$PWD/gradle-8.9/bin" >> "$GITHUB_PATH"
 
-          PROJETO=""
+      - name: Preparar somente Cão Fujão
+        run: |
+          set -Eeuo pipefail
 
-          while IFS= read -r -d '' arquivo; do
-            pasta="$(dirname "$arquivo")"
+          ZIP="$GITHUB_WORKSPACE/Cao_Fujao_ATUALIZADO_GOOGLE_PLAY.zip"
+          DEST="$RUNNER_TEMP/build-cao-fujao"
 
-            if { [ -f "$pasta/app/build.gradle" ] || \
-                 [ -f "$pasta/app/build.gradle.kts" ]; } && \
-               [ -f "$pasta/app/src/main/AndroidManifest.xml" ]; then
-              PROJETO="$pasta"
-              break
-            fi
-          done < <(find . -type f \( \
-            -name settings.gradle -o \
-            -name settings.gradle.kts \
-          \) -print0)
-
-          if [ -z "$PROJETO" ]; then
-            echo "ERRO: Projeto Android nao encontrado."
+          if [ ! -f "$ZIP" ]; then
+            echo "ERRO: ZIP exclusivo do Cão Fujão não encontrado."
             exit 1
           fi
 
-          echo "Projeto encontrado: $PROJETO"
-          echo "PROJECT_DIR=$GITHUB_WORKSPACE/$PROJETO" >> "$GITHUB_ENV"
+          mkdir -p "$DEST"
+          unzip -q "$ZIP" -d "$DEST"
 
-      - name: Configurar Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          accept-android-sdk-licenses: true
-          packages: 'platform-tools'
+          PROJECT=$(find "$DEST" -name settings.gradle -print -quit)
 
-      - name: Instalar plataforma Android 35
-        shell: bash
+          if [ -z "$PROJECT" ]; then
+            echo "ERRO: Projeto Cão Fujão não encontrado."
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$PROJECT")
+
+          test -f "$PROJECT_DIR/app/build.gradle"
+          test -f "$PROJECT_DIR/app/src/main/java/com/caofujao/game/MainActivity.java"
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+          echo "Projeto isolado encontrado: $PROJECT_DIR"
+
+      - name: Compilar Cão Fujão
         run: |
-          set -euo pipefail
-
-          SDKMANAGER="$(command -v sdkmanager)"
-
-          "$SDKMANAGER" --install "platforms;android-35"
-          "$SDKMANAGER" --install "build-tools;35.0.0"
-
-      - name: Configurar Gradle 8.13
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.13'
-
-      - name: Compilar aplicativo
-        shell: bash
-        run: |
-          set -euo pipefail
-
+          set -Eeuo pipefail
           cd "$PROJECT_DIR"
-
-          echo "Compilando com Gradle 8.13..."
-
-          gradle --version
-
           gradle --no-daemon clean :app:assembleDebug
 
-          APK="app/build/outputs/apk/debug/app-debug.apk"
+      - name: Preparar APK exclusivo
+        run: |
+          set -Eeuo pipefail
 
-          if [ ! -s "$APK" ]; then
-            echo "ERRO: APK nao foi gerado."
-            find app/build/outputs -type f -name "*.apk" -print
-            exit 1
-          fi
+          APK="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
 
-          mkdir -p "$GITHUB_WORKSPACE/resultado"
+          test -f "$APK"
 
-          cp "$APK" "$GITHUB_WORKSPACE/resultado/CAO-FUJAO.apk"
+          mkdir -p "$GITHUB_WORKSPACE/resultado-cao-fujao"
 
-          echo "APK gerado com sucesso."
-          ls -lh "$GITHUB_WORKSPACE/resultado/CAO-FUJAO.apk"
+          cp "$APK" \
+            "$GITHUB_WORKSPACE/resultado-cao-fujao/CAO-FUJAO-ATUALIZADO.apk"
 
-      - name: Disponibilizar APK
+      - name: Publicar APK Cão Fujão
         uses: actions/upload-artifact@v4
         with:
-          name: CAO-FUJAO-3.0-APK
-          path: resultado/CAO-FUJAO.apk
+          name: CAO-FUJAO-APK-EXCLUSIVO
+          path: resultado-cao-fujao/CAO-FUJAO-ATUALIZADO.apk
           if-no-files-found: error
-          retention-days: 30
           
