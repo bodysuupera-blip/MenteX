@@ -52,19 +52,19 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Localizar ZIP do Cão Fujão
+      - name: Verificar ZIP
         shell: bash
         run: |
           set -e
 
-          ZIP="./Cao_Fujao_ATUALIZADO_GOOGLE_PLAY.zip"
+          ZIP="Cao_Fujao_ATUALIZADO_GOOGLE_PLAY.zip"
 
           if [ ! -f "$ZIP" ]; then
-            echo "ERRO: ZIP do Cão Fujão não encontrado."
+            echo "ERRO: ZIP atualizado não encontrado."
             exit 1
           fi
 
-          echo "ZIP encontrado: $ZIP"
+          echo "ZIP encontrado!"
 
       - name: Extrair projeto
         shell: bash
@@ -76,7 +76,7 @@ jobs:
           rm -rf "$PROJECT_DIR"
           mkdir -p "$PROJECT_DIR"
 
-          unzip -q "./Cao_Fujao_ATUALIZADO_GOOGLE_PLAY.zip" \
+          unzip -q "Cao_Fujao_ATUALIZADO_GOOGLE_PLAY.zip" \
             -d "$PROJECT_DIR"
 
           SETTINGS=$(find "$PROJECT_DIR" \
@@ -90,85 +90,92 @@ jobs:
 
           ROOT_DIR=$(dirname "$SETTINGS")
 
-          if [ ! -f "$ROOT_DIR/app/build.gradle" ] && \
-             [ ! -f "$ROOT_DIR/app/build.gradle.kts" ]; then
-            echo "ERRO: app/build.gradle não encontrado."
-            exit 1
-          fi
-
           echo "PROJECT_DIR=$ROOT_DIR" >> "$GITHUB_ENV"
 
           echo "Projeto encontrado: $ROOT_DIR"
 
-      - name: Corrigir Google Play Billing no Java
+      - name: Corrigir Billing e verificar arquivos
         shell: bash
         run: |
           set -e
 
           JAVA_FILE="$PROJECT_DIR/app/src/main/java/com/caofujao/game/MainActivity.java"
+          MANIFEST="$PROJECT_DIR/app/src/main/AndroidManifest.xml"
+          HTML="$PROJECT_DIR/app/src/main/assets/index.html"
 
-          if [ ! -f "$JAVA_FILE" ]; then
-            echo "ERRO: MainActivity.java não encontrado."
+          test -f "$JAVA_FILE" || {
+            echo "ERRO: MainActivity.java ausente."
             exit 1
-          fi
+          }
+
+          test -f "$MANIFEST" || {
+            echo "ERRO: AndroidManifest.xml ausente."
+            exit 1
+          }
+
+          test -f "$HTML" || {
+            echo "ERRO: index.html ausente."
+            exit 1
+          }
+
+          test -f "$PROJECT_DIR/app/src/main/assets/intro.png" || {
+            echo "ERRO: imagem de boas-vindas ausente."
+            exit 1
+          }
+
+          test -f "$PROJECT_DIR/app/src/main/res/mipmap-hdpi/ic_launcher.png" || {
+            echo "ERRO: ícone do aplicativo ausente."
+            exit 1
+          }
 
           python3 - "$JAVA_FILE" <<'PY'
           import sys
           from pathlib import Path
 
-          path = Path(sys.argv[1])
-          code = path.read_text(encoding="utf-8")
+          p = Path(sys.argv[1])
+          s = p.read_text(encoding="utf-8")
 
-          replacements = {
-              "queryResult.getProductDetailsList().isEmpty()":
-                  "queryResult.isEmpty()",
+          s = s.replace(
+              "queryResult.getProductDetailsList().isEmpty()",
+              "queryResult.isEmpty()"
+          )
 
-              "queryResult.getProductDetailsList().get(0)":
-                  "queryResult.get(0)",
+          s = s.replace(
+              "queryResult.getProductDetailsList().get(0)",
+              "queryResult.get(0)"
+          )
 
-              "queryResult.getProductDetailsList()":
-                  "queryResult",
-          }
+          s = s.replace(
+              "queryResult.getProductDetailsList()",
+              "queryResult"
+          )
 
-          for old, new in replacements.items():
-              code = code.replace(old, new)
+          if "getProductDetailsList()" in s:
+              raise SystemExit("ERRO: chamada antiga do Billing encontrada.")
 
-          if "getProductDetailsList()" in code:
-              raise SystemExit(
-                  "ERRO: ainda existe chamada getProductDetailsList() no Java."
-              )
-
-          path.write_text(code, encoding="utf-8")
-
-          print("MainActivity.java corrigido com sucesso.")
+          p.write_text(s, encoding="utf-8")
+          print("Billing corrigido.")
           PY
 
-          echo "Verificando correção:"
-          if grep -n "getProductDetailsList" "$JAVA_FILE"; then
-            echo "ERRO: chamada antiga ainda existe."
-            exit 1
-          fi
-
-          echo "Nenhuma chamada antiga encontrada."
+          echo "Arquivos do jogo conferidos."
 
       - name: Compilar APK
         shell: bash
         run: |
           set -e
+
           cd "$PROJECT_DIR"
 
           gradle --no-daemon clean :app:assembleDebug
 
-      - name: Preparar APK final
+      - name: Preparar APK
         shell: bash
         run: |
           set -e
 
-          APK=$(find "$PROJECT_DIR" \
-            -path "*/build/outputs/apk/debug/app-debug.apk" \
-            -type f | head -n 1)
+          APK="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
 
-          if [ -z "$APK" ]; then
+          if [ ! -f "$APK" ]; then
             echo "ERRO: APK não foi gerado."
             exit 1
           fi
