@@ -1,134 +1,67 @@
 
-name: CAO FUJAO 1.3 - GERAR APK
+name: CAO FUJAO - 15 SEGUNDOS E ICONE REDONDO
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ main ]
 
 permissions:
   contents: read
 
 jobs:
   build:
-    name: Compilar Cão Fujão 1.3
+    name: Compilar Cão Fujão
     runs-on: ubuntu-22.04
 
     steps:
       - name: Baixar repositório
         uses: actions/checkout@v4
 
-      - name: Configurar Java 17
+      - name: Configurar Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Gradle 8.9
+      - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Extrair ZIP atualizado
-        shell: bash
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Instalar SDK
         run: |
-          set -Eeuo pipefail
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-          ZIP="CAO-FUJAO-ATUALIZADO-VIDAS-MOEDAS-PONTOS-RANKING.zip"
-
-          mkdir -p /tmp/cao-fujao
-
-          if [ -f "$ZIP" ]; then
-            unzip -q "$ZIP" -d /tmp/cao-fujao
-          else
-            echo "ERRO: ZIP atualizado não encontrado: $ZIP"
-            echo "Arquivos ZIP disponíveis:"
-            find . -type f -iname "*.zip"
-            exit 1
-          fi
-
-      - name: Localizar projeto Android
-        id: projeto
-        shell: bash
+      - name: Extrair projeto atualizado
         run: |
-          set -Eeuo pipefail
+          set -e
+          mkdir -p /tmp/cao
+          unzip -q CAO-FUJAO-15-SEGUNDOS-ICONE-REDONDO.zip -d /tmp/cao
 
-          PROJECT_DIR="$(find /tmp/cao-fujao \
-            -type f -name settings.gradle \
-            -not -path '*/.gradle/*' \
-            -printf '%h\n' | head -n 1)"
+          test -f /tmp/cao/settings.gradle
+          test -f /tmp/cao/app/build.gradle
+          test -f /tmp/cao/app/src/main/assets/index.html
 
-          if [ -z "$PROJECT_DIR" ]; then
-            echo "ERRO: settings.gradle não encontrado."
-            find /tmp/cao-fujao -maxdepth 5 -type f
-            exit 1
-          fi
+          echo "Projeto encontrado!"
 
-          if [ ! -f "$PROJECT_DIR/app/build.gradle" ]; then
-            echo "ERRO: app/build.gradle não encontrado."
-            exit 1
-          fi
-
-          if [ ! -f "$PROJECT_DIR/build.gradle" ]; then
-            echo "ERRO: build.gradle principal não encontrado."
-            exit 1
-          fi
-
-          echo "dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
-          echo "Projeto encontrado: $PROJECT_DIR"
-
-      - name: Preparar Android SDK
-        shell: bash
+      - name: Conferir ícone redondo
         run: |
-          set -Eeuo pipefail
+          grep -q 'android:roundIcon="@mipmap/ic_launcher_round"' \
+            /tmp/cao/app/src/main/AndroidManifest.xml
 
-          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
-
-          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
-
-          SDKMANAGER="$(find "$SDK_ROOT" -name sdkmanager -type f 2>/dev/null | head -n 1)"
-
-          if [ -z "$SDKMANAGER" ]; then
-            echo "ERRO: sdkmanager não encontrado."
-            exit 1
-          fi
-
-          yes | "$SDKMANAGER" --licenses >/dev/null || true
-
-          "$SDKMANAGER" \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
+          test -f /tmp/cao/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
 
       - name: Compilar APK
-        shell: bash
         run: |
-          set -Eeuo pipefail
+          cd /tmp/cao
+          gradle --no-daemon clean :app:assembleDebug
 
-          gradle --no-daemon --stacktrace \
-            -p "${{ steps.projeto.outputs.dir }}" \
-            clean :app:assembleDebug
-
-      - name: Verificar APK
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          APK="${{ steps.projeto.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk"
-
-          if [ ! -f "$APK" ]; then
-            echo "ERRO: APK não foi gerado."
-            exit 1
-          fi
-
-          ls -lh "$APK"
-
-      - name: Disponibilizar APK para baixar
+      - name: Salvar APK
         uses: actions/upload-artifact@v4
         with:
-          name: CAO-FUJAO-1.3-APK
-          path: ${{ steps.projeto.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk
+          name: CAO-FUJAO-15-SEGUNDOS-APK
+          path: /tmp/cao/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          retention-days: 30
           
