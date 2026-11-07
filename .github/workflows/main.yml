@@ -4,7 +4,8 @@ name: CAO FUJAO 1.4 - GERAR APK
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -39,19 +40,33 @@ jobs:
           echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
 
-          SDKMANAGER="$(find "$SDK_ROOT" -name sdkmanager -type f 2>/dev/null | head -n 1 || true)"
+          SDKMANAGER="$(find "$SDK_ROOT" -type f -name sdkmanager | head -n 1)"
 
-          if [ -z "$SDKMANAGER" ]; then
-            echo "ERRO: sdkmanager não encontrado."
-            exit 1
-          fi
-
-          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          yes | "$SDKMANAGER" --licenses || true
 
           "$SDKMANAGER" \
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
+
+      - name: Extrair projeto Cão Fujão 1.4
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          ZIP="CAO-FUJAO-1.4-MAIS-MOVIMENTO-RANKING.zip"
+
+          if [ ! -f "$ZIP" ]; then
+            echo "ERRO: arquivo $ZIP não encontrado."
+            exit 1
+          fi
+
+          mkdir -p "$RUNNER_TEMP/cao-fujao"
+
+          unzip -q "$ZIP" -d "$RUNNER_TEMP/cao-fujao"
+
+          echo "Conteúdo extraído:"
+          find "$RUNNER_TEMP/cao-fujao" -maxdepth 3 -type f | head -n 80
 
       - name: Localizar projeto Android
         id: project
@@ -59,24 +74,53 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          PROJECT_DIR="$(find . -type f -name settings.gradle -not -path './.gradle/*' -printf '%h\n' | head -n 1)"
+          BASE="$RUNNER_TEMP/cao-fujao"
 
-          if [ -z "$PROJECT_DIR" ] || [ ! -f "$PROJECT_DIR/app/build.gradle" ]; then
-            echo "ERRO: projeto Android não encontrado."
-            find . -maxdepth 5 -type f | sort | head -n 200
+          SETTINGS="$(find "$BASE" -type f \( \
+            -name settings.gradle -o \
+            -name settings.gradle.kts \
+            \) | head -n 1)"
+
+          if [ -z "$SETTINGS" ]; then
+            echo "ERRO: settings.gradle não encontrado após extrair o ZIP."
+            exit 1
+          fi
+
+          PROJECT_DIR="$(dirname "$SETTINGS")"
+
+          if [ ! -f "$PROJECT_DIR/app/build.gradle" ] && \
+             [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
+            echo "ERRO: pasta app não encontrada."
             exit 1
           fi
 
           echo "dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
-          echo "Projeto encontrado: $PROJECT_DIR"
+
+          echo "Projeto Android encontrado:"
+          echo "$PROJECT_DIR"
 
       - name: Compilar APK
+        shell: bash
         run: |
+          set -Eeuo pipefail
+
           gradle --no-daemon --stacktrace \
             -p "${{ steps.project.outputs.dir }}" \
             clean :app:assembleDebug
 
-      - name: Publicar APK
+      - name: Verificar APK
+        shell: bash
+        run: |
+          APK="${{ steps.project.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk"
+
+          if [ ! -f "$APK" ]; then
+            echo "ERRO: APK não foi gerado."
+            exit 1
+          fi
+
+          ls -lh "$APK"
+
+      - name: Disponibilizar APK para baixar
         uses: actions/upload-artifact@v4
         with:
           name: CAO-FUJAO-1.4-APK
