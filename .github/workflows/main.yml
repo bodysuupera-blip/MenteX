@@ -22,44 +22,70 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Instalar Android 35
-        run: |
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
-          yes | sdkmanager --licenses
-
-      - name: Preparar Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
-
-      - name: Extrair projeto original
+      - name: Instalar Android SDK
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          ZIP="Cao_Fujao_ATUALIZADO_GOOGLE_PLAY.zip"
+          SDKMANAGER=$(command -v sdkmanager)
 
-          if [ ! -f "$ZIP" ]; then
-            echo "ERRO: Projeto original nao encontrado."
+          "$SDKMANAGER" --licenses || true
+
+          "$SDKMANAGER" \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
+
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Localizar projeto Android
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          mkdir -p "$RUNNER_TEMP/cao-fujao"
+
+          # Extrair ZIPs de projetos encontrados no repositorio
+          while IFS= read -r -d '' ZIP; do
+            echo "Extraindo: $ZIP"
+            unzip -oq "$ZIP" -d "$RUNNER_TEMP/cao-fujao"
+          done < <(
+            find . -type f -name '*.zip' \
+              ! -name 'CAO-FUJAO-ATUALIZACAO-500-FASES-PATCH.zip' \
+              -print0
+          )
+
+          # Procurar projeto Android
+          PROJECT_DIR=""
+
+          while IFS= read -r SETTINGS; do
+            DIR=$(dirname "$SETTINGS")
+
+            if [ -f "$DIR/app/build.gradle" ] || \
+               [ -f "$DIR/app/build.gradle.kts" ]; then
+              PROJECT_DIR="$DIR"
+              break
+            fi
+          done < <(
+            find "$RUNNER_TEMP/cao-fujao" . \
+              -type f \
+              \( -name settings.gradle -o -name settings.gradle.kts \) \
+              -print
+          )
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERRO: Projeto Android original nao encontrado."
+            echo "Envie o ZIP do projeto-fonte Android."
             exit 1
           fi
 
-          mkdir -p "$RUNNER_TEMP/build-cao-fujao"
-          unzip -q "$ZIP" -d "$RUNNER_TEMP/build-cao-fujao"
-
-          PROJECT_DIR=$(dirname "$(find "$RUNNER_TEMP/build-cao-fujao" -name settings.gradle -o -name settings.gradle.kts | head -1)")
-
-          if [ -z "$PROJECT_DIR" ] || [ ! -f "$PROJECT_DIR/app/build.gradle" ]; then
-            echo "ERRO: Projeto Android nao encontrado."
-            exit 1
-          fi
-
+          echo "Projeto encontrado: $PROJECT_DIR"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      - name: Aplicar atualizacao 500 fases
+      - name: Aplicar atualizacao do jogo
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -72,43 +98,68 @@ jobs:
           fi
 
           mkdir -p "$RUNNER_TEMP/cao-patch"
-          unzip -q "$PATCH" -d "$RUNNER_TEMP/cao-patch"
+
+          unzip -oq "$PATCH" -d "$RUNNER_TEMP/cao-patch"
+
+          test -s "$RUNNER_TEMP/cao-patch/assets/index.html"
+          test -s "$RUNNER_TEMP/cao-patch/assets/intro.png"
 
           mkdir -p "$PROJECT_DIR/app/src/main/assets"
 
           cp "$RUNNER_TEMP/cao-patch/assets/index.html" \
-             "$PROJECT_DIR/app/src/main/assets/index.html"
+            "$PROJECT_DIR/app/src/main/assets/index.html"
 
           cp "$RUNNER_TEMP/cao-patch/assets/intro.png" \
-             "$PROJECT_DIR/app/src/main/assets/intro.png"
+            "$PROJECT_DIR/app/src/main/assets/intro.png"
 
-          test -s "$PROJECT_DIR/app/src/main/assets/index.html"
-          echo "Atualizacao aplicada!"
+          echo "Arquivos do jogo aplicados!"
 
       - name: Verificar projeto
-        run: |
-          test -f "$PROJECT_DIR/app/build.gradle"
-          test -f "$PROJECT_DIR/app/src/main/assets/index.html"
-          test -f "$PROJECT_DIR/app/src/main/AndroidManifest.xml"
-
-      - name: Compilar APK
-        run: |
-          gradle --no-daemon \
-            -p "$PROJECT_DIR" \
-            clean :app:assembleDebug
-
-      - name: Preparar APK final
+        shell: bash
         run: |
           set -Eeuo pipefail
 
-          APK="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
+          test -f "$PROJECT_DIR/app/src/main/AndroidManifest.xml"
 
-          test -s "$APK"
+          test -s "$PROJECT_DIR/app/src/main/assets/index.html"
+
+          if [ ! -f "$PROJECT_DIR/app/build.gradle" ] && \
+             [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
+            echo "ERRO: Configuracao Gradle do aplicativo ausente."
+            exit 1
+          fi
+
+          echo "Projeto verificado!"
+
+      - name: Compilar APK
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          cd "$PROJECT_DIR"
+
+          gradle --no-daemon clean :app:assembleDebug
+
+      - name: Localizar APK
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          APK=$(find "$PROJECT_DIR/app/build/outputs/apk" \
+            -type f -name '*.apk' \
+            | head -1)
+
+          if [ -z "$APK" ] || [ ! -s "$APK" ]; then
+            echo "ERRO: APK nao foi gerado."
+            exit 1
+          fi
 
           mkdir -p resultado-cao-fujao
 
           cp "$APK" \
             resultado-cao-fujao/CAO-FUJAO-500-FASES.apk
+
+          echo "APK pronto!"
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
