@@ -1,27 +1,19 @@
 
-name: CAO FUJAO - 15 SEGUNDOS E ICONE REDONDO
+name: CAO FUJAO - GERAR APK
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '**.zip'
-      - '.github/workflows/caofujao-apk.yml'
 
 permissions:
   contents: read
 
 jobs:
   build:
-    name: Compilar Cão Fujão
+    name: Compilar Cao Fujão
     runs-on: ubuntu-22.04
 
-    env:
-      ANDROID_HOME: /usr/local/lib/android/sdk
-      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-
     steps:
-      - name: Baixar repositório
+      - name: Baixar repositorio
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -30,79 +22,40 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Gradle 8.9
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
-
-      - name: Instalar Android SDK
+      - name: Preparar projeto
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" \
-            -type f -name sdkmanager | sort -V | tail -n 1)
+          mkdir -p /tmp/caofujao
+          find . -maxdepth 2 -name "*.zip" -print0 |
+          while IFS= read -r -d '' file; do
+            unzip -oq "$file" -d /tmp/caofujao
+          done
 
-          if [ -z "$SDKMANAGER" ]; then
-            echo "ERRO: sdkmanager não encontrado."
+          PROJECT=$(find . /tmp/caofujao \
+            -type f -name gradlew \
+            -not -path '*/.gradle/*' \
+            -print -quit | xargs -r dirname)
+
+          if [ -z "$PROJECT" ]; then
+            echo "ERRO: projeto Android com gradlew não encontrado."
             exit 1
           fi
 
-          yes | "$SDKMANAGER" --licenses || true
-
-          "$SDKMANAGER" --install \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
-
-      - name: Extrair projeto atualizado
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          ZIP="CAO-FUJAO-15-SEGUNDOS-ICONE-REDONDO.zip"
-
-          if [ ! -f "$ZIP" ]; then
-            echo "ERRO: $ZIP não encontrado na raiz."
-            exit 1
-          fi
-
-          mkdir -p /tmp/cao
-          unzip -q "$ZIP" -d /tmp/cao
-
-          test -f /tmp/cao/settings.gradle
-          test -f /tmp/cao/app/build.gradle
-          test -f /tmp/cao/app/src/main/assets/index.html
-          test -f /tmp/cao/app/src/main/AndroidManifest.xml
-
-          echo "Projeto encontrado!"
-
-      - name: Conferir ícone redondo
-        run: |
-          MANIFEST=/tmp/cao/app/src/main/AndroidManifest.xml
-          grep -q 'android:roundIcon="@mipmap/ic_launcher_round"' "$MANIFEST"
-
-          test -f /tmp/cao/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
-          test -f /tmp/cao/app/src/main/res/mipmap-mdpi/ic_launcher_round.png
-
-          echo "Ícone redondo encontrado!"
+          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
+          chmod +x "$PROJECT/gradlew"
 
       - name: Compilar APK
         run: |
-          cd /tmp/cao
-          gradle --no-daemon clean :app:assembleDebug
+          cd "$PROJECT"
+          ./gradlew assembleDebug --no-daemon
 
-      - name: Verificar APK
-        run: |
-          APK=/tmp/cao/app/build/outputs/apk/debug/app-debug.apk
-          test -f "$APK"
-          mkdir -p /tmp/saida
-          cp "$APK" /tmp/saida/CAO-FUJAO-15-SEGUNDOS-ICONE-REDONDO.apk
-
-      - name: Disponibilizar APK
+      - name: Salvar APK
         uses: actions/upload-artifact@v4
         with:
-          name: CAO-FUJAO-15-SEGUNDOS-APK
-          path: /tmp/saida/CAO-FUJAO-15-SEGUNDOS-ICONE-REDONDO.apk
+          name: CAO-FUJAO-ATUALIZADO
+          path: |
+            **/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           
