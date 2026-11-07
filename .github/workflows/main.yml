@@ -1,5 +1,5 @@
 
-name: CAO FUJAO 500 FASES - GERAR APK
+name: CAO FUJAO - GERAR APK 500 FASES
 
 on:
   workflow_dispatch:
@@ -9,11 +9,11 @@ permissions:
 
 jobs:
   build:
-    name: Compilar Cão Fujão
+    name: Compilar Cao Fujao
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar repositório
+      - name: Baixar repositorio
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -23,135 +23,97 @@ jobs:
           java-version: '17'
 
       - name: Configurar Android SDK
-        shell: bash
+        uses: android-actions/setup-android@v3
+
+      - name: Instalar Android 35
         run: |
-          set -Eeuo pipefail
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          yes | sdkmanager --licenses
 
-          echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=/usr/local/lib/android/sdk" >> "$GITHUB_ENV"
-
-          SDKMANAGER="/usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager"
-
-          if [ ! -f "$SDKMANAGER" ]; then
-            SDKMANAGER=$(find /usr/local/lib/android/sdk -name sdkmanager -type f | head -n 1)
-          fi
-
-          if [ -z "$SDKMANAGER" ]; then
-            echo "ERRO: sdkmanager não encontrado."
-            exit 1
-          fi
-
-          yes | "$SDKMANAGER" --licenses || true
-
-          "$SDKMANAGER" \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
-
-      - name: Configurar Gradle
+      - name: Preparar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Extrair projeto
+      - name: Extrair projeto original
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          ZIP=$(find . -maxdepth 3 -type f \
-            \( -name 'CAO-FUJAO-500-FASES-ATUALIZADO.zip' \
-            -o -name 'Cao_Fujao_ATUALIZADO_GOOGLE_PLAY.zip' \) \
-            | head -n 1)
+          ZIP="Cao_Fujao_ATUALIZADO_GOOGLE_PLAY.zip"
 
-          if [ -z "$ZIP" ]; then
-            echo "ERRO: ZIP do projeto não encontrado."
+          if [ ! -f "$ZIP" ]; then
+            echo "ERRO: Projeto original nao encontrado."
             exit 1
           fi
 
-          mkdir -p /tmp/cao-fujao
-          unzip -q "$ZIP" -d /tmp/cao-fujao
+          mkdir -p "$RUNNER_TEMP/build-cao-fujao"
+          unzip -q "$ZIP" -d "$RUNNER_TEMP/build-cao-fujao"
 
-          SETTINGS=$(find /tmp/cao-fujao -type f \
-            \( -name settings.gradle -o -name settings.gradle.kts \) \
-            | head -n 1)
+          PROJECT_DIR=$(dirname "$(find "$RUNNER_TEMP/build-cao-fujao" -name settings.gradle -o -name settings.gradle.kts | head -1)")
 
-          if [ -z "$SETTINGS" ]; then
-            echo "ERRO: settings.gradle não encontrado."
-            exit 1
-          fi
-
-          PROJECT_DIR=$(dirname "$SETTINGS")
-
-          if [ ! -f "$PROJECT_DIR/app/build.gradle" ] && \
-             [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
-            echo "ERRO: módulo app não encontrado."
+          if [ -z "$PROJECT_DIR" ] || [ ! -f "$PROJECT_DIR/app/build.gradle" ]; then
+            echo "ERRO: Projeto Android nao encontrado."
             exit 1
           fi
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-          echo "Projeto localizado: $PROJECT_DIR"
-
-      - name: Corrigir compatibilidade Google Play Billing
+      - name: Aplicar atualizacao 500 fases
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          JAVA_FILE="$PROJECT_DIR/app/src/main/java/com/caofujao/game/MainActivity.java"
+          PATCH="CAO-FUJAO-ATUALIZACAO-500-FASES-PATCH.zip"
 
-          if [ ! -f "$JAVA_FILE" ]; then
-            echo "ERRO: MainActivity.java não encontrado."
+          if [ ! -f "$PATCH" ]; then
+            echo "ERRO: ZIP de atualizacao nao encontrado."
             exit 1
           fi
 
-          sed -i \
-            's/queryResult\.getProductDetailsList()/queryResult/g' \
-            "$JAVA_FILE"
+          mkdir -p "$RUNNER_TEMP/cao-patch"
+          unzip -q "$PATCH" -d "$RUNNER_TEMP/cao-patch"
 
-          if grep -q 'queryResult\.getProductDetailsList()' "$JAVA_FILE"; then
-            echo "ERRO: correção do Billing não foi aplicada."
-            exit 1
-          fi
+          mkdir -p "$PROJECT_DIR/app/src/main/assets"
 
-          echo "Compatibilidade Billing corrigida."
-          grep -n "queryResult" "$JAVA_FILE"
+          cp "$RUNNER_TEMP/cao-patch/assets/index.html" \
+             "$PROJECT_DIR/app/src/main/assets/index.html"
+
+          cp "$RUNNER_TEMP/cao-patch/assets/intro.png" \
+             "$PROJECT_DIR/app/src/main/assets/intro.png"
+
+          test -s "$PROJECT_DIR/app/src/main/assets/index.html"
+          echo "Atualizacao aplicada!"
+
+      - name: Verificar projeto
+        run: |
+          test -f "$PROJECT_DIR/app/build.gradle"
+          test -f "$PROJECT_DIR/app/src/main/assets/index.html"
+          test -f "$PROJECT_DIR/app/src/main/AndroidManifest.xml"
 
       - name: Compilar APK
-        shell: bash
+        run: |
+          gradle --no-daemon \
+            -p "$PROJECT_DIR" \
+            clean :app:assembleDebug
+
+      - name: Preparar APK final
         run: |
           set -Eeuo pipefail
 
-          cd "$PROJECT_DIR"
+          APK="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
 
-          if [ -f gradlew ]; then
-            chmod +x gradlew
-            ./gradlew --no-daemon clean :app:assembleDebug
-          else
-            gradle --no-daemon clean :app:assembleDebug
-          fi
+          test -s "$APK"
 
-      - name: Localizar APK
-        shell: bash
-        run: |
-          set -Eeuo pipefail
+          mkdir -p resultado-cao-fujao
 
-          APK=$(find "$PROJECT_DIR" -type f \
-            -path '*/build/outputs/apk/debug/*.apk' \
-            | head -n 1)
+          cp "$APK" \
+            resultado-cao-fujao/CAO-FUJAO-500-FASES.apk
 
-          if [ -z "$APK" ]; then
-            echo "ERRO: APK não foi gerado."
-            exit 1
-          fi
-
-          mkdir -p saida
-          cp "$APK" saida/CAO-FUJAO-500-FASES.apk
-
-          ls -lh saida/
-
-      - name: Disponibilizar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: CAO-FUJAO-500-FASES-APK
-          path: saida/CAO-FUJAO-500-FASES.apk
+          name: CAO-FUJAO-500-FASES
+          path: resultado-cao-fujao/CAO-FUJAO-500-FASES.apk
           if-no-files-found: error
+          
