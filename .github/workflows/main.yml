@@ -22,40 +22,42 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Preparar projeto
-        shell: bash
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Extrair projeto Android
         run: |
           set -Eeuo pipefail
+          mkdir -p /tmp/cao-fujao
+          ZIP=$(find . -maxdepth 2 -name 'CAO-FUJAO-NOVO-PROJETO-ANDROID.zip' -print -quit)
 
-          mkdir -p /tmp/caofujao
-          find . -maxdepth 2 -name "*.zip" -print0 |
-          while IFS= read -r -d '' file; do
-            unzip -oq "$file" -d /tmp/caofujao
-          done
-
-          PROJECT=$(find . /tmp/caofujao \
-            -type f -name gradlew \
-            -not -path '*/.gradle/*' \
-            -print -quit | xargs -r dirname)
-
-          if [ -z "$PROJECT" ]; then
-            echo "ERRO: projeto Android com gradlew não encontrado."
+          if [ -z "$ZIP" ]; then
+            echo "ERRO: ZIP do projeto não encontrado."
             exit 1
           fi
 
-          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
-          chmod +x "$PROJECT/gradlew"
+          unzip -oq "$ZIP" -d /tmp/cao-fujao
+
+          PROJECT=$(find /tmp/cao-fujao -name settings.gradle -print -quit)
+
+          if [ -z "$PROJECT" ]; then
+            echo "ERRO: projeto Android não encontrado."
+            exit 1
+          fi
+
+          echo "PROJECT=$(dirname "$PROJECT")" >> "$GITHUB_ENV"
 
       - name: Compilar APK
         run: |
           cd "$PROJECT"
-          ./gradlew assembleDebug --no-daemon
+          gradle --no-daemon assembleDebug
 
       - name: Salvar APK
         uses: actions/upload-artifact@v4
         with:
-          name: CAO-FUJAO-ATUALIZADO
-          path: |
-            **/build/outputs/apk/debug/*.apk
+          name: CAO-FUJAO-12-SEGUNDOS
+          path: /tmp/cao-fujao/**/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           
