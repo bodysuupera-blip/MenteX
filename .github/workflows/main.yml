@@ -1,18 +1,17 @@
 
-name: CAO FUJAO - GERAR APK
+name: CAO FUJAO 1.3 - GERAR APK
 
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
+    branches: [ main ]
 
 permissions:
   contents: read
 
 jobs:
   build:
-    name: Compilar Cão Fujão
+    name: Compilar Cão Fujão 1.3
     runs-on: ubuntu-22.04
 
     steps:
@@ -25,10 +24,58 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Gradle
+      - name: Configurar Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+
+      - name: Extrair ZIP atualizado
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          ZIP="CAO-FUJAO-ATUALIZADO-VIDAS-MOEDAS-PONTOS-RANKING.zip"
+
+          mkdir -p /tmp/cao-fujao
+
+          if [ -f "$ZIP" ]; then
+            unzip -q "$ZIP" -d /tmp/cao-fujao
+          else
+            echo "ERRO: ZIP atualizado não encontrado: $ZIP"
+            echo "Arquivos ZIP disponíveis:"
+            find . -type f -iname "*.zip"
+            exit 1
+          fi
+
+      - name: Localizar projeto Android
+        id: projeto
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          PROJECT_DIR="$(find /tmp/cao-fujao \
+            -type f -name settings.gradle \
+            -not -path '*/.gradle/*' \
+            -printf '%h\n' | head -n 1)"
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERRO: settings.gradle não encontrado."
+            find /tmp/cao-fujao -maxdepth 5 -type f
+            exit 1
+          fi
+
+          if [ ! -f "$PROJECT_DIR/app/build.gradle" ]; then
+            echo "ERRO: app/build.gradle não encontrado."
+            exit 1
+          fi
+
+          if [ ! -f "$PROJECT_DIR/build.gradle" ]; then
+            echo "ERRO: build.gradle principal não encontrado."
+            exit 1
+          fi
+
+          echo "dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+          echo "Projeto encontrado: $PROJECT_DIR"
 
       - name: Preparar Android SDK
         shell: bash
@@ -40,62 +87,19 @@ jobs:
           echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
 
-          SDKMANAGER="$(find "$SDK_ROOT" -type f -name sdkmanager | head -n 1)"
+          SDKMANAGER="$(find "$SDK_ROOT" -name sdkmanager -type f 2>/dev/null | head -n 1)"
 
-          yes | "$SDKMANAGER" --licenses || true
+          if [ -z "$SDKMANAGER" ]; then
+            echo "ERRO: sdkmanager não encontrado."
+            exit 1
+          fi
+
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
 
           "$SDKMANAGER" \
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
-
-      - name: Extrair projeto atualizado
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          ZIP="CAO-FUJAO-ATUALIZADO-ICONE-REDONDO-10-VIDAS-0-MOEDAS.zip"
-
-          if [ ! -f "$ZIP" ]; then
-            echo "ERRO: ZIP atualizado não encontrado."
-            exit 1
-          fi
-
-          mkdir -p "$RUNNER_TEMP/cao-fujao"
-
-          unzip -q "$ZIP" -d "$RUNNER_TEMP/cao-fujao"
-
-          echo "Arquivos extraídos:"
-          find "$RUNNER_TEMP/cao-fujao" -maxdepth 4 -type f | head -n 100
-
-      - name: Encontrar projeto Android
-        id: project
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          BASE="$RUNNER_TEMP/cao-fujao"
-
-          SETTINGS="$(find "$BASE" -type f \( \
-            -name settings.gradle \
-            -o -name settings.gradle.kts \
-          \) | head -n 1)"
-
-          if [ -z "$SETTINGS" ]; then
-            echo "ERRO: settings.gradle não encontrado."
-            exit 1
-          fi
-
-          PROJECT_DIR="$(dirname "$SETTINGS")"
-
-          if [ ! -f "$PROJECT_DIR/app/build.gradle" ] && \
-             [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
-            echo "ERRO: configuração do módulo app não encontrada."
-            exit 1
-          fi
-
-          echo "dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
-          echo "Projeto encontrado: $PROJECT_DIR"
 
       - name: Compilar APK
         shell: bash
@@ -103,13 +107,15 @@ jobs:
           set -Eeuo pipefail
 
           gradle --no-daemon --stacktrace \
-            -p "${{ steps.project.outputs.dir }}" \
+            -p "${{ steps.projeto.outputs.dir }}" \
             clean :app:assembleDebug
 
       - name: Verificar APK
         shell: bash
         run: |
-          APK="${{ steps.project.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk"
+          set -Eeuo pipefail
+
+          APK="${{ steps.projeto.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk"
 
           if [ ! -f "$APK" ]; then
             echo "ERRO: APK não foi gerado."
@@ -118,10 +124,11 @@ jobs:
 
           ls -lh "$APK"
 
-      - name: Disponibilizar APK
+      - name: Disponibilizar APK para baixar
         uses: actions/upload-artifact@v4
         with:
-          name: CAO-FUJAO-APK-ATUALIZADO
-          path: ${{ steps.project.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk
+          name: CAO-FUJAO-1.3-APK
+          path: ${{ steps.projeto.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          retention-days: 30
           
