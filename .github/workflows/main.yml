@@ -27,7 +27,7 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Extrair projeto atualizado
+      - name: Extrair projeto
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -35,11 +35,11 @@ jobs:
           mkdir -p /tmp/cao-fujao
 
           ZIP=$(find . -maxdepth 2 \
-            -name 'CAO-FUJAO-ICONE-CARA-DO-JOGO.zip' \
+            -name 'CAO-FUJAO-PACOTES-MOEDAS-PRECOS.zip' \
             -print -quit)
 
           if [ -z "$ZIP" ]; then
-            echo "ERRO: ZIP atualizado nao encontrado."
+            echo "ERRO: ZIP dos pacotes nao encontrado."
             exit 1
           fi
 
@@ -65,12 +65,13 @@ jobs:
       - name: Localizar APK
         run: |
           set -Eeuo pipefail
+
           APK=$(find "$PROJECT" -type f \
             -path '*/build/outputs/apk/debug/*.apk' \
             -print -quit)
 
           if [ -z "$APK" ]; then
-            echo "ERRO: APK nao foi gerado."
+            echo "ERRO: APK nao encontrado."
             exit 1
           fi
 
@@ -80,7 +81,7 @@ jobs:
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: CAO-FUJAO-ATUALIZADO
+          name: CAO-FUJAO-PACOTES-MOEDAS
           path: resultado/CAO-FUJAO.apk
           if-no-files-found: error
           
