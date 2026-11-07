@@ -27,37 +27,60 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Extrair projeto Android
+      - name: Extrair projeto atualizado
+        shell: bash
         run: |
           set -Eeuo pipefail
+
           mkdir -p /tmp/cao-fujao
-          ZIP=$(find . -maxdepth 2 -name 'CAO-FUJAO-NOVO-PROJETO-ANDROID.zip' -print -quit)
+
+          ZIP=$(find . -maxdepth 2 \
+            -name 'CAO-FUJAO-ICONE-CARA-DO-JOGO.zip' \
+            -print -quit)
 
           if [ -z "$ZIP" ]; then
-            echo "ERRO: ZIP do projeto não encontrado."
+            echo "ERRO: ZIP atualizado nao encontrado."
             exit 1
           fi
 
           unzip -oq "$ZIP" -d /tmp/cao-fujao
 
-          PROJECT=$(find /tmp/cao-fujao -name settings.gradle -print -quit)
+          SETTINGS=$(find /tmp/cao-fujao \
+            -type f \( -name settings.gradle -o -name settings.gradle.kts \) \
+            -print -quit)
 
-          if [ -z "$PROJECT" ]; then
-            echo "ERRO: projeto Android não encontrado."
+          if [ -z "$SETTINGS" ]; then
+            echo "ERRO: projeto Android nao encontrado."
             exit 1
           fi
 
-          echo "PROJECT=$(dirname "$PROJECT")" >> "$GITHUB_ENV"
+          PROJECT=$(dirname "$SETTINGS")
+          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
 
       - name: Compilar APK
         run: |
           cd "$PROJECT"
           gradle --no-daemon assembleDebug
 
-      - name: Salvar APK
+      - name: Localizar APK
+        run: |
+          set -Eeuo pipefail
+          APK=$(find "$PROJECT" -type f \
+            -path '*/build/outputs/apk/debug/*.apk' \
+            -print -quit)
+
+          if [ -z "$APK" ]; then
+            echo "ERRO: APK nao foi gerado."
+            exit 1
+          fi
+
+          mkdir -p resultado
+          cp "$APK" resultado/CAO-FUJAO.apk
+
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: CAO-FUJAO-12-SEGUNDOS
-          path: /tmp/cao-fujao/**/app/build/outputs/apk/debug/*.apk
+          name: CAO-FUJAO-ATUALIZADO
+          path: resultado/CAO-FUJAO.apk
           if-no-files-found: error
           
