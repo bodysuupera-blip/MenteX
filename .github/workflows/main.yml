@@ -1,5 +1,5 @@
 
-name: CAO FUJAO - GERAR APK ATUALIZADO
+name: CAO FUJAO 1.2 - GERAR APK
 
 on:
   workflow_dispatch:
@@ -12,14 +12,14 @@ permissions:
 
 jobs:
   build:
-    name: Compilar Cão Fujão
+    name: Compilar Cão Fujão 1.2
     runs-on: ubuntu-22.04
 
     steps:
       - name: Baixar repositório
         uses: actions/checkout@v4
 
-      - name: Configurar Java 17
+      - name: Configurar Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -32,10 +32,12 @@ jobs:
 
           export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
           export ANDROID_SDK_ROOT="$ANDROID_HOME"
+
           echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
 
-          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager 2>/dev/null | sort -V | tail -n 1)"
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" \
+            -type f -name sdkmanager | sort -V | tail -n 1)"
 
           if [ -z "$SDKMANAGER" ]; then
             echo "ERRO: sdkmanager não encontrado."
@@ -49,73 +51,56 @@ jobs:
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-      - name: Preparar Gradle
-        shell: bash
+      - name: Instalar Gradle
         run: |
-          set -Eeuo pipefail
-          GRADLE_VERSION=8.9
-
-          curl -L \
-            "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" \
-            -o /tmp/gradle.zip
-
+          curl -L https://services.gradle.org/distributions/gradle-8.9-bin.zip -o /tmp/gradle.zip
           unzip -q /tmp/gradle.zip -d /tmp
-          echo "/tmp/gradle-${GRADLE_VERSION}/bin" >> "$GITHUB_PATH"
+          echo "/tmp/gradle-8.9/bin" >> "$GITHUB_PATH"
 
-      - name: Localizar e extrair projeto
+      - name: Extrair projeto atualizado
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          ZIP="$(find . -type f -name 'Cao_Fujao_Android_500_Fases.zip' | head -n 1)"
+          ZIP="./CAO-FUJAO-ATUALIZADO-1.2.zip"
 
-          if [ -z "$ZIP" ]; then
-            echo "ERRO: Cao_Fujao_Android_500_Fases.zip não encontrado."
+          if [ ! -f "$ZIP" ]; then
+            echo "ERRO: coloque CAO-FUJAO-ATUALIZADO-1.2.zip na raiz do repositório."
             exit 1
           fi
 
           mkdir -p /tmp/cao-fujao
           unzip -q "$ZIP" -d /tmp/cao-fujao
 
-          PROJECT_DIR="$(dirname "$(find /tmp/cao-fujao -name settings.gradle -o -name settings.gradle.kts | head -n 1)")"
+          echo "PROJECT_DIR=/tmp/cao-fujao" >> "$GITHUB_ENV"
 
-          if [ -z "$PROJECT_DIR" ] || [ ! -f "$PROJECT_DIR/app/build.gradle" ]; then
-            echo "ERRO: projeto Android não encontrado ou incompleto."
-            find /tmp/cao-fujao -maxdepth 4 -type f | head -n 100
-            exit 1
-          fi
-
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Projeto encontrado: $PROJECT_DIR"
+          test -f /tmp/cao-fujao/settings.gradle
+          test -f /tmp/cao-fujao/app/build.gradle
+          test -f /tmp/cao-fujao/app/src/main/assets/index.html
 
       - name: Compilar APK
-        shell: bash
         run: |
-          set -Eeuo pipefail
-
           gradle --no-daemon --stacktrace \
             -p "$PROJECT_DIR" \
             clean :app:assembleDebug
 
-      - name: Verificar APK
-        shell: bash
+      - name: Preparar APK
         run: |
           set -Eeuo pipefail
 
-          APK="$(find "$PROJECT_DIR" -type f -path '*/build/outputs/apk/debug/*.apk' | head -n 1)"
+          APK="$(find "$PROJECT_DIR" \
+            -path '*/build/outputs/apk/debug/*.apk' \
+            -type f | head -n 1)"
 
-          if [ -z "$APK" ]; then
-            echo "ERRO: APK não foi gerado."
-            exit 1
-          fi
+          test -n "$APK"
 
           mkdir -p entrega
-          cp "$APK" entrega/CAO-FUJAO-ATUALIZADO.apk
+          cp "$APK" entrega/CAO-FUJAO-1.2.apk
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: CAO-FUJAO-APK-ATUALIZADO
-          path: entrega/CAO-FUJAO-ATUALIZADO.apk
+          name: CAO-FUJAO-1.2-APK
+          path: entrega/CAO-FUJAO-1.2.apk
           if-no-files-found: error
           
