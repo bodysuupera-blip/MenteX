@@ -1,5 +1,5 @@
 
-name: CAO FUJAO 1.4 - GERAR APK
+name: CAO FUJAO - GERAR APK
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   build:
-    name: Compilar Cão Fujão 1.4
+    name: Compilar Cão Fujão
     runs-on: ubuntu-22.04
 
     steps:
@@ -49,15 +49,15 @@ jobs:
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-      - name: Extrair projeto Cão Fujão 1.4
+      - name: Extrair projeto atualizado
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          ZIP="CAO-FUJAO-1.4-MAIS-MOVIMENTO-RANKING.zip"
+          ZIP="CAO-FUJAO-ATUALIZADO-ICONE-REDONDO-10-VIDAS-0-MOEDAS.zip"
 
           if [ ! -f "$ZIP" ]; then
-            echo "ERRO: arquivo $ZIP não encontrado."
+            echo "ERRO: ZIP atualizado não encontrado."
             exit 1
           fi
 
@@ -65,10 +65,10 @@ jobs:
 
           unzip -q "$ZIP" -d "$RUNNER_TEMP/cao-fujao"
 
-          echo "Conteúdo extraído:"
-          find "$RUNNER_TEMP/cao-fujao" -maxdepth 3 -type f | head -n 80
+          echo "Arquivos extraídos:"
+          find "$RUNNER_TEMP/cao-fujao" -maxdepth 4 -type f | head -n 100
 
-      - name: Localizar projeto Android
+      - name: Encontrar projeto Android
         id: project
         shell: bash
         run: |
@@ -77,12 +77,12 @@ jobs:
           BASE="$RUNNER_TEMP/cao-fujao"
 
           SETTINGS="$(find "$BASE" -type f \( \
-            -name settings.gradle -o \
-            -name settings.gradle.kts \
-            \) | head -n 1)"
+            -name settings.gradle \
+            -o -name settings.gradle.kts \
+          \) | head -n 1)"
 
           if [ -z "$SETTINGS" ]; then
-            echo "ERRO: settings.gradle não encontrado após extrair o ZIP."
+            echo "ERRO: settings.gradle não encontrado."
             exit 1
           fi
 
@@ -90,14 +90,12 @@ jobs:
 
           if [ ! -f "$PROJECT_DIR/app/build.gradle" ] && \
              [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
-            echo "ERRO: pasta app não encontrada."
+            echo "ERRO: configuração do módulo app não encontrada."
             exit 1
           fi
 
           echo "dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
-
-          echo "Projeto Android encontrado:"
-          echo "$PROJECT_DIR"
+          echo "Projeto encontrado: $PROJECT_DIR"
 
       - name: Compilar APK
         shell: bash
@@ -120,10 +118,10 @@ jobs:
 
           ls -lh "$APK"
 
-      - name: Disponibilizar APK para baixar
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: CAO-FUJAO-1.4-APK
+          name: CAO-FUJAO-APK-ATUALIZADO
           path: ${{ steps.project.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           
