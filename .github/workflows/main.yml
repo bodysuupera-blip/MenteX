@@ -156,4 +156,3 @@ jobs:
           name: CAO-FUJAO-500-FASES
           path: resultado/CAO-FUJAO-500-FASES.apk
           if-no-files-found: error
-          
