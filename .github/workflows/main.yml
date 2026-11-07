@@ -22,21 +22,49 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Android SDK
+      - name: Preparar Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: |
-            platform-tools
-            platforms;android-35
-            build-tools;35.0.0
-          accept-android-sdk-licenses: true
+          accept-android-sdk-licenses: false
+
+      - name: Aceitar licencas e instalar SDK
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+
+          if [ ! -f "$SDKMANAGER" ]; then
+            SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" \
+              -name sdkmanager -type f | head -1)
+          fi
+
+          if [ -z "$SDKMANAGER" ] || [ ! -f "$SDKMANAGER" ]; then
+            echo "ERRO: sdkmanager nao encontrado."
+            exit 1
+          fi
+
+          echo "Aceitando todas as licencas..."
+
+          set +o pipefail
+          yes | "$SDKMANAGER" --licenses
+          set -o pipefail
+
+          echo "Instalando pacotes Android..."
+
+          "$SDKMANAGER" \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
+
+          echo "SDK instalado!"
 
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Extrair projeto atualizado
+      - name: Extrair projeto
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -49,31 +77,69 @@ jobs:
           fi
 
           mkdir -p projeto-cao-fujao
+
           unzip -q "$ZIP" -d projeto-cao-fujao
 
-          test -f projeto-cao-fujao/settings.gradle
-          test -f projeto-cao-fujao/app/build.gradle
-          test -f projeto-cao-fujao/app/src/main/assets/index.html
+          PROJECT_DIR=""
 
-          echo "Projeto encontrado e verificado!"
+          while IFS= read -r SETTINGS; do
+            DIR=$(dirname "$SETTINGS")
 
-      - name: Compilar APK
+            if [ -f "$DIR/app/build.gradle" ] || \
+               [ -f "$DIR/app/build.gradle.kts" ]; then
+              PROJECT_DIR="$DIR"
+              break
+            fi
+          done < <(
+            find projeto-cao-fujao -type f \
+              \( -name settings.gradle -o -name settings.gradle.kts \)
+          )
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERRO: Estrutura Android nao encontrada."
+            find projeto-cao-fujao -maxdepth 4 -type f
+            exit 1
+          fi
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+          echo "Projeto localizado: $PROJECT_DIR"
+
+      - name: Verificar arquivos do jogo
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          if [ ! -s "$PROJECT_DIR/app/src/main/assets/index.html" ]; then
+            echo "ERRO: index.html nao encontrado."
+            exit 1
+          fi
+
+          if [ ! -f "$PROJECT_DIR/app/src/main/AndroidManifest.xml" ]; then
+            echo "ERRO: AndroidManifest.xml nao encontrado."
+            exit 1
+          fi
+
+          echo "Arquivos verificados!"
+
+      - name: Compilar aplicativo
         shell: bash
         run: |
           set -Eeuo pipefail
 
           gradle --no-daemon \
-            -p projeto-cao-fujao \
+            -p "$PROJECT_DIR" \
             clean :app:assembleDebug
 
-      - name: Preparar APK
+      - name: Preparar APK final
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          APK="projeto-cao-fujao/app/build/outputs/apk/debug/app-debug.apk"
+          APK=$(find "$PROJECT_DIR/app/build/outputs/apk" \
+            -type f -name '*.apk' | head -1)
 
-          if [ ! -s "$APK" ]; then
+          if [ -z "$APK" ] || [ ! -s "$APK" ]; then
             echo "ERRO: APK nao foi gerado."
             exit 1
           fi
@@ -81,6 +147,8 @@ jobs:
           mkdir -p resultado
 
           cp "$APK" resultado/CAO-FUJAO-500-FASES.apk
+
+          echo "APK preparado com sucesso!"
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
