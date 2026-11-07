@@ -1,106 +1,99 @@
 
-name: CAO FUJAO 1.2 - GERAR APK
+name: CAO FUJAO 1.3 - GERAR APK
 
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
+    branches: [ main ]
 
 permissions:
   contents: read
 
 jobs:
   build:
-    name: Compilar Cão Fujão 1.2
+    name: Compilar Cão Fujão 1.3
     runs-on: ubuntu-22.04
 
     steps:
       - name: Baixar repositório
         uses: actions/checkout@v4
 
-      - name: Configurar Java
+      - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Android SDK
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Preparar Android SDK
         shell: bash
         run: |
           set -Eeuo pipefail
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
 
-          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
-          export ANDROID_SDK_ROOT="$ANDROID_HOME"
-
-          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
-
-          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" \
-            -type f -name sdkmanager | sort -V | tail -n 1)"
+          SDKMANAGER="$(find "$SDK_ROOT" -name sdkmanager -type f 2>/dev/null | head -n 1 || true)"
 
           if [ -z "$SDKMANAGER" ]; then
             echo "ERRO: sdkmanager não encontrado."
             exit 1
           fi
 
-          yes | "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --licenses || true
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
 
-          "$SDKMANAGER" --sdk_root="$ANDROID_HOME" \
+          "$SDKMANAGER" \
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-      - name: Instalar Gradle
-        run: |
-          curl -L https://services.gradle.org/distributions/gradle-8.9-bin.zip -o /tmp/gradle.zip
-          unzip -q /tmp/gradle.zip -d /tmp
-          echo "/tmp/gradle-8.9/bin" >> "$GITHUB_PATH"
-
-      - name: Extrair projeto atualizado
+      - name: Localizar projeto Android
+        id: project
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          ZIP="./CAO-FUJAO-ATUALIZADO-1.2.zip"
+          PROJECT_DIR=""
 
-          if [ ! -f "$ZIP" ]; then
-            echo "ERRO: coloque CAO-FUJAO-ATUALIZADO-1.2.zip na raiz do repositório."
+          if [ -f "$GITHUB_WORKSPACE/settings.gradle" ] && [ -f "$GITHUB_WORKSPACE/app/build.gradle" ]; then
+            PROJECT_DIR="$GITHUB_WORKSPACE"
+          else
+            SOURCE_ZIP="$(find "$GITHUB_WORKSPACE" -maxdepth 3 -type f -name 'CAO-FUJAO-ATUALIZADO-1.3.zip' -print -quit)"
+
+            if [ -n "$SOURCE_ZIP" ]; then
+              mkdir -p "$RUNNER_TEMP/cao-fujao-source"
+              unzip -q "$SOURCE_ZIP" -d "$RUNNER_TEMP/cao-fujao-source"
+
+              SETTINGS_FILE="$(find "$RUNNER_TEMP/cao-fujao-source" -type f -name settings.gradle -print -quit)"
+
+              if [ -n "$SETTINGS_FILE" ]; then
+                PROJECT_DIR="$(dirname "$SETTINGS_FILE")"
+              fi
+            fi
+          fi
+
+          if [ -z "$PROJECT_DIR" ] || [ ! -f "$PROJECT_DIR/app/build.gradle" ]; then
+            echo "ERRO: projeto Android não encontrado."
+            find "$GITHUB_WORKSPACE" -maxdepth 5 -type f | sort | head -n 200
             exit 1
           fi
 
-          mkdir -p /tmp/cao-fujao
-          unzip -q "$ZIP" -d /tmp/cao-fujao
-
-          echo "PROJECT_DIR=/tmp/cao-fujao" >> "$GITHUB_ENV"
-
-          test -f /tmp/cao-fujao/settings.gradle
-          test -f /tmp/cao-fujao/app/build.gradle
-          test -f /tmp/cao-fujao/app/src/main/assets/index.html
+          echo "dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+          echo "Projeto encontrado: $PROJECT_DIR"
 
       - name: Compilar APK
         run: |
           gradle --no-daemon --stacktrace \
-            -p "$PROJECT_DIR" \
+            -p "${{ steps.project.outputs.dir }}" \
             clean :app:assembleDebug
 
-      - name: Preparar APK
-        run: |
-          set -Eeuo pipefail
-
-          APK="$(find "$PROJECT_DIR" \
-            -path '*/build/outputs/apk/debug/*.apk' \
-            -type f | head -n 1)"
-
-          test -n "$APK"
-
-          mkdir -p entrega
-          cp "$APK" entrega/CAO-FUJAO-1.2.apk
-
-      - name: Disponibilizar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: CAO-FUJAO-1.2-APK
-          path: entrega/CAO-FUJAO-1.2.apk
+          name: CAO-FUJAO-1.3-APK
+          path: ${{ steps.project.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          
