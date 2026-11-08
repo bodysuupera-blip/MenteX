@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar repositório
+      - name: Baixar repositorio
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -29,26 +29,26 @@ jobs:
 
       - name: Configurar Android SDK
         uses: android-actions/setup-android@v3
-        with:
-          packages: |
-            platform-tools
-            platforms;android-35
-            build-tools;35.0.0
+
+      - name: Instalar pacotes Android
+        shell: bash
+        run: |
+          set -e
+          yes | sdkmanager --licenses || true
+          sdkmanager "platform-tools"
+          sdkmanager "platforms;android-35"
+          sdkmanager "build-tools;35.0.0"
 
       - name: Verificar projeto
         shell: bash
         run: |
-          set -Eeuo pipefail
-
-          yes | sdkmanager --licenses >/dev/null || true
-
+          set -e
           test -f settings.gradle
           test -f app/build.gradle
           test -f app/src/main/AndroidManifest.xml
           test -f app/src/main/assets/index.html
           test -f app/src/main/assets/intro.png
-
-          echo "Projeto independente encontrado!"
+          echo "Projeto Android encontrado!"
 
       - name: Compilar APK
         run: |
@@ -57,8 +57,7 @@ jobs:
       - name: Verificar APK
         shell: bash
         run: |
-          set -Eeuo pipefail
-
+          set -e
           APK="app/build/outputs/apk/debug/app-debug.apk"
 
           if [ ! -s "$APK" ]; then
@@ -67,13 +66,12 @@ jobs:
           fi
 
           mkdir -p resultado
-
           cp "$APK" resultado/CAO-FUJAO-INDEPENDENTE.apk
 
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify \
             --verbose resultado/CAO-FUJAO-INDEPENDENTE.apk
 
-      - name: Disponibilizar aplicativo
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
           name: CAO-FUJAO-INDEPENDENTE
