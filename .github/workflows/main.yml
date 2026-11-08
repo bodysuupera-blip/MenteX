@@ -16,19 +16,21 @@ jobs:
       - name: Baixar repositório
         uses: actions/checkout@v4
 
-      - name: Configurar Java
+      - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Preparar Android SDK
+      - name: Configurar Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: ''
 
-      - name: Instalar ferramentas
+      - name: Instalar ferramentas Android
         run: |
-          sdkmanager --install "build-tools;35.0.0"
-          yes | sdkmanager --licenses >/dev/null || true
+          yes | sdkmanager --licenses
+          sdkmanager "platform-tools" "build-tools;35.0.0"
 
       - name: Verificar arquivos
         run: |
@@ -43,7 +45,6 @@ jobs:
           }
 
       - name: Atualizar jogo
-        shell: bash
         run: |
           set -e
 
@@ -80,7 +81,7 @@ jobs:
           set -e
 
           if [ -z "$KEYSTORE_BASE64" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ] || [ -z "$STORE_PASSWORD" ]; then
-            echo "ERRO: configure a chave original de assinatura nos Secrets do GitHub."
+            echo "ERRO: chave original de assinatura não configurada."
             exit 1
           fi
 
