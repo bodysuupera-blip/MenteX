@@ -1,5 +1,5 @@
 
-name: CAO FUJAO - ATUALIZACAO FINAL
+name: CAO FUJAO - GERAR APK INDEPENDENTE
 
 on:
   workflow_dispatch:
@@ -9,11 +9,11 @@ permissions:
 
 jobs:
   build:
-    name: Gerar APK Cão Fujão
+    name: Compilar Cão Fujão
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar repositorio
+      - name: Baixar repositório
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -22,170 +22,61 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
       - name: Configurar Android SDK
         uses: android-actions/setup-android@v3
         with:
-          accept-android-sdk-licenses: true
-          packages: platform-tools build-tools;35.0.0
+          packages: |
+            platform-tools
+            platforms;android-35
+            build-tools;35.0.0
 
-      - name: Verificar ferramentas
+      - name: Verificar projeto
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          BUILD_TOOLS="$ANDROID_HOME/build-tools/35.0.0"
+          yes | sdkmanager --licenses >/dev/null || true
 
-          test -x "$BUILD_TOOLS/zipalign"
-          test -x "$BUILD_TOOLS/apksigner"
+          test -f settings.gradle
+          test -f app/build.gradle
+          test -f app/src/main/AndroidManifest.xml
+          test -f app/src/main/assets/index.html
+          test -f app/src/main/assets/intro.png
 
-          echo "ANDROID_BUILD_TOOLS=$BUILD_TOOLS" >> "$GITHUB_ENV"
+          echo "Projeto independente encontrado!"
 
-          echo "Ferramentas Android prontas!"
+      - name: Compilar APK
+        run: |
+          gradle --no-daemon --stacktrace clean assembleDebug
 
-      - name: Localizar e extrair ZIP
+      - name: Verificar APK
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          ZIP=$(find . -type f \
-            -name 'CAO-FUJAO-ATUALIZACAO-ITENS-CORRIGIDO.zip' \
-            -print -quit)
+          APK="app/build/outputs/apk/debug/app-debug.apk"
 
-          if [ -z "$ZIP" ]; then
-            echo "ERRO: coloque o ZIP corrigido na raiz do repositorio."
+          if [ ! -s "$APK" ]; then
+            echo "ERRO: APK não foi gerado."
             exit 1
           fi
 
-          mkdir -p "$RUNNER_TEMP/cao-fujao"
+          mkdir -p resultado
 
-          unzip -oq "$ZIP" -d "$RUNNER_TEMP/cao-fujao"
+          cp "$APK" resultado/CAO-FUJAO-INDEPENDENTE.apk
 
-          APK=$(find "$RUNNER_TEMP/cao-fujao" \
-            -type f -name 'CAO-FUJAO.apk' -print -quit)
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify \
+            --verbose resultado/CAO-FUJAO-INDEPENDENTE.apk
 
-          HTML=$(find "$RUNNER_TEMP/cao-fujao" \
-            -type f -path '*/assets/index.html' -print -quit)
-
-          if [ -z "$APK" ]; then
-            echo "ERRO: APK original nao encontrado dentro do ZIP."
-            exit 1
-          fi
-
-          if [ -z "$HTML" ]; then
-            echo "ERRO: assets/index.html nao encontrado dentro do ZIP."
-            exit 1
-          fi
-
-          echo "APK_ORIGINAL=$APK" >> "$GITHUB_ENV"
-          echo "HTML_ATUALIZADO=$HTML" >> "$GITHUB_ENV"
-
-          echo "Arquivos encontrados corretamente!"
-
-      - name: Atualizar funcionalidades dos itens
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          mkdir -p trabalho resultado
-
-          unzip -oq "$APK_ORIGINAL" -d trabalho
-
-          mkdir -p trabalho/assets
-
-          cp "$HTML_ATUALIZADO" trabalho/assets/index.html
-
-          # Remover assinaturas antigas
-          rm -f trabalho/META-INF/*.SF
-          rm -f trabalho/META-INF/*.RSA
-          rm -f trabalho/META-INF/*.DSA
-          rm -f trabalho/META-INF/*.EC
-          rm -f trabalho/META-INF/MANIFEST.MF
-
-          (
-            cd trabalho
-            zip -qr ../resultado/CAO-FUJAO-SEM-ASSINATURA.apk .
-          )
-
-          echo "Atualizacao aplicada!"
-
-      - name: Alinhar APK
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          "$ANDROID_BUILD_TOOLS/zipalign" \
-            -f 4 \
-            resultado/CAO-FUJAO-SEM-ASSINATURA.apk \
-            resultado/CAO-FUJAO-ALINHADO.apk
-
-          echo "APK alinhado!"
-
-      - name: Preparar assinatura
-        shell: bash
-        env:
-          KEYSTORE_BASE64: ${{ secrets.MENTEX_KEYSTORE_BASE64 }}
-          KEY_ALIAS: ${{ secrets.MENTEX_KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.MENTEX_KEY_PASSWORD }}
-          STORE_PASSWORD: ${{ secrets.MENTEX_STORE_PASSWORD }}
-        run: |
-          set -Eeuo pipefail
-
-          if [ -n "${KEYSTORE_BASE64:-}" ] &&
-             [ -n "${KEY_ALIAS:-}" ] &&
-             [ -n "${KEY_PASSWORD:-}" ] &&
-             [ -n "${STORE_PASSWORD:-}" ]; then
-
-            printf '%s' "$KEYSTORE_BASE64" | base64 --decode > assinatura.jks
-
-            echo "KEYSTORE=assinatura.jks" >> "$GITHUB_ENV"
-            echo "KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
-            echo "KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
-            echo "STORE_PASSWORD=$STORE_PASSWORD" >> "$GITHUB_ENV"
-
-            echo "Usando chave original."
-
-          else
-
-            keytool -genkeypair -noprompt \
-              -keystore assinatura-temporaria.jks \
-              -storepass android \
-              -alias cao-fujao \
-              -keypass android \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -dname "CN=Cao Fujao, O=MENTEX, C=BR"
-
-            echo "KEYSTORE=assinatura-temporaria.jks" >> "$GITHUB_ENV"
-            echo "KEY_ALIAS=cao-fujao" >> "$GITHUB_ENV"
-            echo "KEY_PASSWORD=android" >> "$GITHUB_ENV"
-            echo "STORE_PASSWORD=android" >> "$GITHUB_ENV"
-
-            echo "::warning::Assinatura temporaria. Pode ser necessario desinstalar a versao anterior para instalar este APK."
-          fi
-
-      - name: Assinar APK
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          "$ANDROID_BUILD_TOOLS/apksigner" sign \
-            --ks "$KEYSTORE" \
-            --ks-key-alias "$KEY_ALIAS" \
-            --ks-pass "pass:$STORE_PASSWORD" \
-            --key-pass "pass:$KEY_PASSWORD" \
-            --out resultado/CAO-FUJAO-ATUALIZADO.apk \
-            resultado/CAO-FUJAO-ALINHADO.apk
-
-          "$ANDROID_BUILD_TOOLS/apksigner" verify \
-            --verbose resultado/CAO-FUJAO-ATUALIZADO.apk
-
-          echo "APK assinado e verificado!"
-
-      - name: Disponibilizar APK
+      - name: Disponibilizar aplicativo
         uses: actions/upload-artifact@v4
         with:
-          name: CAO-FUJAO-ATUALIZADO
-          path: resultado/CAO-FUJAO-ATUALIZADO.apk
+          name: CAO-FUJAO-INDEPENDENTE
+          path: resultado/CAO-FUJAO-INDEPENDENTE.apk
           if-no-files-found: error
           
