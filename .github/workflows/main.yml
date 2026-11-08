@@ -1,5 +1,5 @@
 
-name: CAO FUJAO - GERAR APK
+name: CAO FUJAO - ATUALIZAR ITENS E GERAR APK
 
 on:
   workflow_dispatch:
@@ -9,89 +9,93 @@ permissions:
 
 jobs:
   build:
-    name: Compilar Cao Fujão Atualizado
+    name: Gerar Cão Fujão Atualizado
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar repositorio
+      - name: Baixar repositório
         uses: actions/checkout@v4
 
-      - name: Configurar Java 17
+      - name: Configurar Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Gradle 8.7
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.7'
-
       - name: Preparar Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Instalar ferramentas Android
+      - name: Instalar ferramentas
         run: |
-          sdkmanager --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          sdkmanager --install "build-tools;35.0.0"
           yes | sdkmanager --licenses >/dev/null || true
 
-      - name: Extrair projeto atualizado
+      - name: Verificar arquivos
+        run: |
+          test -f CAO-FUJAO.apk || {
+            echo "ERRO: CAO-FUJAO.apk não encontrado"
+            exit 1
+          }
+
+          test -f assets/index.html || {
+            echo "ERRO: assets/index.html não encontrado"
+            exit 1
+          }
+
+      - name: Atualizar jogo
         shell: bash
         run: |
-          set -Eeuo pipefail
+          set -e
 
-          ZIP=$(find . -maxdepth 3 -type f \
-            -name 'CAO-FUJAO-ATUALIZACAO-FUNCIONALIDADES.zip' \
-            -print -quit)
+          mkdir -p trabalho resultado
 
-          if [ -z "$ZIP" ]; then
-            echo "ERRO: ZIP atualizado nao encontrado."
-            exit 1
+          cd trabalho
+          unzip -oq ../CAO-FUJAO.apk
+
+          mkdir -p assets
+          cp ../assets/index.html assets/index.html
+
+          if [ -f ../assets/intro.png ]; then
+            cp ../assets/intro.png assets/intro.png
           fi
 
-          mkdir -p "$RUNNER_TEMP/cao-fujao"
+          zip -qr ../resultado/CAO-FUJAO-UNSIGNED.apk .
 
-          unzip -oq "$ZIP" -d "$RUNNER_TEMP/cao-fujao"
+          cd ..
 
-          SETTINGS=$(find "$RUNNER_TEMP/cao-fujao" \
-            -type f -name settings.gradle -print -quit)
-
-          if [ -z "$SETTINGS" ]; then
-            echo "ERRO: settings.gradle nao encontrado."
-            exit 1
-          fi
-
-          PROJECT=$(dirname "$SETTINGS")
-
-          if [ ! -f "$PROJECT/app/build.gradle" ]; then
-            echo "ERRO: app/build.gradle nao encontrado."
-            exit 1
-          fi
-
-          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
-
-          echo "Projeto encontrado: $PROJECT"
-
-      - name: Compilar APK
+      - name: Alinhar APK
         run: |
-          gradle --no-daemon --stacktrace \
-            -p "$PROJECT" clean assembleDebug
+          $ANDROID_HOME/build-tools/35.0.0/zipalign \
+            -f 4 \
+            resultado/CAO-FUJAO-UNSIGNED.apk \
+            resultado/CAO-FUJAO-ALIGNED.apk
 
-      - name: Localizar APK
-        shell: bash
+      - name: Assinar APK
+        env:
+          KEYSTORE_BASE64: ${{ secrets.MENTEX_KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.MENTEX_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.MENTEX_KEY_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.MENTEX_STORE_PASSWORD }}
         run: |
-          set -Eeuo pipefail
+          set -e
 
-          APK=$(find "$PROJECT/app/build/outputs/apk/debug" \
-            -type f -name '*.apk' -print -quit)
-
-          if [ -z "$APK" ]; then
-            echo "ERRO: APK nao foi gerado."
+          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ] || [ -z "$STORE_PASSWORD" ]; then
+            echo "ERRO: configure a chave original de assinatura nos Secrets do GitHub."
             exit 1
           fi
 
-          mkdir -p resultado
-          cp "$APK" resultado/CAO-FUJAO-ATUALIZADO.apk
+          echo "$KEYSTORE_BASE64" | base64 -d > assinatura.jks
+
+          $ANDROID_HOME/build-tools/35.0.0/apksigner sign \
+            --ks assinatura.jks \
+            --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass "pass:$STORE_PASSWORD" \
+            --key-pass "pass:$KEY_PASSWORD" \
+            --out resultado/CAO-FUJAO-ATUALIZADO.apk \
+            resultado/CAO-FUJAO-ALIGNED.apk
+
+          $ANDROID_HOME/build-tools/35.0.0/apksigner verify \
+            resultado/CAO-FUJAO-ATUALIZADO.apk
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
