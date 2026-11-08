@@ -27,38 +27,47 @@ jobs:
         with:
           packages: ''
 
-      - name: Instalar ferramentas Android
+      - name: Instalar ferramentas
         run: |
           yes | sdkmanager --licenses
           sdkmanager "platform-tools" "build-tools;35.0.0"
 
-      - name: Verificar arquivos
+      - name: Localizar APK e arquivos atualizados
+        shell: bash
         run: |
-          test -f CAO-FUJAO.apk || {
-            echo "ERRO: CAO-FUJAO.apk não encontrado"
-            exit 1
-          }
+          set -Eeuo pipefail
 
-          test -f assets/index.html || {
-            echo "ERRO: assets/index.html não encontrado"
+          APK=$(find . -type f -iname '*.apk' -print -quit)
+          HTML=$(find . -type f -path '*/assets/index.html' -print -quit)
+
+          if [ -z "$APK" ]; then
+            echo "ERRO: nenhum APK encontrado no repositório."
+            find . -maxdepth 4 -type f | head -100
             exit 1
-          }
+          fi
+
+          if [ -z "$HTML" ]; then
+            echo "ERRO: assets/index.html não encontrado."
+            exit 1
+          fi
+
+          echo "APK encontrado: $APK"
+          echo "HTML encontrado: $HTML"
+
+          echo "APK_ORIGINAL=$APK" >> "$GITHUB_ENV"
+          echo "HTML_ATUALIZADO=$HTML" >> "$GITHUB_ENV"
 
       - name: Atualizar jogo
         run: |
-          set -e
+          set -Eeuo pipefail
 
           mkdir -p trabalho resultado
 
           cd trabalho
-          unzip -oq ../CAO-FUJAO.apk
+          unzip -oq "../$APK_ORIGINAL"
 
           mkdir -p assets
-          cp ../assets/index.html assets/index.html
-
-          if [ -f ../assets/intro.png ]; then
-            cp ../assets/intro.png assets/intro.png
-          fi
+          cp "../$HTML_ATUALIZADO" assets/index.html
 
           zip -qr ../resultado/CAO-FUJAO-UNSIGNED.apk .
 
@@ -78,10 +87,10 @@ jobs:
           KEY_PASSWORD: ${{ secrets.MENTEX_KEY_PASSWORD }}
           STORE_PASSWORD: ${{ secrets.MENTEX_STORE_PASSWORD }}
         run: |
-          set -e
+          set -Eeuo pipefail
 
           if [ -z "$KEYSTORE_BASE64" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ] || [ -z "$STORE_PASSWORD" ]; then
-            echo "ERRO: chave original de assinatura não configurada."
+            echo "ERRO: configure os quatro Secrets da assinatura original."
             exit 1
           fi
 
