@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   build:
-    name: Gerar Cão Fujão Atualizado
+    name: Compilar Cão Fujão Atualizado
     runs-on: ubuntu-22.04
 
     steps:
@@ -22,59 +22,85 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: ''
-
-      - name: Instalar ferramentas
+      - name: Preparar ferramentas Android
         run: |
+          set -e
+          command -v sdkmanager
           yes | sdkmanager --licenses
-          sdkmanager "platform-tools" "build-tools;35.0.0"
+          sdkmanager "build-tools;35.0.0"
 
-      - name: Localizar APK e arquivos atualizados
+      - name: Extrair ZIP atualizado
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          APK=$(find . -type f -iname '*.apk' -print -quit)
-          HTML=$(find . -type f -path '*/assets/index.html' -print -quit)
+          ZIP=$(find . -type f \
+            -name 'CAO-FUJAO-ATUALIZACAO-ITENS-CORRIGIDO.zip' \
+            -print -quit)
+
+          if [ -z "$ZIP" ]; then
+            echo "ERRO: ZIP corrigido não encontrado no repositório."
+            exit 1
+          fi
+
+          mkdir -p "$RUNNER_TEMP/cao-fujao"
+
+          unzip -oq "$ZIP" -d "$RUNNER_TEMP/cao-fujao"
+
+          APK=$(find "$RUNNER_TEMP/cao-fujao" \
+            -type f -name 'CAO-FUJAO.apk' -print -quit)
+
+          HTML=$(find "$RUNNER_TEMP/cao-fujao" \
+            -type f -path '*/assets/index.html' -print -quit)
 
           if [ -z "$APK" ]; then
-            echo "ERRO: nenhum APK encontrado no repositório."
-            find . -maxdepth 4 -type f | head -100
+            echo "ERRO: APK original não encontrado."
             exit 1
           fi
 
           if [ -z "$HTML" ]; then
-            echo "ERRO: assets/index.html não encontrado."
+            echo "ERRO: HTML atualizado não encontrado."
             exit 1
           fi
-
-          echo "APK encontrado: $APK"
-          echo "HTML encontrado: $HTML"
 
           echo "APK_ORIGINAL=$APK" >> "$GITHUB_ENV"
           echo "HTML_ATUALIZADO=$HTML" >> "$GITHUB_ENV"
 
-      - name: Atualizar jogo
+          echo "APK encontrado: $APK"
+          echo "HTML encontrado: $HTML"
+
+      - name: Atualizar arquivos do jogo
+        shell: bash
         run: |
           set -Eeuo pipefail
 
           mkdir -p trabalho resultado
 
           cd trabalho
-          unzip -oq "../$APK_ORIGINAL"
+
+          unzip -oq "$APK_ORIGINAL"
 
           mkdir -p assets
-          cp "../$HTML_ATUALIZADO" assets/index.html
+
+          cp "$HTML_ATUALIZADO" assets/index.html
+
+          # Remover assinaturas antigas do APK
+          rm -f META-INF/*.RSA
+          rm -f META-INF/*.DSA
+          rm -f META-INF/*.EC
+          rm -f META-INF/*.SF
+          rm -f META-INF/*.MF
 
           zip -qr ../resultado/CAO-FUJAO-UNSIGNED.apk .
 
           cd ..
 
+          echo "Arquivos atualizados no APK."
+
       - name: Alinhar APK
         run: |
+          set -e
+
           $ANDROID_HOME/build-tools/35.0.0/zipalign \
             -f 4 \
             resultado/CAO-FUJAO-UNSIGNED.apk \
@@ -86,10 +112,14 @@ jobs:
           KEY_ALIAS: ${{ secrets.MENTEX_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.MENTEX_KEY_PASSWORD }}
           STORE_PASSWORD: ${{ secrets.MENTEX_STORE_PASSWORD }}
+
         run: |
           set -Eeuo pipefail
 
-          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ] || [ -z "$STORE_PASSWORD" ]; then
+          if [ -z "$KEYSTORE_BASE64" ] || \
+             [ -z "$KEY_ALIAS" ] || \
+             [ -z "$KEY_PASSWORD" ] || \
+             [ -z "$STORE_PASSWORD" ]; then
             echo "ERRO: configure os quatro Secrets da assinatura original."
             exit 1
           fi
@@ -105,7 +135,7 @@ jobs:
             resultado/CAO-FUJAO-ALIGNED.apk
 
           $ANDROID_HOME/build-tools/35.0.0/apksigner verify \
-            resultado/CAO-FUJAO-ATUALIZADO.apk
+            --verbose resultado/CAO-FUJAO-ATUALIZADO.apk
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
