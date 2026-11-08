@@ -12,6 +12,10 @@ jobs:
     name: Compilar Cão Fujão
     runs-on: ubuntu-22.04
 
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
     steps:
       - name: Baixar repositorio
         uses: actions/checkout@v4
@@ -27,17 +31,26 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Configurar Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Instalar pacotes Android
+      - name: Preparar Android SDK
         shell: bash
         run: |
           set -e
-          yes | sdkmanager --licenses || true
-          sdkmanager "platform-tools"
-          sdkmanager "platforms;android-35"
-          sdkmanager "build-tools;35.0.0"
+          SDK="$ANDROID_HOME"
+          echo "$SDK/platform-tools" >> "$GITHUB_PATH"
+          echo "$SDK/cmdline-tools/16.0/bin" >> "$GITHUB_PATH"
+
+          SDKMANAGER="$SDK/cmdline-tools/16.0/bin/sdkmanager"
+
+          if [ ! -f "$SDKMANAGER" ]; then
+            echo "ERRO: sdkmanager não encontrado."
+            exit 1
+          fi
+
+          yes | "$SDKMANAGER" --licenses || true
+
+          "$SDKMANAGER" --install "platform-tools"
+          "$SDKMANAGER" --install "platforms;android-35"
+          "$SDKMANAGER" --install "build-tools;35.0.0"
 
       - name: Verificar projeto
         shell: bash
@@ -58,6 +71,7 @@ jobs:
         shell: bash
         run: |
           set -e
+
           APK="app/build/outputs/apk/debug/app-debug.apk"
 
           if [ ! -s "$APK" ]; then
