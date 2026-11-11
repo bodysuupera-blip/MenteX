@@ -1,5 +1,5 @@
 
-name: CAO FUJAO - GERAR APK INDEPENDENTE
+name: CAO FUJAO - NOVA VERSAO COM PODERES
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   build:
-    name: Compilar Cão Fujão
+    name: Gerar APK Cão Fujão Atualizado
     runs-on: ubuntu-22.04
 
     env:
@@ -42,7 +42,7 @@ jobs:
           SDKMANAGER="$SDK/cmdline-tools/16.0/bin/sdkmanager"
 
           if [ ! -f "$SDKMANAGER" ]; then
-            echo "ERRO: sdkmanager não encontrado."
+            echo "ERRO: sdkmanager nao encontrado."
             exit 1
           fi
 
@@ -52,7 +52,7 @@ jobs:
           "$SDKMANAGER" --install "platforms;android-35"
           "$SDKMANAGER" --install "build-tools;35.0.0"
 
-      - name: Verificar projeto
+      - name: Verificar projeto atualizado
         shell: bash
         run: |
           set -e
@@ -61,13 +61,14 @@ jobs:
           test -f app/src/main/AndroidManifest.xml
           test -f app/src/main/assets/index.html
           test -f app/src/main/assets/intro.png
-          echo "Projeto Android encontrado!"
 
-      - name: Compilar APK
+          echo "Projeto Cão Fujão atualizado encontrado!"
+
+      - name: Compilar novo APK
         run: |
           gradle --no-daemon --stacktrace clean assembleDebug
 
-      - name: Verificar APK
+      - name: Verificar e preparar APK
         shell: bash
         run: |
           set -e
@@ -75,20 +76,24 @@ jobs:
           APK="app/build/outputs/apk/debug/app-debug.apk"
 
           if [ ! -s "$APK" ]; then
-            echo "ERRO: APK não foi gerado."
+            echo "ERRO: APK nao foi gerado."
             exit 1
           fi
 
           mkdir -p resultado
-          cp "$APK" resultado/CAO-FUJAO-INDEPENDENTE.apk
+
+          cp "$APK" resultado/CAO-FUJAO-NOVA-VERSAO.apk
 
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify \
-            --verbose resultado/CAO-FUJAO-INDEPENDENTE.apk
+            --verbose resultado/CAO-FUJAO-NOVA-VERSAO.apk
 
-      - name: Disponibilizar APK
+          echo "APK gerado e verificado com sucesso!"
+
+      - name: Disponibilizar novo APK
         uses: actions/upload-artifact@v4
         with:
-          name: CAO-FUJAO-INDEPENDENTE
-          path: resultado/CAO-FUJAO-INDEPENDENTE.apk
+          name: CAO-FUJAO-NOVA-VERSAO
+          path: resultado/CAO-FUJAO-NOVA-VERSAO.apk
           if-no-files-found: error
+          retention-days: 30
           
