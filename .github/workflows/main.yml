@@ -25,23 +25,53 @@ jobs:
           java-version: '17'
 
       - name: Configurar Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          accept-android-sdk-licenses: true
+          log-accepted-android-sdk-licenses: false
+          packages: ''
 
-      - name: Instalar Gradle
+      - name: Aceitar licencas Android
+        run: |
+          python3 - <<'PY'
+          import subprocess
+          result = subprocess.run(
+              ["sdkmanager", "--licenses"],
+              input=b"y\n" * 100,
+              stdout=subprocess.PIPE,
+              stderr=subprocess.STDOUT
+          )
+          print(result.stdout.decode(errors="replace")[-4000:])
+          if result.returncode != 0:
+              raise SystemExit(result.returncode)
+          PY
+
+      - name: Instalar Android SDK 35
+        run: |
+          sdkmanager "platform-tools"
+          sdkmanager "platforms;android-35"
+          sdkmanager "build-tools;35.0.0"
+
+      - name: Configurar Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Instalar Android 35
+      - name: Verificar projeto
         run: |
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          test -f settings.gradle
+          test -f build.gradle
+          test -f app/build.gradle
+          test -f app/src/main/AndroidManifest.xml
 
-      - name: Compilar Cão Fujão
-        run: gradle --no-daemon assembleDebug
+      - name: Compilar APK
+        run: |
+          gradle --no-daemon --stacktrace clean assembleDebug
 
-      - name: Salvar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: CAO-FUJAO-APK
           path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
           
