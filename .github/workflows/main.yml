@@ -1,5 +1,5 @@
 
-name: CAO FUJAO - NOVA VERSAO COM PODERES
+name: CAO FUJAO - GERAR APK INDEPENDENTE
 
 on:
   workflow_dispatch:
@@ -9,12 +9,8 @@ permissions:
 
 jobs:
   build:
-    name: Gerar APK Cão Fujão Atualizado
+    name: Compilar Cão Fujão
     runs-on: ubuntu-22.04
-
-    env:
-      ANDROID_HOME: /usr/local/lib/android/sdk
-      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
     steps:
       - name: Baixar repositorio
@@ -26,33 +22,29 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: |
+            platform-tools
+            platforms;android-35
+            build-tools;35.0.0
+          accept-android-sdk-licenses: true
+
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
-      - name: Preparar Android SDK
+      - name: Verificar Android SDK
         shell: bash
         run: |
           set -e
-          SDK="$ANDROID_HOME"
-          echo "$SDK/platform-tools" >> "$GITHUB_PATH"
-          echo "$SDK/cmdline-tools/16.0/bin" >> "$GITHUB_PATH"
+          echo "Verificando SDK..."
+          sdkmanager --version
+          adb version
 
-          SDKMANAGER="$SDK/cmdline-tools/16.0/bin/sdkmanager"
-
-          if [ ! -f "$SDKMANAGER" ]; then
-            echo "ERRO: sdkmanager nao encontrado."
-            exit 1
-          fi
-
-          yes | "$SDKMANAGER" --licenses || true
-
-          "$SDKMANAGER" --install "platform-tools"
-          "$SDKMANAGER" --install "platforms;android-35"
-          "$SDKMANAGER" --install "build-tools;35.0.0"
-
-      - name: Verificar projeto atualizado
+      - name: Verificar projeto
         shell: bash
         run: |
           set -e
@@ -61,14 +53,13 @@ jobs:
           test -f app/src/main/AndroidManifest.xml
           test -f app/src/main/assets/index.html
           test -f app/src/main/assets/intro.png
+          echo "Projeto Android encontrado!"
 
-          echo "Projeto Cão Fujão atualizado encontrado!"
-
-      - name: Compilar novo APK
+      - name: Compilar APK
         run: |
           gradle --no-daemon --stacktrace clean assembleDebug
 
-      - name: Verificar e preparar APK
+      - name: Verificar APK
         shell: bash
         run: |
           set -e
@@ -81,19 +72,18 @@ jobs:
           fi
 
           mkdir -p resultado
-
-          cp "$APK" resultado/CAO-FUJAO-NOVA-VERSAO.apk
+          cp "$APK" resultado/CAO-FUJAO-INDEPENDENTE.apk
 
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify \
-            --verbose resultado/CAO-FUJAO-NOVA-VERSAO.apk
+            --verbose resultado/CAO-FUJAO-INDEPENDENTE.apk
 
-          echo "APK gerado e verificado com sucesso!"
+          echo "APK gerado com sucesso!"
 
-      - name: Disponibilizar novo APK
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: CAO-FUJAO-NOVA-VERSAO
-          path: resultado/CAO-FUJAO-NOVA-VERSAO.apk
+          name: CAO-FUJAO-INDEPENDENTE
+          path: resultado/CAO-FUJAO-INDEPENDENTE.apk
           if-no-files-found: error
           retention-days: 30
           
