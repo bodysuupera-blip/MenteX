@@ -12,14 +12,30 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  construir:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar projeto
+      - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Configurar Java
+      - name: Extrair projeto Android
+        run: |
+          if [ ! -f "CAO-FUJAO-ANDROID-NOVO.zip" ]; then
+            echo "ZIP do projeto nao encontrado!"
+            exit 1
+          fi
+
+          mkdir -p /tmp/cao-fujao
+          unzip -q CAO-FUJAO-ANDROID-NOVO.zip -d /tmp/cao-fujao
+
+          cp -a /tmp/cao-fujao/CAO-FUJAO-ANDROID-NOVO/. .
+
+          echo "Arquivos do projeto:"
+          ls -la
+          ls -la app
+
+      - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -36,50 +52,19 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Preparar projeto
+      - name: Verificar arquivos
         run: |
-          echo "Verificando arquivos..."
-          ls -la
-
-          if [ ! -f settings.gradle ]; then
-            if [ ! -f app/build.gradle ]; then
-              echo "ERRO: app/build.gradle não encontrado."
-              find . -maxdepth 5 -type f
-              exit 1
-            fi
-
-            cat > settings.gradle <<'EOF'
-          pluginManagement {
-              repositories {
-                  google()
-                  mavenCentral()
-                  gradlePluginPortal()
-              }
-          }
-
-          dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-          }
-
-          rootProject.name = "CaoFujao"
-          include ':app'
-          EOF
-          fi
-
+          test -f settings.gradle
           test -f build.gradle
           test -f app/build.gradle
           test -f app/src/main/AndroidManifest.xml
-          test -f app/src/main/java/br/com/caofujao/game/MainActivity.java
           test -f app/src/main/assets/index.html
+          test -f app/src/main/java/br/com/caofujao/game/MainActivity.java
 
       - name: Compilar APK
         run: gradle --no-daemon --stacktrace clean assembleDebug
 
-      - name: Verificar APK
+      - name: Preparar APK
         run: |
           mkdir -p resultado
           cp app/build/outputs/apk/debug/app-debug.apk resultado/CAO-FUJAO.apk
