@@ -27,34 +27,68 @@ jobs:
           accept-android-sdk-licenses: true
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
 
+      - name: Verificar estrutura
+        run: |
+          echo "Arquivos encontrados:"
+          ls -la
+          find . -maxdepth 4 -type f | sort
+
+      - name: Criar settings.gradle
+        run: |
+          if [ ! -f settings.gradle ] && [ ! -f settings.gradle.kts ]; then
+            if [ -f app/build.gradle ] || [ -f app/build.gradle.kts ]; then
+              cat > settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+
+          rootProject.name = "CaoFujao"
+          include ':app'
+          EOF
+            else
+              echo "ERRO: Pasta app ou arquivo build.gradle nao encontrado."
+              exit 1
+            fi
+          fi
+
+      - name: Verificar arquivos obrigatorios
+        run: |
+          test -f settings.gradle || test -f settings.gradle.kts
+          test -f app/build.gradle || test -f app/build.gradle.kts
+          test -f app/src/main/AndroidManifest.xml
+          test -f app/src/main/assets/index.html
+          test -f app/src/main/assets/intro.png
+
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
-      - name: Verificar arquivos
-        run: |
-          test -f settings.gradle
-          test -f app/build.gradle
-          test -f app/src/main/AndroidManifest.xml
-          test -f app/src/main/assets/index.html
-          test -f app/src/main/assets/intro.png
-
-      - name: Gerar APK
+      - name: Compilar APK
         run: gradle --no-daemon --stacktrace clean assembleDebug
 
-      - name: Verificar APK
+      - name: Preparar APK
         run: |
-          APK="app/build/outputs/apk/debug/app-debug.apk"
-          test -s "$APK"
           mkdir -p resultado
-          cp "$APK" resultado/CAO-FUJAO-INDEPENDENTE.apk
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify resultado/CAO-FUJAO-INDEPENDENTE.apk
+          cp app/build/outputs/apk/debug/app-debug.apk resultado/CAO-FUJAO.apk
+          test -s resultado/CAO-FUJAO.apk
 
-      - name: Disponibilizar APK
+      - name: Enviar APK
         uses: actions/upload-artifact@v4
         with:
           name: CAO-FUJAO-INDEPENDENTE
-          path: resultado/CAO-FUJAO-INDEPENDENTE.apk
+          path: resultado/CAO-FUJAO.apk
           if-no-files-found: error
           
