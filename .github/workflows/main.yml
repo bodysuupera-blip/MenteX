@@ -1,39 +1,22 @@
 
-name: CAO FUJAO ANDROID NOVO
+name: CAO FUJAO - GERAR APK
 
 on:
   workflow_dispatch:
   push:
     branches:
       - main
-      - master
 
 permissions:
   contents: read
 
 jobs:
-  construir:
-    runs-on: ubuntu-22.04
+  build:
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar repositorio
+      - name: Baixar codigo fonte
         uses: actions/checkout@v4
-
-      - name: Extrair projeto Android
-        run: |
-          if [ ! -f "CAO-FUJAO-ANDROID-NOVO.zip" ]; then
-            echo "ZIP do projeto nao encontrado!"
-            exit 1
-          fi
-
-          mkdir -p /tmp/cao-fujao
-          unzip -q CAO-FUJAO-ANDROID-NOVO.zip -d /tmp/cao-fujao
-
-          cp -a /tmp/cao-fujao/CAO-FUJAO-ANDROID-NOVO/. .
-
-          echo "Arquivos do projeto:"
-          ls -la
-          ls -la app
 
       - name: Configurar Java 17
         uses: actions/setup-java@v4
@@ -43,37 +26,22 @@ jobs:
 
       - name: Configurar Android SDK
         uses: android-actions/setup-android@v3
-        with:
-          accept-android-sdk-licenses: true
-          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
 
-      - name: Configurar Gradle
+      - name: Instalar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.7'
+          gradle-version: '8.9'
 
-      - name: Verificar arquivos
+      - name: Instalar Android 35
         run: |
-          test -f settings.gradle
-          test -f build.gradle
-          test -f app/build.gradle
-          test -f app/src/main/AndroidManifest.xml
-          test -f app/src/main/assets/index.html
-          test -f app/src/main/java/br/com/caofujao/game/MainActivity.java
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Compilar APK
-        run: gradle --no-daemon --stacktrace clean assembleDebug
+      - name: Compilar Cão Fujão
+        run: gradle --no-daemon assembleDebug
 
-      - name: Preparar APK
-        run: |
-          mkdir -p resultado
-          cp app/build/outputs/apk/debug/app-debug.apk resultado/CAO-FUJAO.apk
-          test -s resultado/CAO-FUJAO.apk
-
-      - name: Disponibilizar APK
+      - name: Salvar APK
         uses: actions/upload-artifact@v4
         with:
-          name: CAO-FUJAO-ANDROID
-          path: resultado/CAO-FUJAO.apk
-          if-no-files-found: error
+          name: CAO-FUJAO-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
           
