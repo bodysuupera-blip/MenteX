@@ -1,5 +1,5 @@
 
-name: CAO FUJAO - GERAR APK INDEPENDENTE
+name: CAO FUJAO - GERAR APK
 
 on:
   workflow_dispatch:
@@ -9,106 +9,47 @@ permissions:
 
 jobs:
   build:
-    name: Compilar Cão Fujão
     runs-on: ubuntu-22.04
-
-    env:
-      ANDROID_HOME: /usr/local/lib/android/sdk
-      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
     steps:
       - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Configurar Java 17
+      - name: Configurar Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Localizar Android SDK
-        shell: bash
-        run: |
-          set -e
-
-          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-
-          if [ ! -x "$SDKMANAGER" ]; then
-            echo "ERRO: sdkmanager nao encontrado!"
-            exit 1
-          fi
-
-          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
-          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
-
-          echo "Android SDK encontrado!"
-
-      - name: Aceitar todas as licencas Android
-        shell: bash
-        run: |
-          set -e
-
-          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-
-          yes | "$SDKMANAGER" --licenses
-
-          echo "Licencas processadas!"
-
-      - name: Instalar pacotes Android
-        shell: bash
-        run: |
-          set -e
-
-          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-
-          yes | "$SDKMANAGER" --install "platform-tools"
-          yes | "$SDKMANAGER" --install "platforms;android-35"
-          yes | "$SDKMANAGER" --install "build-tools;35.0.0"
-
-          echo "Pacotes instalados!"
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          accept-android-sdk-licenses: true
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
 
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
-      - name: Verificar projeto
-        shell: bash
+      - name: Verificar arquivos
         run: |
-          set -e
-
           test -f settings.gradle
           test -f app/build.gradle
           test -f app/src/main/AndroidManifest.xml
           test -f app/src/main/assets/index.html
           test -f app/src/main/assets/intro.png
 
-          echo "Projeto encontrado!"
-
-      - name: Compilar APK
-        run: |
-          gradle --no-daemon --stacktrace clean assembleDebug
+      - name: Gerar APK
+        run: gradle --no-daemon --stacktrace clean assembleDebug
 
       - name: Verificar APK
-        shell: bash
         run: |
-          set -e
-
           APK="app/build/outputs/apk/debug/app-debug.apk"
-
-          if [ ! -s "$APK" ]; then
-            echo "ERRO: APK nao foi gerado!"
-            exit 1
-          fi
-
+          test -s "$APK"
           mkdir -p resultado
-
           cp "$APK" resultado/CAO-FUJAO-INDEPENDENTE.apk
-
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify \
-            --verbose resultado/CAO-FUJAO-INDEPENDENTE.apk
-
-          echo "APK verificado com sucesso!"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify resultado/CAO-FUJAO-INDEPENDENTE.apk
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
@@ -116,5 +57,4 @@ jobs:
           name: CAO-FUJAO-INDEPENDENTE
           path: resultado/CAO-FUJAO-INDEPENDENTE.apk
           if-no-files-found: error
-          retention-days: 30
           
