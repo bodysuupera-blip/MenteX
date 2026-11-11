@@ -12,6 +12,10 @@ jobs:
     name: Compilar Cão Fujão
     runs-on: ubuntu-22.04
 
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
     steps:
       - name: Baixar repositorio
         uses: actions/checkout@v4
@@ -25,34 +29,42 @@ jobs:
       - name: Configurar Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: |
-            platform-tools
-            platforms;android-35
-            build-tools;35.0.0
           accept-android-sdk-licenses: true
+
+      - name: Instalar pacotes Android
+        shell: bash
+        run: |
+          set -e
+
+          SDKMANAGER="$(command -v sdkmanager)"
+
+          echo "Instalando platform-tools..."
+          "$SDKMANAGER" --install "platform-tools"
+
+          echo "Instalando Android 35..."
+          "$SDKMANAGER" --install "platforms;android-35"
+
+          echo "Instalando Build Tools..."
+          "$SDKMANAGER" --install "build-tools;35.0.0"
+
+          echo "SDK instalado com sucesso!"
 
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
-      - name: Verificar Android SDK
-        shell: bash
-        run: |
-          set -e
-          echo "Verificando SDK..."
-          sdkmanager --version
-          adb version
-
       - name: Verificar projeto
         shell: bash
         run: |
           set -e
+
           test -f settings.gradle
           test -f app/build.gradle
           test -f app/src/main/AndroidManifest.xml
           test -f app/src/main/assets/index.html
           test -f app/src/main/assets/intro.png
+
           echo "Projeto Android encontrado!"
 
       - name: Compilar APK
@@ -72,12 +84,13 @@ jobs:
           fi
 
           mkdir -p resultado
+
           cp "$APK" resultado/CAO-FUJAO-INDEPENDENTE.apk
 
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify \
             --verbose resultado/CAO-FUJAO-INDEPENDENTE.apk
 
-          echo "APK gerado com sucesso!"
+          echo "APK gerado e verificado!"
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
