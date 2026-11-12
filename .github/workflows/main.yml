@@ -5,8 +5,8 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - 'cao_fujao_atualizacao/**'
-      - '.github/workflows/CAO-FUJAO-3-0.yml'
+      - 'CAO_FUJAO_ATUALIZACAO_CODIGO.zip'
+      - '.github/workflows/CAO-FUJAO-3.0.yml'
 
 permissions:
   contents: read
@@ -19,110 +19,127 @@ jobs:
       - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Configurar Java
+      - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Identificar projeto Cao Fujão
-        id: projeto
+      - name: Preparar atualizacao do jogo
+        id: update
         shell: bash
         run: |
           set -euo pipefail
 
-          UPDATE="cao_fujao_atualizacao/index.html"
+          ZIP="CAO_FUJAO_ATUALIZACAO_CODIGO.zip"
 
-          if [ ! -f "$UPDATE" ]; then
-            echo "ERRO: arquivo atualizado nao encontrado."
+          if [ ! -f "$ZIP" ]; then
+            echo "ERRO: ZIP nao encontrado na raiz."
             exit 1
           fi
 
-          mapfile -t WRAPPERS < <(
+          mkdir -p /tmp/cao-fujao-update
+          unzip -oq "$ZIP" -d /tmp/cao-fujao-update
+
+          UPDATE="$(find /tmp/cao-fujao-update \
+            -type f -name index.html -print -quit)"
+
+          if [ -z "$UPDATE" ] || [ ! -s "$UPDATE" ]; then
+            echo "ERRO: index.html nao encontrado."
+            exit 1
+          fi
+
+          echo "update_file=$UPDATE" >> "$GITHUB_OUTPUT"
+
+      - name: Identificar projeto original Cao Fujão
+        id: project
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          UPDATE="${{ steps.update.outputs.update_file }}"
+          FOUND_PROJECT=""
+          FOUND_ASSET=""
+
+          while IFS= read -r WRAPPER; do
+            PROJECT="$(dirname "$WRAPPER")"
+
+            while IFS= read -r HTML; do
+              if grep -Eiq 'Cão Fujão|Cao Fujao|CAO FUJAO' "$HTML"; then
+
+                if [ -n "$FOUND_PROJECT" ] && \
+                   [ "$FOUND_PROJECT" != "$PROJECT" ]; then
+                  echo "ERRO: mais de um projeto encontrado."
+                  exit 1
+                fi
+
+                FOUND_PROJECT="$PROJECT"
+                FOUND_ASSET="$HTML"
+              fi
+
+            done < <(
+              find "$PROJECT" -type f \
+                -path '*/src/main/assets/*.html' \
+                -not -path '*/build/*' \
+                -not -path '*/.gradle/*'
+            )
+
+          done < <(
             find . -type f -name gradlew \
               -not -path '*/.gradle/*'
           )
 
-          FOUND=""
-          ASSET=""
-
-          for W in "${WRAPPERS[@]}"; do
-            DIR="$(dirname "$W")"
-
-            for A in \
-              "$DIR/app/src/main/assets/index.html" \
-              "$DIR/src/main/assets/index.html" \
-              "$DIR/assets/index.html"
-            do
-              if [ -f "$A" ] && \
-                grep -Eiq 'CAO FUJAO|CÃO FUJÃO' "$A"; then
-
-                if [ -n "$FOUND" ]; then
-                  echo "ERRO: mais de um projeto Cao Fujão encontrado."
-                  exit 1
-                fi
-
-                FOUND="$DIR"
-                ASSET="$A"
-              fi
-            done
-          done
-
-          if [ -z "$FOUND" ]; then
+          if [ -z "$FOUND_PROJECT" ]; then
             echo "ERRO: projeto Android original do Cao Fujão nao encontrado."
-            echo "Nenhum outro aplicativo sera compilado."
+            echo "O MenteX nao sera compilado."
             exit 1
           fi
 
-          cp "$UPDATE" "$ASSET"
+          cp "$UPDATE" "$FOUND_ASSET"
 
-          echo "project=$FOUND" >> "$GITHUB_OUTPUT"
-          echo "Projeto identificado: $FOUND"
-          echo "Arquivo atualizado: $ASSET"
+          echo "project_dir=$FOUND_PROJECT" >> "$GITHUB_OUTPUT"
 
-      - name: Preparar Android SDK
+          echo "Projeto encontrado: $FOUND_PROJECT"
+          echo "Atualizacao aplicada: $FOUND_ASSET"
+
+      - name: Preparar Gradle
         run: |
-          echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=/usr/local/lib/android/sdk" >> "$GITHUB_ENV"
+          set -euo pipefail
+          chmod +x "${{ steps.project.outputs.project_dir }}/gradlew"
 
-      - name: Compilar APK
-        shell: bash
+      - name: Compilar aplicativo Android
         run: |
           set -euo pipefail
 
-          cd "${{ steps.projeto.outputs.project }}"
-          chmod +x gradlew
+          cd "${{ steps.project.outputs.project_dir }}"
 
-          ./gradlew --no-daemon :app:assembleDebug
+          ./gradlew --no-daemon --stacktrace :app:assembleDebug
 
-      - name: Localizar APK
-        shell: bash
+      - name: Conferir APK
         run: |
           set -euo pipefail
 
-          mkdir -p saida
-
-          PROJECT="${{ steps.projeto.outputs.project }}"
+          PROJECT="${{ steps.project.outputs.project_dir }}"
 
           APK="$(find "$PROJECT" \
             -type f \
             -path '*/build/outputs/apk/debug/*.apk' \
             -print -quit)"
 
-          if [ -z "$APK" ]; then
+          if [ -z "$APK" ] || [ ! -s "$APK" ]; then
             echo "ERRO: APK nao foi gerado."
             exit 1
           fi
 
-          cp "$APK" saida/CAO-FUJAO-3.0.apk
+          mkdir -p saida
 
-          echo "APK gerado com sucesso!"
-          ls -lh saida/
+          cp "$APK" saida/CAO-FUJAO-3.0-debug.apk
+
+          sha256sum saida/CAO-FUJAO-3.0-debug.apk
 
       - name: Disponibilizar aplicativo
         uses: actions/upload-artifact@v4
         with:
-          name: CAO-FUJAO-3.0-APK
-          path: saida/CAO-FUJAO-3.0.apk
+          name: CAO-FUJAO-3.0-APK-DEBUG
+          path: saida/CAO-FUJAO-3.0-debug.apk
           if-no-files-found: error
-          
