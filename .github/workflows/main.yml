@@ -31,21 +31,65 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Verificar projeto Android
+      - name: Localizar projeto Android
+        shell: bash
         run: |
-          test -f settings.gradle
-          test -f app/build.gradle
-          test -f app/src/main/assets/index.html
-          test -f app/src/main/java/com/caofujao/game/MainActivity.java
+          set -e
+
+          find_project() {
+            find "$1" -type f -name settings.gradle \
+              -not -path '*/.gradle/*' -print0 |
+            while IFS= read -r -d '' file; do
+              dir="$(dirname "$file")"
+              if [ -f "$dir/app/build.gradle" ] &&
+                 [ -f "$dir/app/src/main/assets/index.html" ] &&
+                 [ -f "$dir/app/src/main/java/com/caofujao/game/MainActivity.java" ]; then
+                echo "$dir"
+                return 0
+              fi
+            done
+          }
+
+          PROJECT="$(find_project "$GITHUB_WORKSPACE" | head -n 1)"
+
+          if [ -z "$PROJECT" ]; then
+            mkdir -p "$RUNNER_TEMP/cao-unzip"
+
+            while IFS= read -r -d '' archive; do
+              if unzip -Z1 "$archive" | grep -q 'settings.gradle'; then
+                unzip -oq "$archive" -d "$RUNNER_TEMP/cao-unzip"
+                PROJECT="$(find_project "$RUNNER_TEMP/cao-unzip" | head -n 1)"
+                if [ -n "$PROJECT" ]; then
+                  break
+                fi
+              fi
+            done < <(find "$GITHUB_WORKSPACE" -type f -iname '*.zip' -print0)
+          fi
+
+          if [ -z "$PROJECT" ]; then
+            echo "ERRO: Projeto Android completo não encontrado."
+            echo "Confira se o ZIP original foi enviado ao GitHub."
+            exit 1
+          fi
+
+          echo "Projeto encontrado: $PROJECT"
+          echo "PROJECT_DIR=$PROJECT" >> "$GITHUB_ENV"
+
+      - name: Verificar arquivos
+        run: |
+          test -f "$PROJECT_DIR/settings.gradle"
+          test -f "$PROJECT_DIR/app/build.gradle"
+          test -f "$PROJECT_DIR/app/src/main/assets/index.html"
 
       - name: Compilar APK
-        run: gradle --no-daemon assembleDebug
+        run: |
+          gradle --no-daemon -p "$PROJECT_DIR" assembleDebug
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: CAO-FUJAO-APK-500-FASES
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
           
