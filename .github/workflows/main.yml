@@ -1,77 +1,128 @@
 
-name: CAO FUJAO - GERAR APK
+name: CAO FUJAO 3.0 - GERAR APK
 
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
+    paths:
+      - 'cao_fujao_atualizacao/**'
+      - '.github/workflows/CAO-FUJAO-3-0.yml'
 
 permissions:
   contents: read
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar codigo fonte
+      - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Configurar Java 17
+      - name: Configurar Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Android SDK
-        uses: android-actions/setup-android@v4
-        with:
-          accept-android-sdk-licenses: true
-          log-accepted-android-sdk-licenses: false
-          packages: ''
-
-      - name: Aceitar licencas Android
+      - name: Identificar projeto Cao Fujão
+        id: projeto
+        shell: bash
         run: |
-          python3 - <<'PY'
-          import subprocess
-          result = subprocess.run(
-              ["sdkmanager", "--licenses"],
-              input=b"y\n" * 100,
-              stdout=subprocess.PIPE,
-              stderr=subprocess.STDOUT
+          set -euo pipefail
+
+          UPDATE="cao_fujao_atualizacao/index.html"
+
+          if [ ! -f "$UPDATE" ]; then
+            echo "ERRO: arquivo atualizado nao encontrado."
+            exit 1
+          fi
+
+          mapfile -t WRAPPERS < <(
+            find . -type f -name gradlew \
+              -not -path '*/.gradle/*'
           )
-          print(result.stdout.decode(errors="replace")[-4000:])
-          if result.returncode != 0:
-              raise SystemExit(result.returncode)
-          PY
 
-      - name: Instalar Android SDK 35
+          FOUND=""
+          ASSET=""
+
+          for W in "${WRAPPERS[@]}"; do
+            DIR="$(dirname "$W")"
+
+            for A in \
+              "$DIR/app/src/main/assets/index.html" \
+              "$DIR/src/main/assets/index.html" \
+              "$DIR/assets/index.html"
+            do
+              if [ -f "$A" ] && \
+                grep -Eiq 'CAO FUJAO|CÃO FUJÃO' "$A"; then
+
+                if [ -n "$FOUND" ]; then
+                  echo "ERRO: mais de um projeto Cao Fujão encontrado."
+                  exit 1
+                fi
+
+                FOUND="$DIR"
+                ASSET="$A"
+              fi
+            done
+          done
+
+          if [ -z "$FOUND" ]; then
+            echo "ERRO: projeto Android original do Cao Fujão nao encontrado."
+            echo "Nenhum outro aplicativo sera compilado."
+            exit 1
+          fi
+
+          cp "$UPDATE" "$ASSET"
+
+          echo "project=$FOUND" >> "$GITHUB_OUTPUT"
+          echo "Projeto identificado: $FOUND"
+          echo "Arquivo atualizado: $ASSET"
+
+      - name: Preparar Android SDK
         run: |
-          sdkmanager "platform-tools"
-          sdkmanager "platforms;android-35"
-          sdkmanager "build-tools;35.0.0"
-
-      - name: Configurar Gradle 8.9
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
-
-      - name: Verificar projeto
-        run: |
-          test -f settings.gradle
-          test -f build.gradle
-          test -f app/build.gradle
-          test -f app/src/main/AndroidManifest.xml
+          echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=/usr/local/lib/android/sdk" >> "$GITHUB_ENV"
 
       - name: Compilar APK
+        shell: bash
         run: |
-          gradle --no-daemon --stacktrace clean assembleDebug
+          set -euo pipefail
 
-      - name: Publicar APK
+          cd "${{ steps.projeto.outputs.project }}"
+          chmod +x gradlew
+
+          ./gradlew --no-daemon :app:assembleDebug
+
+      - name: Localizar APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p saida
+
+          PROJECT="${{ steps.projeto.outputs.project }}"
+
+          APK="$(find "$PROJECT" \
+            -type f \
+            -path '*/build/outputs/apk/debug/*.apk' \
+            -print -quit)"
+
+          if [ -z "$APK" ]; then
+            echo "ERRO: APK nao foi gerado."
+            exit 1
+          fi
+
+          cp "$APK" saida/CAO-FUJAO-3.0.apk
+
+          echo "APK gerado com sucesso!"
+          ls -lh saida/
+
+      - name: Disponibilizar aplicativo
         uses: actions/upload-artifact@v4
         with:
-          name: CAO-FUJAO-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: CAO-FUJAO-3.0-APK
+          path: saida/CAO-FUJAO-3.0.apk
           if-no-files-found: error
           
