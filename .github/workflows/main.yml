@@ -5,9 +5,8 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - 'cao-fujao-project/**'
-      - 'CAO-FUJAO-ATUALIZADO.zip'
-      - '.github/workflows/android.yml'
+      - '**'
+      - '.github/workflows/cao-fujao.yml'
 
 permissions:
   contents: read
@@ -18,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar repositorio
+      - name: Baixar repositório
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -27,57 +26,26 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Gradle 8.7
+      - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.7'
+          gradle-version: '8.9'
 
-      - name: Localizar projeto independente
-        shell: bash
+      - name: Verificar projeto Android
         run: |
-          if [ -f "cao-fujao-project/settings.gradle" ] || [ -f "cao-fujao-project/settings.gradle.kts" ]; then
-            echo "PROJECT_DIR=cao-fujao-project" >> "$GITHUB_ENV"
-          elif [ -f "settings.gradle" ] || [ -f "settings.gradle.kts" ]; then
-            echo "PROJECT_DIR=." >> "$GITHUB_ENV"
-          else
-            echo "ERRO: Projeto Android do Cão Fujão não encontrado."
-            exit 1
-          fi
+          test -f settings.gradle
+          test -f app/build.gradle
+          test -f app/src/main/assets/index.html
+          test -f app/src/main/java/com/caofujao/game/MainActivity.java
 
-      - name: Aplicar atualização do jogo
-        shell: bash
-        run: |
-          if [ -f "CAO-FUJAO-ATUALIZADO.zip" ]; then
-            mkdir -p /tmp/cao-update
-            unzip -o CAO-FUJAO-ATUALIZADO.zip -d /tmp/cao-update
-
-            mkdir -p "$PROJECT_DIR/app/src/main/assets"
-
-            cp /tmp/cao-update/cao-package/assets/index.html \
-              "$PROJECT_DIR/app/src/main/assets/index.html"
-
-            echo "Atualização do jogo aplicada."
-          else
-            echo "ERRO: CAO-FUJAO-ATUALIZADO.zip não encontrado."
-            exit 1
-          fi
-
-      - name: Verificar projeto
-        run: |
-          test -f "$PROJECT_DIR/app/build.gradle" -o \
-               -f "$PROJECT_DIR/app/build.gradle.kts"
-          test -f "$PROJECT_DIR/app/src/main/assets/index.html"
-
-      - name: Gerar APK
-        run: |
-          gradle --no-daemon -p "$PROJECT_DIR" assembleDebug
+      - name: Compilar APK
+        run: gradle --no-daemon assembleDebug
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: CAO-FUJAO-APK-ATUALIZADO
-          path: |
-            ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
+          name: CAO-FUJAO-APK-500-FASES
+          path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
           
