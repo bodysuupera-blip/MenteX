@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar codigo
+      - name: Baixar repositorio
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -29,10 +29,16 @@ jobs:
       - name: Configurar Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Aceitar licencas Android
+        run: yes | sdkmanager --licenses
+
+      - name: Instalar ferramentas Android
+        run: |
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
       - name: Compilar APK
         uses: gradle/gradle-build-action@v3
         with:
-          gradle-version: '8.7'
           build-root-directory: CaoFujaoAndroid
           arguments: assembleDebug
 
