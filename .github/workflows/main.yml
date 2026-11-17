@@ -35,9 +35,9 @@ jobs:
         run: |
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Extrair projeto com controle de patinhas
+      - name: Extrair projeto atualizado
         run: |
-          unzip -o CaoFujao_controle_patinha.zip -d .
+          unzip -o CaoFujao_setas_100_moedas_10_vidas.zip -d .
           ls -la CaoFujaoAndroid
 
       - name: Instalar Gradle
