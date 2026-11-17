@@ -37,7 +37,7 @@ jobs:
 
       - name: Extrair projeto atualizado
         run: |
-          unzip -o CaoFujao_controle_gamepad.zip -d .
+          unzip -o CaoFujao_novas_fases_buracos_10_vidas.zip -d .
           ls -la CaoFujaoAndroid
 
       - name: Instalar Gradle
