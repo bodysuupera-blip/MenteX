@@ -35,9 +35,9 @@ jobs:
         run: |
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Extrair projeto atualizado
+      - name: Extrair projeto com controle de patinhas
         run: |
-          unzip -o CaoFujao_tenis_turbo_super_devagar.zip -d .
+          unzip -o CaoFujao_controle_patinha.zip -d .
           ls -la CaoFujaoAndroid
 
       - name: Instalar Gradle
