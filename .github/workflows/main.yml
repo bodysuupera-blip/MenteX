@@ -36,6 +36,11 @@ jobs:
         run: |
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
+      - name: Extrair projeto atualizado
+        run: |
+          unzip -o CaoFujao_atualizado_ajustes.zip -d .
+          ls -la CaoFujaoAndroid
+
       - name: Instalar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
