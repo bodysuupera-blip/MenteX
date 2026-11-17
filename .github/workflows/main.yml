@@ -28,6 +28,8 @@ jobs:
 
       - name: Configurar Android SDK
         uses: android-actions/setup-android@v4
+        with:
+          accept-android-sdk-licenses: true
 
       - name: Instalar ferramentas Android
         run: |
@@ -35,7 +37,7 @@ jobs:
 
       - name: Extrair projeto atualizado
         run: |
-          unzip -o CaoFujao_interface_nova.zip -d .
+          unzip -o CaoFujao_controle_melhor_som_passos.zip -d .
           ls -la CaoFujaoAndroid
 
       - name: Instalar Gradle
