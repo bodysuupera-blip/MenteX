@@ -37,7 +37,7 @@ jobs:
 
       - name: Extrair projeto atualizado
         run: |
-          unzip -o CaoFujao_funcionalidades_corrigidas_10000_moedas.zip -d .
+          unzip -o CaoFujao_itens_600_controle_quadrado.zip -d .
           ls -la CaoFujaoAndroid
 
       - name: Instalar Gradle
