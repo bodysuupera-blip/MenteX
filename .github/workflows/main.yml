@@ -38,7 +38,7 @@ jobs:
 
       - name: Extrair projeto atualizado
         run: |
-          unzip -o CaoFujao_atualizado_som_controle_icone.zip -d .
+          unzip -o CaoFujao_icone_som_icone_redondo_completo.zip -d .
           ls -la CaoFujaoAndroid
 
       - name: Instalar Gradle
