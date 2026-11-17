@@ -5,8 +5,8 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - main
-      - master
+      - principal
+      - mestre
 
 permissions:
   contents: read
@@ -28,9 +28,6 @@ jobs:
 
       - name: Configurar Android SDK
         uses: android-actions/setup-android@v4
-        with:
-          accept-android-sdk-licenses: true
-          packages: platform-tools
 
       - name: Instalar ferramentas Android
         run: |
@@ -38,7 +35,7 @@ jobs:
 
       - name: Extrair projeto atualizado
         run: |
-          unzip -o CaoFujao_controle_proporcional_som_original.zip -d .
+          unzip -o CaoFujao_interface_nova.zip -d .
           ls -la CaoFujaoAndroid
 
       - name: Instalar Gradle
