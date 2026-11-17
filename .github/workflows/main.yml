@@ -39,29 +39,29 @@ jobs:
         run: |
           rm -rf CaoFujaoAndroid
 
-      - name: Extrair projeto novo
+      - name: Extrair projeto atualizado
         run: |
-          unzip -o CaoFujao_cao_movimento_continuo.zip -d .
+          unzip -o CaoFujao_atualizado_moedas10k_dog2casas_billing.zip -d .
+          ls -la CaoFujaoAndroid
           test -f CaoFujaoAndroid/app/src/main/assets/index.html
-          sha256sum CaoFujaoAndroid/app/src/main/assets/index.html
 
       - name: Instalar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
-      - name: Limpar compilacao antiga
+      - name: Limpar compilacao anterior
         run: |
           gradle -p CaoFujaoAndroid clean
 
-      - name: Gerar APK novo
+      - name: Gerar APK
         run: |
           gradle -p CaoFujaoAndroid assembleDebug
 
-      - name: Disponibilizar APK novo
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: Cao-Fujao-Versao-${{ github.run_number }}
+          name: Cao-Fujao-Atualizado-${{ github.run_number }}
           path: CaoFujaoAndroid/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           
