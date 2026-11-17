@@ -38,7 +38,7 @@ jobs:
 
       - name: Extrair projeto atualizado
         run: |
-          unzip -o CaoFujao_controle_original_cor_tamanho.zip -d .
+          unzip -o CaoFujao_controle_proporcional_som_original.zip -d .
           ls -la CaoFujaoAndroid
 
       - name: Instalar Gradle
