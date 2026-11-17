@@ -37,8 +37,9 @@ jobs:
 
       - name: Extrair projeto atualizado
         run: |
-          unzip -o CaoFujao_atualizado_moedas10k_dog2casas_billing.zip -d .
+          unzip -o CaoFujao_12_segundos_captura.zip -d .
           test -f CaoFujaoAndroid/app/src/main/assets/index.html
+          test -f CaoFujaoAndroid/app/src/main/java/com/caofujao/app/MainActivity.java
 
       - name: Corrigir importacao do Billing
         run: |
@@ -62,7 +63,7 @@ jobs:
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: Cao-Fujao-Atualizado
+          name: Cao-Fujao-12-Segundos
           path: CaoFujaoAndroid/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           
