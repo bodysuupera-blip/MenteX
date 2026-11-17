@@ -37,7 +37,7 @@ jobs:
 
       - name: Extrair projeto atualizado
         run: |
-          unzip -o CaoFujao_itens_600_controle_quadrado.zip -d .
+          unzip -o CaoFujao_chapeu_persegue_cao_mais_facil_compra_unica.zip -d .
           ls -la CaoFujaoAndroid
 
       - name: Instalar Gradle
