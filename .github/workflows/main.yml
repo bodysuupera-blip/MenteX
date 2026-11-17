@@ -30,18 +30,19 @@ jobs:
         uses: android-actions/setup-android@v4
         with:
           accept-android-sdk-licenses: true
-          log-accepted-android-sdk-licenses: false
           packages: platform-tools
 
       - name: Instalar ferramentas Android
         run: |
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Compilar APK
-        uses: gradle/gradle-build-action@v3
+      - name: Instalar Gradle
+        uses: gradle/actions/setup-gradle@v4
         with:
-          build-root-directory: CaoFujaoAndroid
-          arguments: assembleDebug
+          gradle-version: '8.7'
+
+      - name: Compilar APK
+        run: gradle -p CaoFujaoAndroid assembleDebug
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
