@@ -37,7 +37,7 @@ jobs:
 
       - name: Extrair projeto atualizado
         run: |
-          unzip -o CaoFujao_tenis_turbo_itens_uso_unico.zip -d .
+          unzip -o CaoFujao_final_primeiro_passo_10_vidas.zip -d .
           ls -la CaoFujaoAndroid
 
       - name: Instalar Gradle
