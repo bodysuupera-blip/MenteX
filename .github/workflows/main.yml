@@ -39,7 +39,12 @@ jobs:
         run: |
           unzip -o CaoFujao_atualizado_moedas10k_dog2casas_billing.zip -d .
           test -f CaoFujaoAndroid/app/src/main/assets/index.html
-          test -f CaoFujaoAndroid/app/src/main/java/com/caofujao/app/MainActivity.java
+
+      - name: Corrigir importacao do Billing
+        run: |
+          FILE="CaoFujaoAndroid/app/src/main/java/com/caofujao/app/MainActivity.java"
+          sed -i 's/import com\.android\.billingclient\.api\.ProductDetailsParams;/import com.android.billingclient.api.BillingFlowParams.ProductDetailsParams;/' "$FILE"
+          grep -n "ProductDetailsParams" "$FILE"
 
       - name: Instalar Gradle
         uses: gradle/actions/setup-gradle@v4
