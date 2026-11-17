@@ -37,7 +37,7 @@ jobs:
 
       - name: Extrair projeto atualizado
         run: |
-          unzip -o CaoFujao_novas_fases_buracos_10_vidas.zip -d .
+          unzip -o CaoFujao_bonus_teste_10000_moedas_999_vidas.zip -d .
           ls -la CaoFujaoAndroid
 
       - name: Instalar Gradle
@@ -51,7 +51,7 @@ jobs:
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: Cao-Fujao-Atualizado
+          name: Cao-Fujao-Teste
           path: CaoFujaoAndroid/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           
