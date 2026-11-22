@@ -15,89 +15,51 @@ jobs:
       - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Instalar Java 17
+      - name: Configurar Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Instalar Node.js
+      - name: Configurar Node
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Configurar Android SDK
-        shell: bash
+      - name: Preparar Android
         run: |
-          set -e
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
           echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
 
-          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)
-
-          if [ -z "$SDKMANAGER" ]; then
-            echo "SDKMANAGER NÃO ENCONTRADO"
-            exit 1
-          fi
-
-          chmod +x "$SDKMANAGER"
-
-          echo "SDKMANAGER=$SDKMAN" >> $GITHUB_ENV
-          echo "SDKMAN encontrado com sucesso"
-
-      - name: Instalar ferramentas Android
+      - name: Localizar e extrair jogo
         shell: bash
         run: |
           set -e
-          "$SDKMANAGER" --version
-          "$SDKMAN" --licenses || true
-          "$SDKMAN" "platform-tools"
-          "$SDKMAN" "platforms;android-34"
-          "$SDKMAN" "build-tools;34.0.0"
 
-      - name: Encontrar ZIP do jogo
-        shell: bash
-        run: |
-          set -e
           ZIP="Mente-em-Fuga-Independente-NOVO.zip"
 
           if [ ! -f "$ZIP" ]; then
-            echo "ZIP NÃO ENCONTRADO:"
-            find . -maxdepth 3 -type f -iname "*Mente*Fuga*.zip"
+            echo "ZIP do jogo nao encontrado"
             exit 1
           fi
 
-          echo "ZIP localizado: $ZIP"
-
-      - name: Extrair jogo
-        shell: bash
-        run: |
-          set -e
-          rm -rf /tmp/mente-fuga
           mkdir -p /tmp/mente-fuga
+          unzip -q "$ZIP" -d /tmp/mente-fuga
 
-          unzip -q "Mente-em-Fuga-Independente-NOVO.zip" -d /tmp/mente-fuga
-
-          HTML=$(find /tmp/mente-fuga -type f -name "index.html" | head -n 1)
+          HTML=$(find /tmp/mente-fuga -type f -name index.html | head -n 1)
 
           if [ -z "$HTML" ]; then
-            echo "INDEX.HTML NÃO ENCONTRADO"
-            find /tmp/mente-fuga -maxdepth 5 -type f
+            echo "index.html nao encontrado"
             exit 1
           fi
 
           WEB_DIR=$(dirname "$HTML")
 
           mkdir -p mente-em-fuga/www
-          rm -rf mente-em-fuga/www/*
           cp -a "$WEB_DIR/." mente-em-fuga/www/
 
-          echo "JOGO EXTRAÍDO:"
-          ls -la mente-em-fuga/www
-
-      - name: Criar aplicativo Android independente
+      - name: Criar aplicativo Android
         working-directory: mente-em-fuga
-        shell: bash
         run: |
           set -e
 
@@ -129,34 +91,21 @@ jobs:
           npx cap add android
           npx cap sync android
 
-      - name: Gerar APK
+      - name: Compilar APK
         working-directory: mente-em-fuga/android
-        shell: bash
         run: |
-          set -e
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Verificar APK
-        shell: bash
+      - name: Conferir APK
         run: |
-          set -e
-          APK="mente-em-fuga/android/app/build/outputs/apk/debug/app-debug.apk"
+          test -f mente-em-fuga/android/app/build/outputs/apk/debug/app-debug.apk
+          ls -lh mente-em-fuga/android/app/build/outputs/apk/debug/app-debug.apk
 
-          if [ ! -f "$APK" ]; then
-            echo "APK NÃO GERADO"
-            find mente-em-fuga/android -type f -name "*.apk"
-            exit 1
-          fi
-
-          ls -lh "$APK"
-          echo "APK GERADO COM SUCESSO"
-
-      - name: Disponibilizar APK para download
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTE-EM-FUGA-APK
           path: mente-em-fuga/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          retention-days: 7
           
