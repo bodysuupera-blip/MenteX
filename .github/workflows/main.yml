@@ -15,82 +15,97 @@ jobs:
       - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Java 17
+      - name: Instalar Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Node.js 20
+      - name: Instalar Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Preparar Android SDK
+      - name: Configurar Android SDK
+        shell: bash
         run: |
+          set -e
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
           echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
 
           SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)
 
           if [ -z "$SDKMANAGER" ]; then
-            echo "sdkmanager nao encontrado"
+            echo "SDKMANAGER NÃO ENCONTRADO"
             exit 1
           fi
 
+          chmod +x "$SDKMANAGER"
+
           echo "SDKMANAGER=$SDKMAN" >> $GITHUB_ENV
+          echo "SDKMAN encontrado com sucesso"
 
-      - name: Instalar componentes Android
+      - name: Instalar ferramentas Android
+        shell: bash
         run: |
-          yes | $SDKMANAGER --licenses || true
-          $SDKMANAGER "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+          set -e
+          "$SDKMANAGER" --version
+          "$SDKMAN" --licenses || true
+          "$SDKMAN" "platform-tools"
+          "$SDKMAN" "platforms;android-34"
+          "$SDKMAN" "build-tools;34.0.0"
 
-      - name: Localizar ZIP correto
+      - name: Encontrar ZIP do jogo
+        shell: bash
         run: |
+          set -e
           ZIP="Mente-em-Fuga-Independente-NOVO.zip"
 
           if [ ! -f "$ZIP" ]; then
-            echo "ZIP do Mente em Fuga nao encontrado!"
-            find . -maxdepth 3 -type f -name "*Mente*Fuga*.zip"
+            echo "ZIP NÃO ENCONTRADO:"
+            find . -maxdepth 3 -type f -iname "*Mente*Fuga*.zip"
             exit 1
           fi
 
-          echo "ZIP encontrado: $ZIP"
+          echo "ZIP localizado: $ZIP"
 
       - name: Extrair jogo
+        shell: bash
         run: |
+          set -e
           rm -rf /tmp/mente-fuga
           mkdir -p /tmp/mente-fuga
+
           unzip -q "Mente-em-Fuga-Independente-NOVO.zip" -d /tmp/mente-fuga
 
           HTML=$(find /tmp/mente-fuga -type f -name "index.html" | head -n 1)
 
           if [ -z "$HTML" ]; then
-            echo "index.html nao encontrado dentro do ZIP"
+            echo "INDEX.HTML NÃO ENCONTRADO"
             find /tmp/mente-fuga -maxdepth 5 -type f
             exit 1
           fi
 
           WEB_DIR=$(dirname "$HTML")
 
-          rm -rf mente-em-fuga/www
           mkdir -p mente-em-fuga/www
+          rm -rf mente-em-fuga/www/*
           cp -a "$WEB_DIR/." mente-em-fuga/www/
 
-          echo "Jogo extraido:"
+          echo "JOGO EXTRAÍDO:"
           ls -la mente-em-fuga/www
 
-      - name: Criar projeto Android independente
+      - name: Criar aplicativo Android independente
         working-directory: mente-em-fuga
+        shell: bash
         run: |
+          set -e
+
           cat > package.json <<'EOF'
           {
             "name": "mente-em-fuga",
             "version": "1.0.0",
             "private": true,
-            "scripts": {
-              "build": "echo Web game ready"
-            },
             "dependencies": {
               "@capacitor/core": "6.1.2"
             },
@@ -111,32 +126,37 @@ jobs:
           EOF
 
           npm install
-
           npx cap add android
           npx cap sync android
 
-      - name: Compilar APK
+      - name: Gerar APK
         working-directory: mente-em-fuga/android
+        shell: bash
         run: |
+          set -e
           chmod +x gradlew
           ./gradlew assembleDebug
 
       - name: Verificar APK
+        shell: bash
         run: |
+          set -e
           APK="mente-em-fuga/android/app/build/outputs/apk/debug/app-debug.apk"
 
           if [ ! -f "$APK" ]; then
-            echo "APK nao foi gerado"
-            find mente-em-fuga/android -name "*.apk"
+            echo "APK NÃO GERADO"
+            find mente-em-fuga/android -type f -name "*.apk"
             exit 1
           fi
 
           ls -lh "$APK"
+          echo "APK GERADO COM SUCESSO"
 
-      - name: Disponibilizar APK
+      - name: Disponibilizar APK para download
         uses: actions/upload-artifact@v4
         with:
           name: MENTE-EM-FUGA-APK
           path: mente-em-fuga/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          retention-days: 7
           
