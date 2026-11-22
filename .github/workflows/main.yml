@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar repositório
+      - name: Baixar repositorio
         uses: actions/checkout@v4
 
       - name: Configurar Node.js
@@ -26,16 +26,24 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Preparar Android SDK
+      - name: Configurar Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Localizar e extrair fonte
+      - name: Aceitar licencas Android
+        run: |
+          yes | sdkmanager --licenses || true
+
+      - name: Instalar SDK Android
+        run: |
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Extrair fonte
         run: |
           set -e
-          ZIP=$(find . -maxdepth 3 -iname "Labirinto_de_Fantasmas_Fonte_Nova.zip" | head -n 1)
+          ZIP=$(find . -type f -iname "Labirinto_de_Fantasmas_Fonte_Nova.zip" | head -n 1)
 
           if [ -z "$ZIP" ]; then
-            echo "ZIP da fonte não encontrado no repositório."
+            echo "ZIP da fonte nao encontrado"
             exit 1
           fi
 
@@ -48,18 +56,18 @@ jobs:
           PROJECT=$(find appsource -name package.json -printf '%h\n' | head -n 1)
 
           if [ -z "$PROJECT" ]; then
-            echo "package.json não encontrado."
+            echo "package.json nao encontrado"
             exit 1
           fi
 
           echo "PROJECT=$PROJECT" >> $GITHUB_ENV
 
-      - name: Instalar dependências
+      - name: Instalar dependencias
         run: |
           cd "$PROJECT"
           npm install
 
-      - name: Preparar Capacitor Android
+      - name: Sincronizar Android
         run: |
           cd "$PROJECT"
           npx cap sync android
@@ -70,9 +78,10 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Salvar APK
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
           name: Labirinto-de-Fantasmas-APK
           path: ${{ env.PROJECT }}/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          
