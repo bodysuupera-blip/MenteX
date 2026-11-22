@@ -1,5 +1,5 @@
 
-name: Nexus 350 - Gerar APK Android
+name: Nexus 350 - APK Horizontal Atualizado
 
 on:
   workflow_dispatch:
@@ -27,13 +27,13 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - name: Localizar ZIP do jogo
+      - name: Localizar ZIP atualizado
         run: |
-          ZIP=$(find . -maxdepth 2 -type f \
-            -name 'Nexus350_Labirinto_Fantasmas.zip' | head -n 1)
+          ZIP=$(find . -maxdepth 3 -type f \
+            -iname 'Nexus350_Labirinto_Fantasmas.zip' | head -n 1)
 
           if [ -z "$ZIP" ]; then
-            echo "ERRO: ZIP do Nexus 350 nao encontrado!"
+            echo "ZIP do Nexus 350 nao encontrado!"
             exit 1
           fi
 
@@ -45,26 +45,42 @@ jobs:
           mkdir -p extracted
           unzip -q "$ZIP_PATH" -d extracted
 
-      - name: Localizar codigo do jogo
+      - name: Localizar projeto
         id: project
         run: |
           P=$(find extracted -type f \
             -name package.json | head -n 1)
 
           if [ -z "$P" ]; then
-            echo "ERRO: package.json nao encontrado!"
+            echo "package.json nao encontrado!"
+            find extracted -maxdepth 5 -type f
             exit 1
           fi
 
           DIR=$(dirname "$P")
           echo "dir=$DIR" >> "$GITHUB_OUTPUT"
-
           echo "Projeto encontrado: $DIR"
+
+      - name: Corrigir dependencias Capacitor
+        run: |
+          cd "${{ steps.project.outputs.dir }}"
+
+          npm pkg set \
+            'dependencies.@capacitor/core=^7.0.0' \
+            'dependencies.@capacitor/android=^7.0.0' \
+            'dependencies.@capacitor/app=^7.0.0' \
+            'devDependencies.@capacitor/cli=^7.0.0'
 
       - name: Instalar dependencias
         run: |
           cd "${{ steps.project.outputs.dir }}"
           npm install
+
+      - name: Verificar jogo
+        run: |
+          cd "${{ steps.project.outputs.dir }}"
+          test -f www/index.html
+          test -f capacitor.config.json
 
       - name: Preparar Android
         run: |
@@ -80,6 +96,8 @@ jobs:
         run: |
           cd "${{ steps.project.outputs.dir }}"
 
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+
           python3 - <<'PY'
           from pathlib import Path
 
@@ -94,7 +112,7 @@ jobs:
               )
 
           p.write_text(s)
-          print("Orientacao horizontal configurada.")
+          print("Tela horizontal configurada.")
           PY
 
       - name: Gerar APK
@@ -103,10 +121,10 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Publicar APK
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: Nexus350-Labirinto-de-Fantasmas
+          name: Nexus350-Horizontal-Controles-Moedas
           path: extracted/**/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           
