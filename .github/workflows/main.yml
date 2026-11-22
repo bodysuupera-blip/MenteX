@@ -16,41 +16,48 @@ jobs:
       - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Configurar Java
+      - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Node
+      - name: Configurar Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Configurar Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Localizar Android SDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
 
       - name: Aceitar licencas Android
         run: |
-          yes | sdkmanager --licenses || true
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
-      - name: Instalar componentes Android
+      - name: Instalar SDK Android
         run: |
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
 
-      - name: Verificar projeto independente
+      - name: Verificar arquivos do jogo
         run: |
+          ls -la mente-em-fuga
           test -f mente-em-fuga/www/index.html
           test -f mente-em-fuga/package.json
+          test -d mente-em-fuga/android
 
       - name: Instalar dependencias
         working-directory: mente-em-fuga
         run: npm install
 
-      - name: Preparar Android
+      - name: Sincronizar Capacitor
         working-directory: mente-em-fuga
-        run: |
-          npx cap sync android
+        run: npx cap sync android
 
       - name: Compilar APK
         working-directory: mente-em-fuga/android
@@ -58,7 +65,7 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Salvar APK
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTE-EM-FUGA-APK
