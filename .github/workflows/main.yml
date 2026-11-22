@@ -21,7 +21,7 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Node.js
+      - name: Configurar Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -30,12 +30,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ZIP=$(find . -type f -iname '*Mente*Fuga*Labirinto*.zip' -print -quit)
+          ZIP="./Mente-em-Fuga-Independente-CORRIGIDO.zip"
 
-          if [ -z "$ZIP" ]; then
-            echo "ERRO: ZIP do Mente em Fuga nao encontrado."
-            echo "ZIPs encontrados:"
-            find . -type f -iname '*.zip' || true
+          if [ ! -f "$ZIP" ]; then
+            echo "ZIP nao encontrado. Arquivos disponiveis:"
+            find . -maxdepth 3 -type f -iname '*.zip'
             exit 1
           fi
 
@@ -49,10 +48,14 @@ jobs:
           if [ -z "${ANDROID_HOME:-}" ]; then
             export ANDROID_HOME=/usr/local/lib/android/sdk
           fi
-          test -d "$ANDROID_HOME"
+
+          if [ ! -d "$ANDROID_HOME" ]; then
+            echo "Android SDK nao encontrado."
+            exit 1
+          fi
+
           echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
           echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
-          echo "SDK encontrado em $ANDROID_HOME"
 
       - name: Extrair projeto
         shell: bash
@@ -64,16 +67,23 @@ jobs:
           PROJECT=$(find "$RUNNER_TEMP/mente-fuga" -type f -name package.json -printf '%h\n' | head -n 1)
 
           if [ -z "$PROJECT" ]; then
-            echo "ERRO: package.json nao encontrado dentro do ZIP."
+            echo "package.json nao encontrado dentro do ZIP."
             find "$RUNNER_TEMP/mente-fuga" -maxdepth 4 -type f
             exit 1
           fi
 
-          test -f "$PROJECT/capacitor.config.json"
-          test -f "$PROJECT/www/index.html"
+          if [ ! -f "$PROJECT/capacitor.config.json" ]; then
+            echo "capacitor.config.json nao encontrado."
+            exit 1
+          fi
+
+          if [ ! -f "$PROJECT/www/index.html" ]; then
+            echo "www/index.html nao encontrado."
+            exit 1
+          fi
 
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
-          echo "Projeto encontrado: $PROJECT"
+          echo "Projeto localizado: $PROJECT"
 
       - name: Instalar dependencias
         shell: bash
@@ -98,11 +108,14 @@ jobs:
         run: |
           set -euo pipefail
           APK="$PROJECT/android/app/build/outputs/apk/debug/app-debug.apk"
+
           if [ ! -f "$APK" ]; then
-            echo "ERRO: APK nao foi gerado."
-            find "$PROJECT/android" -name '*.apk' || true
+            echo "APK nao foi gerado."
+            find "$PROJECT/android" -type f -name '*.apk' || true
             exit 1
           fi
+
+          echo "APK gerado com sucesso:"
           ls -lh "$APK"
 
       - name: Publicar APK
