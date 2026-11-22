@@ -9,51 +9,58 @@ on:
       - '.github/workflows/mente-em-fuga.yml'
 
 jobs:
-  build:
+  construir:
     runs-on: ubuntu-latest
 
     steps:
       - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Configurar Java 17
+      - name: Configurar Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Node.js
+      - name: Configurar Node
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
       - name: Configurar Android SDK
         uses: android-actions/setup-android@v3
-        with:
-          packages: |
-            platform-tools
-            platforms;android-35
-            build-tools;35.0.0
 
-      - name: Preparar jogo independente
+      - name: Aceitar licencas Android
+        run: |
+          yes | sdkmanager --licenses || true
+
+      - name: Instalar componentes Android
+        run: |
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Verificar projeto independente
+        run: |
+          test -f mente-em-fuga/www/index.html
+          test -f mente-em-fuga/package.json
+
+      - name: Instalar dependencias
+        working-directory: mente-em-fuga
+        run: npm install
+
+      - name: Preparar Android
         working-directory: mente-em-fuga
         run: |
-          test -f www/index.html
-          npm init -y
-          npm install @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6
-          npx cap init "Mente em Fuga" br.com.menteemfuga.app --web-dir www --npm-client npm
-          npx cap add android
           npx cap sync android
 
-      - name: Gerar APK
+      - name: Compilar APK
         working-directory: mente-em-fuga/android
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Disponibilizar APK
+      - name: Salvar APK
         uses: actions/upload-artifact@v4
         with:
-          name: Mente-em-Fuga-APK
+          name: MENTE-EM-FUGA-APK
           path: mente-em-fuga/android/app/build/outputs/apk/debug/app-debug.apk
           
