@@ -26,7 +26,7 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Localizar ZIP do jogo
+      - name: Localizar ZIP
         shell: bash
         run: |
           set -euo pipefail
@@ -34,13 +34,13 @@ jobs:
           ZIP=$(find . -type f -iname 'Briga_de_Bar_Duelo_da_Paquera_Projeto.zip' -print -quit)
 
           if [ -z "$ZIP" ]; then
-            echo "ZIP do Briga de Bar nao encontrado."
+            echo "ZIP do jogo nao encontrado."
             find . -type f -iname '*.zip'
             exit 1
           fi
 
-          echo "ZIP encontrado: $ZIP"
           echo "ZIP=$ZIP" >> "$GITHUB_ENV"
+          echo "Arquivo encontrado: $ZIP"
 
       - name: Preparar Android SDK
         shell: bash
@@ -51,11 +51,7 @@ jobs:
             export ANDROID_HOME=/usr/local/lib/android/sdk
           fi
 
-          if [ ! -d "$ANDROID_HOME" ]; then
-            echo "Android SDK nao encontrado."
-            exit 1
-          fi
-
+          test -d "$ANDROID_HOME"
           echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
           echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
 
@@ -70,24 +66,31 @@ jobs:
           PROJECT=$(find "$RUNNER_TEMP/briga-de-bar" -type f -name package.json -printf '%h\n' | head -n 1)
 
           if [ -z "$PROJECT" ]; then
-            echo "package.json nao encontrado."
+            echo "package.json nao encontrado no ZIP."
             find "$RUNNER_TEMP/briga-de-bar" -maxdepth 4 -type f
             exit 1
           fi
 
-          test -f "$PROJECT/www/index.html"
+          if [ ! -f "$PROJECT/www/index.html" ]; then
+            echo "www/index.html nao encontrado."
+            exit 1
+          fi
 
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
-          echo "Projeto localizado: $PROJECT"
+          echo "Projeto: $PROJECT"
 
-      - name: Instalar dependencias
+      - name: Instalar Capacitor CLI e Android
         shell: bash
         run: |
           set -euo pipefail
 
           cd "$PROJECT"
+
           npm install
-          npm install @capacitor/android@^6.2.0
+          npm install @capacitor/core@6.2.0
+          npm install @capacitor/cli@6.2.0
+          npm install @capacitor/android@6.2.0
+
           npx cap add android
           npx cap sync android
 
@@ -115,7 +118,7 @@ jobs:
 
           ls -lh "$APK"
 
-      - name: Disponibilizar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: BRIGA-DE-BAR-DUELO-DA-PAQUERA-APK
