@@ -1,5 +1,5 @@
 
-name: Labirinto de Fantasmas - APK
+name: Nexus 350 - Gerar APK Android
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar repositorio
+      - name: Baixar código
         uses: actions/checkout@v4
 
       - name: Configurar Node.js
@@ -20,354 +20,31 @@ jobs:
         with:
           node-version: 20
 
-      - name: Configurar Java 21
+      - name: Configurar Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 21
 
-      - name: Verificar Java
+      - name: Instalar dependências
+        run: npm install
+
+      - name: Criar Android
+        run: npx cap add android
+
+      - name: Sincronizar Capacitor
+        run: npx cap sync android
+
+      - name: Gerar APK
         run: |
-          java -version
-          echo "JAVA_HOME=$JAVA_HOME"
-
-      - name: Criar projeto independente
-        shell: bash
-        run: |
-          set -e
-
-          mkdir -p jogo
-          cd jogo
-
-          cat > package.json <<'EOF'
-          {
-            "name": "labirinto-de-fantasmas",
-            "version": "1.0.0",
-            "private": true,
-            "scripts": {
-              "build": "echo Build pronto"
-            },
-            "dependencies": {
-              "@capacitor/core": "^7.0.0",
-              "@capacitor/android": "^7.0.0"
-            },
-            "devDependencies": {
-              "@capacitor/cli": "^7.0.0"
-            }
-          }
-          EOF
-
-          cat > capacitor.config.json <<'EOF'
-          {
-            "appId": "com.labirintodefantasmas.game",
-            "appName": "Labirinto de Fantasmas",
-            "webDir": "www"
-          }
-          EOF
-
-          mkdir -p www
-
-          cat > www/index.html <<'EOF'
-          <!DOCTYPE html>
-          <html lang="pt-BR">
-          <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-          <title>Labirinto de Fantasmas</title>
-          <style>
-          * { box-sizing: border-box; }
-          body {
-            margin: 0;
-            background: #090d24;
-            color: white;
-            font-family: Arial, sans-serif;
-            text-align: center;
-            overflow: hidden;
-          }
-          h1 { color: #66e5ff; font-size: 25px; }
-          #info {
-            display: flex;
-            justify-content: space-around;
-            padding: 10px;
-            font-size: 16px;
-          }
-          canvas {
-            background: #080b1c;
-            border: 3px solid #3558b9;
-            width: 94vw;
-            max-width: 400px;
-            height: 400px;
-          }
-          #controls {
-            display: grid;
-            grid-template-columns: 65px 65px 65px;
-            grid-template-rows: 55px 55px;
-            justify-content: center;
-            gap: 5px;
-            margin-top: 10px;
-          }
-          button {
-            background: #2144a5;
-            color: white;
-            border: 2px solid #6de6ff;
-            border-radius: 12px;
-            font-size: 25px;
-            font-weight: bold;
-          }
-          button:active { background: #4c79f4; }
-          #up { grid-column: 2; }
-          #left { grid-column: 1; grid-row: 2; }
-          #down { grid-column: 2; grid-row: 2; }
-          #right { grid-column: 3; grid-row: 2; }
-          #message { padding: 5px; color: #ffe66d; }
-          </style>
-          </head>
-          <body>
-          <h1>👻 Labirinto de Fantasmas</h1>
-          <div id="info">
-            <span>Fase <b id="phase">1</b></span>
-            <span>🪙 <b id="coins">0</b></span>
-            <span>❤️ <b id="lives">3</b></span>
-            <span>⏱️ <b id="time">15</b></span>
-          </div>
-          <canvas id="game" width="400" height="400"></canvas>
-          <div id="message">Colete as moedas e fuja dos fantasmas!</div>
-          <div id="controls">
-            <button id="up">⬆️</button>
-            <button id="left">⬅️</button>
-            <button id="down">⬇️</button>
-            <button id="right">➡️</button>
-          </div>
-          <script>
-          const canvas = document.getElementById("game");
-          const ctx = canvas.getContext("2d");
-          const tile = 40;
-          const rows = 10;
-          const cols = 10;
-
-          let phase = 1, coins = 0, lives = 3, time = 15;
-          let player = {x:1,y:1};
-          let ghosts = [];
-          let walls = [];
-          let treasures = [];
-          let running = true;
-
-          function createLevel() {
-            player = {x:1,y:1};
-            walls = [];
-            treasures = [];
-            ghosts = [];
-
-            for(let y=0;y<rows;y++){
-              for(let x=0;x<cols;x++){
-                if(x===0||y===0||x===cols-1||y===rows-1){
-                  walls.push({x,y});
-                } else if((x*3+y*7+phase)%8===0 && !(x===1&&y===1)){
-                  walls.push({x,y});
-                }
-              }
-            }
-
-            for(let i=0;i<5;i++){
-              let x,y;
-              do {
-                x=1+Math.floor(Math.random()*8);
-                y=1+Math.floor(Math.random()*8);
-              } while(walls.some(w=>w.x===x&&w.y===y) || (x===1&&y===1));
-              treasures.push({x,y});
-            }
-
-            for(let i=0;i<Math.min(phase+1,5);i++){
-              let x,y;
-              do {
-                x=1+Math.floor(Math.random()*8);
-                y=1+Math.floor(Math.random()*8);
-              } while(walls.some(w=>w.x===x&&w.y===y) || (x===1&&y===1));
-              ghosts.push({x,y,dx:1,dy:0});
-            }
-
-            time=15;
-            running=true;
-            updateInfo();
-          }
-
-          function updateInfo(){
-            document.getElementById("phase").textContent=phase;
-            document.getElementById("coins").textContent=coins;
-            document.getElementById("lives").textContent=lives;
-            document.getElementById("time").textContent=time;
-          }
-
-          function draw(){
-            ctx.clearRect(0,0,400,400);
-
-            ctx.fillStyle="#111b38";
-            ctx.fillRect(0,0,400,400);
-
-            walls.forEach(w=>{
-              ctx.fillStyle="#3457ad";
-              ctx.fillRect(w.x*tile,w.y*tile,tile,tile);
-              ctx.strokeStyle="#5c85e8";
-              ctx.strokeRect(w.x*tile,w.y*tile,tile,tile);
-            });
-
-            treasures.forEach(t=>{
-              ctx.fillStyle="#ffd83d";
-              ctx.beginPath();
-              ctx.arc(t.x*tile+20,t.y*tile+20,9,0,Math.PI*2);
-              ctx.fill();
-            });
-
-            ghosts.forEach(g=>{
-              ctx.fillStyle="#ff4b91";
-              ctx.beginPath();
-              ctx.arc(g.x*tile+20,g.y*tile+20,15,0,Math.PI*2);
-              ctx.fill();
-              ctx.fillStyle="white";
-              ctx.fillRect(g.x*tile+12,g.y*tile+15,5,6);
-              ctx.fillRect(g.x*tile+22,g.y*tile+15,5,6);
-            });
-
-            ctx.fillStyle="#44edff";
-            ctx.beginPath();
-            ctx.arc(player.x*tile+20,player.y*tile+20,14,0,Math.PI*2);
-            ctx.fill();
-
-            ctx.fillStyle="#071024";
-            ctx.beginPath();
-            ctx.arc(player.x*tile+25,player.y*tile+17,3,0,Math.PI*2);
-            ctx.fill();
-          }
-
-          function move(dx,dy){
-            if(!running)return;
-            const nx=player.x+dx, ny=player.y+dy;
-            if(!walls.some(w=>w.x===nx&&w.y===ny)){
-              player.x=nx;
-              player.y=ny;
-            }
-
-            const index=treasures.findIndex(t=>t.x===player.x&&t.y===player.y);
-            if(index>=0){
-              treasures.splice(index,1);
-              coins+=10;
-            }
-
-            if(ghosts.some(g=>g.x===player.x&&g.y===player.y)){
-              loseLife();
-            }
-
-            if(treasures.length===0){
-              coins+=10;
-              phase++;
-              createLevel();
-            }
-
-            updateInfo();
-            draw();
-          }
-
-          function moveGhosts(){
-            if(!running)return;
-            ghosts.forEach(g=>{
-              const options=[[1,0],[-1,0],[0,1],[0,-1]]
-                .filter(d=>!walls.some(w=>w.x===g.x+d[0]&&w.y===g.y+d[1]));
-              if(options.length){
-                const choice=options[Math.floor(Math.random()*options.length)];
-                g.x+=choice[0];
-                g.y+=choice[1];
-              }
-            });
-
-            if(ghosts.some(g=>g.x===player.x&&g.y===player.y)){
-              loseLife();
-            }
-            draw();
-          }
-
-          function loseLife(){
-            if(!running)return;
-            lives--;
-            if(lives<=0){
-              running=false;
-              document.getElementById("message").textContent="Fim de jogo! Reiniciando...";
-              setTimeout(()=>{
-                phase=1;coins=0;lives=3;
-                createLevel();
-              },1500);
-            }else{
-              player={x:1,y:1};
-              document.getElementById("message").textContent="Um fantasma pegou você!";
-            }
-            updateInfo();
-          }
-
-          function bind(id,dx,dy){
-            const b=document.getElementById(id);
-            b.addEventListener("click",()=>move(dx,dy));
-            b.addEventListener("touchstart",e=>{
-              e.preventDefault();
-              move(dx,dy);
-            },{passive:false});
-          }
-
-          bind("up",0,-1);
-          bind("down",0,1);
-          bind("left",-1,0);
-          bind("right",1,0);
-
-          setInterval(()=>{
-            if(!running)return;
-            time--;
-            if(time<=0){
-              loseLife();
-              time=15;
-            }
-            updateInfo();
-          },1000);
-
-          setInterval(moveGhosts,650);
-
-          createLevel();
-          draw();
-          </script>
-          </body>
-          </html>
-          EOF
-
-      - name: Instalar dependencias
-        shell: bash
-        run: |
-          set -e
-          cd jogo
-          npm install
-
-      - name: Criar plataforma Android
-        shell: bash
-        run: |
-          set -e
-          cd jogo
-          npx cap add android
-
-      - name: Sincronizar Android
-        shell: bash
-        run: |
-          set -e
-          cd jogo
-          npx cap sync android
-
-      - name: Compilar APK
-        shell: bash
-        run: |
-          set -e
-          cd jogo/android
+          cd android
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Publicar APK
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: Labirinto-de-Fantasmas-APK
-          path: jogo/android/app/build/outputs/apk/debug/app-debug.apk
+          name: Nexus350-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           
