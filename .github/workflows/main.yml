@@ -15,7 +15,7 @@ jobs:
       - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Instalar Java 17
+      - name: Instalar Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -26,12 +26,16 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Preparar Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: ''
 
-      - name: Instalar componentes Android
+      - name: Instalar plataformas Android
         run: |
-          sdkmanager --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          sdkmanager "platform-tools"
+          sdkmanager "platforms;android-35"
+          sdkmanager "build-tools;35.0.0"
 
       - name: Preparar projeto
         run: |
@@ -54,19 +58,19 @@ jobs:
           }
           EOF
 
-      - name: Criar projeto Android
+      - name: Criar Android
         run: npx cap add android
 
       - name: Sincronizar
         run: npx cap sync android
 
-      - name: Gerar APK
+      - name: Compilar APK
         run: |
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Salvar APK
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTE-EM-FUGA-APK
