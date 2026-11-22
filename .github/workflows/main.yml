@@ -26,62 +26,124 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Preparar Android SDK
+      - name: Localizar Android SDK e sdkmanager
+        shell: bash
         run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
+          set -e
 
-      - name: Aceitar licencas
+          SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+
+          echo "SDK: $SDK"
+
+          if [ ! -d "$SDK" ]; then
+            echo "Android SDK nao encontrado: $SDK"
+            exit 1
+          fi
+
+          SDKMANAGER=$(find "$SDK" -type f -name sdkmanager | head -n 1)
+
+          if [ -z "$SDKMANAGER" ]; then
+            echo "sdkmanager nao encontrado dentro do Android SDK"
+            find "$SDK" -maxdepth 5 -type d
+            exit 1
+          fi
+
+          SDKMANAGER_DIR=$(dirname "$SDKMANAGER")
+
+          echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
+          echo "$SDKMANAGER_DIR" >> "$GITHUB_PATH"
+          echo "$SDK/platform-tools" >> "$GITHUB_PATH"
+
+          echo "sdkmanager encontrado: $SDKMANAGER"
+
+      - name: Aceitar licencas Android
+        shell: bash
         run: |
+          set -e
+
           mkdir -p "$ANDROID_HOME/licenses"
-          echo "24333f8a63b6825ea9c5514f83c2829b004d7f3" > "$ANDROID_HOME/licenses/android-sdk-license"
-          echo "84831b9409646a918e30573bab4c9c91346d8a55" >> "$ANDROID_HOME/licenses/android-sdk-license"
-          echo "d56f5187479451eabf01fb78af6dfcb6" > "$ANDROID_HOME/licenses/android-sdk-preview-license"
+
+          echo "24333f8a63b6825ea9c5514f83c2829b004d7f3" \
+          > "$ANDROID_HOME/licenses/android-sdk-license"
+
+          echo "84831b9409646a918e30573bab4c9c91346d8a55" \
+          >> "$ANDROID_HOME/licenses/android-sdk-license"
+
+          echo "d56f5187479451eabf01fb78af6dfcb6" \
+          > "$ANDROID_HOME/licenses/android-sdk-preview-license"
 
       - name: Instalar pacotes Android
+        shell: bash
         run: |
-          sdkmanager --sdk_root="$ANDROID_HOME" \
+          set -e
+
+          "$SDKMANAGER" --sdk_root="$ANDROID_HOME" \
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-      - name: Extrair fonte
+      - name: Localizar ZIP do jogo
+        shell: bash
         run: |
           set -e
-          ZIP=$(find . -type f -iname "Labirinto_de_Fantasmas_Fonte_Nova.zip" | head -n 1)
+
+          ZIP=$(find . -type f \
+            -iname "Labirinto_de_Fantasmas_Fonte_Nova.zip" \
+            | head -n 1)
 
           if [ -z "$ZIP" ]; then
-            echo "ZIP da fonte nao encontrado"
+            echo "ZIP da fonte nao encontrado no repositorio"
             exit 1
           fi
 
-          mkdir -p appsource
-          unzip -o "$ZIP" -d appsource
+          echo "ZIP encontrado: $ZIP"
+          echo "ZIP_SOURCE=$ZIP" >> "$GITHUB_ENV"
 
-      - name: Localizar projeto
+      - name: Extrair fonte
+        shell: bash
         run: |
           set -e
-          PROJECT=$(find appsource -name package.json -printf '%h\n' | head -n 1)
+
+          mkdir -p appsource
+          unzip -o "$ZIP_SOURCE" -d appsource
+
+      - name: Localizar projeto
+        shell: bash
+        run: |
+          set -e
+
+          PROJECT=$(find appsource -name package.json \
+            -printf '%h\n' | head -n 1)
 
           if [ -z "$PROJECT" ]; then
             echo "package.json nao encontrado"
             exit 1
           fi
 
-          echo "PROJECT=$PROJECT" >> $GITHUB_ENV
+          echo "Projeto encontrado: $PROJECT"
+          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
 
       - name: Instalar dependencias
+        shell: bash
         run: |
+          set -e
+
           cd "$PROJECT"
           npm install
 
       - name: Sincronizar Capacitor
+        shell: bash
         run: |
+          set -e
+
           cd "$PROJECT"
           npx cap sync android
 
       - name: Gerar APK
+        shell: bash
         run: |
+          set -e
+
           cd "$PROJECT/android"
           chmod +x gradlew
           ./gradlew assembleDebug
