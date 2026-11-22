@@ -1,68 +1,71 @@
 
-name: Gerar APK do Cao Fujao
+name: MENTE EM FUGA - GERAR APK
 
 on:
   workflow_dispatch:
   push:
     branches:
       - main
-      - master
-
-permissions:
-  contents: read
 
 jobs:
-  construir:
-    name: Compilar Cão Fujão
+  build:
     runs-on: ubuntu-latest
 
     steps:
       - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Configurar Java 17
+      - name: Instalar Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Android SDK
-        uses: android-actions/setup-android@v4
+      - name: Instalar Node.js
+        uses: actions/setup-node@v4
         with:
-          accept-android-sdk-licenses: true
+          node-version: '20'
 
-      - name: Instalar ferramentas Android
+      - name: Preparar Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Instalar ferramentas
         run: |
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          npm install @capacitor/core @capacitor/cli @capacitor/android
 
-      - name: Extrair projeto atualizado
+      - name: Criar estrutura do jogo
         run: |
-          unzip -o CaoFujao_10_vidas_100_moedas.zip -d .
-          test -f CaoFujaoAndroid/app/src/main/assets/index.html
-          test -f CaoFujaoAndroid/app/src/main/java/com/caofujao/app/MainActivity.java
+          mkdir -p www
+          cp index.html www/index.html
 
-      - name: Corrigir importacao do Billing
+      - name: Configurar Capacitor
         run: |
-          FILE="CaoFujaoAndroid/app/src/main/java/com/caofujao/app/MainActivity.java"
-          sed -i 's/import com\.android\.billingclient\.api\.ProductDetailsParams;/import com.android.billingclient.api.BillingFlowParams.ProductDetailsParams;/' "$FILE"
+          cat > capacitor.config.json <<'EOF'
+          {
+            "appId": "com.menteemfuga.game",
+            "appName": "Mente em Fuga",
+            "webDir": "www",
+            "bundledWebRuntime": false
+          }
+          EOF
 
-      - name: Instalar Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.7'
-
-      - name: Limpar projeto
+      - name: Criar projeto Android
         run: |
-          gradle -p CaoFujaoAndroid clean
+          npx cap add android
+
+      - name: Sincronizar aplicativo
+        run: |
+          npx cap sync android
 
       - name: Gerar APK
         run: |
-          gradle -p CaoFujaoAndroid assembleDebug
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
 
-      - name: Disponibilizar APK
+      - name: Salvar APK
         uses: actions/upload-artifact@v4
         with:
-          name: Cao-Fujao-10-Vidas-100-Moedas
-          path: CaoFujaoAndroid/app/build/outputs/apk/debug/app-debug.apk
+          name: Mente-em-Fuga-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          
