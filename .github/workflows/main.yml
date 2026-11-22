@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar código
+      - name: Baixar repositório
         uses: actions/checkout@v4
 
       - name: Configurar Node.js
@@ -26,25 +26,62 @@ jobs:
           distribution: temurin
           java-version: 21
 
+      - name: Localizar projeto Nexus 350
+        shell: bash
+        run: |
+          set -e
+
+          PROJECT_DIR=""
+
+          if [ -f "package.json" ] && [ -f "capacitor.config.json" ]; then
+            PROJECT_DIR="."
+          else
+            for config in $(find . -name "capacitor.config.json" -not -path "*/node_modules/*"); do
+              DIR="$(dirname "$config")"
+
+              if [ -f "$DIR/package.json" ] && [ -f "$DIR/www/index.html" ]; then
+                PROJECT_DIR="$DIR"
+                break
+              fi
+            done
+          fi
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "Projeto Nexus 350 não encontrado."
+            echo "Arquivos necessários: package.json, capacitor.config.json e www/index.html"
+            find . -maxdepth 4 -type f
+            exit 1
+          fi
+
+          echo "Projeto encontrado em: $PROJECT_DIR"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
       - name: Instalar dependências
-        run: npm install
+        run: |
+          cd "$PROJECT_DIR"
+          npm install
 
-      - name: Criar Android
-        run: npx cap add android
+      - name: Criar plataforma Android
+        run: |
+          cd "$PROJECT_DIR"
+          npx cap add android
 
-      - name: Sincronizar Capacitor
-        run: npx cap sync android
+      - name: Sincronizar Android
+        run: |
+          cd "$PROJECT_DIR"
+          npx cap sync android
 
       - name: Gerar APK
         run: |
-          cd android
+          cd "$PROJECT_DIR/android"
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Disponibilizar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: Nexus350-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ env.PROJECT_DIR }}/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          retention-days: 30
           
