@@ -1,5 +1,5 @@
 
-name: MENTE EM FUGA - APK INDEPENDENTE
+name: LABIRINTO FANTASMA - GERAR APK
 
 on:
   workflow_dispatch:
@@ -15,97 +15,74 @@ jobs:
       - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Configurar Java
+      - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Node
+      - name: Configurar Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Preparar Android
+      - name: Configurar Android SDK
         run: |
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
           echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
 
-      - name: Localizar e extrair jogo
+      - name: Instalar componentes Android
         shell: bash
         run: |
           set -e
 
-          ZIP="Mente-em-Fuga-Independente-NOVO.zip"
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)
 
-          if [ ! -f "$ZIP" ]; then
-            echo "ZIP do jogo nao encontrado"
+          if [ -z "$SDKMANAGER" ]; then
+            echo "sdkmanager nao encontrado"
             exit 1
           fi
 
-          mkdir -p /tmp/mente-fuga
-          unzip -q "$ZIP" -d /tmp/mente-fuga
+          "$SDKMAN" --licenses || true
+          "$SDKMAN" "platform-tools"
+          "$SDKMAN" "platforms;android-34"
+          "$SDKMAN" "build-tools;34.0.0"
 
-          HTML=$(find /tmp/mente-fuga -type f -name index.html | head -n 1)
-
-          if [ -z "$HTML" ]; then
-            echo "index.html nao encontrado"
-            exit 1
-          fi
-
-          WEB_DIR=$(dirname "$HTML")
-
-          mkdir -p mente-em-fuga/www
-          cp -a "$WEB_DIR/." mente-em-fuga/www/
-
-      - name: Criar aplicativo Android
-        working-directory: mente-em-fuga
+      - name: Verificar projeto
         run: |
-          set -e
+          test -f labirinto-fantasma/package.json
+          test -f labirinto-fantasma/www/index.html
+          test -f labirinto-fantasma/capacitor.config.json
 
-          cat > package.json <<'EOF'
-          {
-            "name": "mente-em-fuga",
-            "version": "1.0.0",
-            "private": true,
-            "dependencies": {
-              "@capacitor/core": "6.1.2"
-            },
-            "devDependencies": {
-              "@capacitor/cli": "6.1.2",
-              "@capacitor/android": "6.1.2"
-            }
-          }
-          EOF
-
-          cat > capacitor.config.json <<'EOF'
-          {
-            "appId": "com.rafaelheranca.menteemfuga",
-            "appName": "Mente em Fuga",
-            "webDir": "www",
-            "bundledWebRuntime": false
-          }
-          EOF
-
+      - name: Instalar dependencias
+        working-directory: labirinto-fantasma
+        run: |
           npm install
           npx cap add android
           npx cap sync android
 
       - name: Compilar APK
-        working-directory: mente-em-fuga/android
+        working-directory: labirinto-fantasma/android
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Conferir APK
+      - name: Verificar APK
         run: |
-          test -f mente-em-fuga/android/app/build/outputs/apk/debug/app-debug.apk
-          ls -lh mente-em-fuga/android/app/build/outputs/apk/debug/app-debug.apk
+          APK="labirinto-fantasma/android/app/build/outputs/apk/debug/app-debug.apk"
+
+          if [ ! -f "$APK" ]; then
+            echo "APK nao encontrado"
+            exit 1
+          fi
+
+          ls -lh "$APK"
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTE-EM-FUGA-APK
-          path: mente-em-fuga/android/app/build/outputs/apk/debug/app-debug.apk
+          name: LABIRINTO-FANTASMA-APK
+          path: labirinto-fantasma/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          retention-days: 7
           
