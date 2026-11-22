@@ -1,5 +1,5 @@
 
-name: BRIGA DE BAR - DUELO DA PAQUERA APK
+name: Labirinto de Fantasmas - Gerar APK
 
 on:
   workflow_dispatch:
@@ -8,121 +8,71 @@ permissions:
   contents: read
 
 jobs:
-  construir:
+  build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar repositorio
+      - name: Baixar repositório
         uses: actions/checkout@v4
 
-      - name: Configurar Java 17
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Configurar Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
-
-      - name: Configurar Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Localizar ZIP
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          ZIP=$(find . -type f -iname 'Briga_de_Bar_Duelo_da_Paquera_Projeto.zip' -print -quit)
-
-          if [ -z "$ZIP" ]; then
-            echo "ZIP do jogo nao encontrado."
-            find . -type f -iname '*.zip'
-            exit 1
-          fi
-
-          echo "ZIP=$ZIP" >> "$GITHUB_ENV"
-          echo "Arquivo encontrado: $ZIP"
+          java-version: 17
 
       - name: Preparar Android SDK
-        shell: bash
-        run: |
-          set -euo pipefail
+        uses: android-actions/setup-android@v3
 
-          if [ -z "${ANDROID_HOME:-}" ]; then
-            export ANDROID_HOME=/usr/local/lib/android/sdk
+      - name: Localizar e extrair fonte
+        run: |
+          set -e
+          ZIP=$(find . -maxdepth 3 -iname "Labirinto_de_Fantasmas_Fonte_Nova.zip" | head -n 1)
+
+          if [ -z "$ZIP" ]; then
+            echo "ZIP da fonte não encontrado no repositório."
+            exit 1
           fi
 
-          test -d "$ANDROID_HOME"
-          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
-          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+          mkdir -p appsource
+          unzip -o "$ZIP" -d appsource
 
-      - name: Extrair projeto
-        shell: bash
+      - name: Localizar projeto
         run: |
-          set -euo pipefail
-
-          mkdir -p "$RUNNER_TEMP/briga-de-bar"
-          unzip -q "$ZIP" -d "$RUNNER_TEMP/briga-de-bar"
-
-          PROJECT=$(find "$RUNNER_TEMP/briga-de-bar" -type f -name package.json -printf '%h\n' | head -n 1)
+          set -e
+          PROJECT=$(find appsource -name package.json -printf '%h\n' | head -n 1)
 
           if [ -z "$PROJECT" ]; then
-            echo "package.json nao encontrado no ZIP."
-            find "$RUNNER_TEMP/briga-de-bar" -maxdepth 4 -type f
+            echo "package.json não encontrado."
             exit 1
           fi
 
-          if [ ! -f "$PROJECT/www/index.html" ]; then
-            echo "www/index.html nao encontrado."
-            exit 1
-          fi
+          echo "PROJECT=$PROJECT" >> $GITHUB_ENV
 
-          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
-          echo "Projeto: $PROJECT"
-
-      - name: Instalar Capacitor CLI e Android
-        shell: bash
+      - name: Instalar dependências
         run: |
-          set -euo pipefail
-
           cd "$PROJECT"
-
           npm install
-          npm install @capacitor/core@6.2.0
-          npm install @capacitor/cli@6.2.0
-          npm install @capacitor/android@6.2.0
 
-          npx cap add android
+      - name: Preparar Capacitor Android
+        run: |
+          cd "$PROJECT"
           npx cap sync android
 
-      - name: Compilar APK
-        shell: bash
+      - name: Gerar APK
         run: |
-          set -euo pipefail
-
           cd "$PROJECT/android"
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Verificar APK
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          APK="$PROJECT/android/app/build/outputs/apk/debug/app-debug.apk"
-
-          if [ ! -f "$APK" ]; then
-            echo "APK nao foi gerado."
-            find "$PROJECT/android" -type f -name '*.apk' || true
-            exit 1
-          fi
-
-          ls -lh "$APK"
-
-      - name: Publicar APK
+      - name: Salvar APK
         uses: actions/upload-artifact@v4
         with:
-          name: BRIGA-DE-BAR-DUELO-DA-PAQUERA-APK
-          path: ${{ runner.temp }}/briga-de-bar/**/android/app/build/outputs/apk/debug/app-debug.apk
+          name: Labirinto-de-Fantasmas-APK
+          path: ${{ env.PROJECT }}/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          retention-days: 7
-          
