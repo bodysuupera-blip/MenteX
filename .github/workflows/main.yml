@@ -4,16 +4,13 @@ name: Nexus 350 Ghost Run - APK
 on:
   workflow_dispatch:
   push:
-    paths:
-      - 'nexus350_rebuild/**'
-      - '.github/workflows/build-apk.yml'
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar código
+      - name: Baixar repositório
         uses: actions/checkout@v4
 
       - name: Configurar Node
@@ -27,24 +24,42 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - name: Entrar no projeto
-        run: cd nexus350_rebuild && npm install
-
-      - name: Criar Android e sincronizar
+      - name: Localizar projeto
+        id: projeto
         run: |
-          cd nexus350_rebuild
-          npx cap add android
+          PROJECT=$(find . -type f -name package.json \
+            -not -path './node_modules/*' \
+            -not -path './android/*' | head -n 1)
+
+          if [ -z "$PROJECT" ]; then
+            echo "package.json não encontrado"
+            exit 1
+          fi
+
+          DIR=$(dirname "$PROJECT")
+          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+          echo "Projeto encontrado em: $DIR"
+
+      - name: Instalar dependências
+        run: |
+          cd "${{ steps.projeto.outputs.dir }}"
+          npm install
+
+      - name: Preparar Android
+        run: |
+          cd "${{ steps.projeto.outputs.dir }}"
+          npx cap add android || true
           npx cap sync android
 
       - name: Gerar APK
         run: |
-          cd nexus350_rebuild/android
+          cd "${{ steps.projeto.outputs.dir }}/android"
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Salvar APK
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: Nexus350-GhostRun
-          path: nexus350_rebuild/android/app/build/outputs/apk/debug/app-debug.apk
+          name: Nexus350-GhostRun-APK
+          path: ${{ steps.projeto.outputs.dir }}/android/app/build/outputs/apk/debug/app-debug.apk
           
