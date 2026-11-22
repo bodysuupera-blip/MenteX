@@ -121,4 +121,3 @@ jobs:
           name: Nexus350-GhostRun-Corrigido
           path: extracted/**/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          
