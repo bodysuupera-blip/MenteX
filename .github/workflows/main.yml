@@ -21,64 +21,47 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Node.js 20
+      - name: Configurar Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Configurar Android SDK
+      - name: Preparar Android SDK
         run: |
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
           echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
 
-      - name: Instalar componentes Android
-        shell: bash
+      - name: Verificar arquivos do jogo
         run: |
           set -e
-
-          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)
-
-          if [ -z "$SDKMANAGER" ]; then
-            echo "sdkmanager nao encontrado"
-            exit 1
-          fi
-
-          "$SDKMAN" --licenses || true
-          "$SDKMAN" "platform-tools"
-          "$SDKMAN" "platforms;android-34"
-          "$SDKMAN" "build-tools;34.0.0"
-
-      - name: Verificar projeto
-        run: |
           test -f labirinto-fantasma/package.json
-          test -f labirinto-fantasma/www/index.html
           test -f labirinto-fantasma/capacitor.config.json
+          test -f labirinto-fantasma/www/index.html
+          echo "Arquivos encontrados!"
 
       - name: Instalar dependencias
         working-directory: labirinto-fantasma
         run: |
+          set -e
           npm install
           npx cap add android
           npx cap sync android
 
-      - name: Compilar APK
+      - name: Gerar APK
         working-directory: labirinto-fantasma/android
         run: |
+          set -e
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Verificar APK
+      - name: Conferir APK
         run: |
+          set -e
           APK="labirinto-fantasma/android/app/build/outputs/apk/debug/app-debug.apk"
-
-          if [ ! -f "$APK" ]; then
-            echo "APK nao encontrado"
-            exit 1
-          fi
-
+          test -f "$APK"
           ls -lh "$APK"
 
-      - name: Disponibilizar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: LABIRINTO-FANTASMA-APK
