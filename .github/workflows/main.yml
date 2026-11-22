@@ -21,68 +21,67 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Node.js 20
+      - name: Configurar Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-
-      - name: Preparar Android SDK existente
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
-          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
-
-          test -d "$ANDROID_HOME/platform-tools"
-          test -d "$ANDROID_HOME/platforms"
-
-          echo "Android SDK encontrado!"
-          ls "$ANDROID_HOME/platforms"
 
       - name: Localizar ZIP
         shell: bash
         run: |
           set -euo pipefail
-
-          ZIP=$(find . -maxdepth 1 -type f \
-            -iname 'Mente_em_Fuga_Labirinto_2.0_ATUALIZADO.zip' \
-            -print -quit)
+          ZIP=$(find . -type f -iname '*Mente*Fuga*Labirinto*.zip' -print -quit)
 
           if [ -z "$ZIP" ]; then
-            echo "ZIP atualizado nao encontrado."
+            echo "ERRO: ZIP do Mente em Fuga nao encontrado."
+            echo "ZIPs encontrados:"
+            find . -type f -iname '*.zip' || true
             exit 1
           fi
 
+          echo "ZIP encontrado: $ZIP"
           echo "ZIP=$ZIP" >> "$GITHUB_ENV"
+
+      - name: Preparar Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${ANDROID_HOME:-}" ]; then
+            export ANDROID_HOME=/usr/local/lib/android/sdk
+          fi
+          test -d "$ANDROID_HOME"
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+          echo "SDK encontrado em $ANDROID_HOME"
 
       - name: Extrair projeto
         shell: bash
         run: |
           set -euo pipefail
-
           mkdir -p "$RUNNER_TEMP/mente-fuga"
-
           unzip -q "$ZIP" -d "$RUNNER_TEMP/mente-fuga"
 
-          PROJECT="$RUNNER_TEMP/mente-fuga/mente-em-fuga"
+          PROJECT=$(find "$RUNNER_TEMP/mente-fuga" -type f -name package.json -printf '%h\n' | head -n 1)
 
-          test -f "$PROJECT/package.json"
+          if [ -z "$PROJECT" ]; then
+            echo "ERRO: package.json nao encontrado dentro do ZIP."
+            find "$RUNNER_TEMP/mente-fuga" -maxdepth 4 -type f
+            exit 1
+          fi
+
           test -f "$PROJECT/capacitor.config.json"
           test -f "$PROJECT/www/index.html"
 
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
+          echo "Projeto encontrado: $PROJECT"
 
       - name: Instalar dependencias
         shell: bash
         run: |
           set -euo pipefail
-
           cd "$PROJECT"
-
           npm install
           npm install @capacitor/android@^6.2.0
-
           npx cap add android
           npx cap sync android
 
@@ -90,9 +89,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           cd "$PROJECT/android"
-
           chmod +x gradlew
           ./gradlew assembleDebug
 
@@ -100,17 +97,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           APK="$PROJECT/android/app/build/outputs/apk/debug/app-debug.apk"
-
-          test -f "$APK"
+          if [ ! -f "$APK" ]; then
+            echo "ERRO: APK nao foi gerado."
+            find "$PROJECT/android" -name '*.apk' || true
+            exit 1
+          fi
           ls -lh "$APK"
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTE-EM-FUGA-LABIRINTO-2.0-APK
-          path: ${{ runner.temp }}/mente-fuga/mente-em-fuga/android/app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ runner.temp }}/mente-fuga/**/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
           
