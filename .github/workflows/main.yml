@@ -21,36 +21,40 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Instalar Node.js 20
+      - name: Instalar Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Configurar Android SDK
+      - name: Configurar Android
         uses: android-actions/setup-android@v4
-         
 
-      - name: Instalar SDK Android
+      - name: Instalar SDK
         run: |
           sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Encontrar arquivo do jogo
+      - name: Extrair jogo Mente em Fuga
         run: |
-          if [ -f "index.html" ]; then
-            echo "Jogo encontrado na raiz"
-            GAME_FILE="index.html"
-          elif [ -f "www/index.html" ]; then
-            echo "Jogo encontrado na pasta www"
-            GAME_FILE="www/index.html"
+          mkdir -p jogo www
+
+          if [ -f "Mente_em_Fuga_1.0.zip" ]; then
+            unzip -oq "Mente_em_Fuga_1.0.zip" -d jogo
           else
-            echo "ERRO: index.html não encontrado"
-            echo "Arquivos existentes:"
-            find . -maxdepth 3 -type f
+            echo "ZIP Mente em Fuga não encontrado"
             exit 1
           fi
 
-          mkdir -p www
-          cp "$GAME_FILE" www/index.html
+          HTML=$(find jogo -type f -name "index.html" | head -n 1)
+
+          if [ -z "$HTML" ]; then
+            echo "index.html não encontrado dentro do ZIP"
+            find jogo -maxdepth 4 -type f
+            exit 1
+          fi
+
+          cp "$HTML" www/index.html
+
+          echo "Jogo localizado: $HTML"
 
       - name: Preparar Capacitor
         run: |
@@ -68,10 +72,10 @@ jobs:
           }
           EOF
 
-      - name: Criar projeto Android
+      - name: Criar Android
         run: npx cap add android
 
-      - name: Sincronizar projeto
+      - name: Sincronizar
         run: npx cap sync android
 
       - name: Gerar APK
