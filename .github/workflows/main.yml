@@ -1,5 +1,5 @@
 
-name: Nexus 350 - Gerar APK Android
+name: Nexus 350 - Gerar APK
 
 on:
   workflow_dispatch:
@@ -15,7 +15,7 @@ jobs:
       - name: Baixar repositório
         uses: actions/checkout@v4
 
-      - name: Configurar Node.js
+      - name: Configurar Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -26,42 +26,41 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - name: Localizar projeto Nexus 350
+      - name: Extrair projeto Nexus 350
         shell: bash
         run: |
           set -e
 
-          PROJECT_DIR=""
+          ZIP=$(find . -name "Labirinto_Fantasmas_Nexus350.zip" -print -quit)
 
-          if [ -f "package.json" ] && [ -f "capacitor.config.json" ]; then
-            PROJECT_DIR="."
-          else
-            for config in $(find . -name "capacitor.config.json" -not -path "*/node_modules/*"); do
-              DIR="$(dirname "$config")"
-
-              if [ -f "$DIR/package.json" ] && [ -f "$DIR/www/index.html" ]; then
-                PROJECT_DIR="$DIR"
-                break
-              fi
-            done
-          fi
-
-          if [ -z "$PROJECT_DIR" ]; then
-            echo "Projeto Nexus 350 não encontrado."
-            echo "Arquivos necessários: package.json, capacitor.config.json e www/index.html"
-            find . -maxdepth 4 -type f
+          if [ -z "$ZIP" ]; then
+            echo "ERRO: Labirinto_Fantasmas_Nexus350.zip não foi enviado ao repositório."
             exit 1
           fi
 
-          echo "Projeto encontrado em: $PROJECT_DIR"
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          mkdir -p nexus_build
+          unzip -oq "$ZIP" -d nexus_build
+
+          PROJECT=$(find nexus_build -name package.json -not -path "*/node_modules/*" -print -quit)
+
+          if [ -z "$PROJECT" ]; then
+            echo "ERRO: package.json não encontrado dentro do ZIP."
+            find nexus_build -maxdepth 5 -type f
+            exit 1
+          fi
+
+          DIR=$(dirname "$PROJECT")
+          echo "PROJECT_DIR=$DIR" >> "$GITHUB_ENV"
+
+          echo "Projeto localizado em: $DIR"
+          ls -la "$DIR"
 
       - name: Instalar dependências
         run: |
           cd "$PROJECT_DIR"
           npm install
 
-      - name: Criar plataforma Android
+      - name: Criar Android
         run: |
           cd "$PROJECT_DIR"
           npx cap add android
@@ -71,7 +70,7 @@ jobs:
           cd "$PROJECT_DIR"
           npx cap sync android
 
-      - name: Gerar APK
+      - name: Compilar APK
         run: |
           cd "$PROJECT_DIR/android"
           chmod +x gradlew
@@ -83,5 +82,4 @@ jobs:
           name: Nexus350-APK
           path: ${{ env.PROJECT_DIR }}/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          retention-days: 30
           
