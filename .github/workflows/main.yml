@@ -8,14 +8,14 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  construir:
     runs-on: ubuntu-latest
 
     steps:
       - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Configurar Node.js
+      - name: Configurar Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -26,16 +26,24 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Configurar Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Aceitar licencas Android
+      - name: Preparar Android SDK
         run: |
-          yes | sdkmanager --licenses || true
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
 
-      - name: Instalar SDK Android
+      - name: Aceitar licencas
         run: |
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          mkdir -p "$ANDROID_HOME/licenses"
+          echo "24333f8a63b6825ea9c5514f83c2829b004d7f3" > "$ANDROID_HOME/licenses/android-sdk-license"
+          echo "84831b9409646a918e30573bab4c9c91346d8a55" >> "$ANDROID_HOME/licenses/android-sdk-license"
+          echo "d56f5187479451eabf01fb78af6dfcb6" > "$ANDROID_HOME/licenses/android-sdk-preview-license"
+
+      - name: Instalar pacotes Android
+        run: |
+          sdkmanager --sdk_root="$ANDROID_HOME" \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
 
       - name: Extrair fonte
         run: |
@@ -67,7 +75,7 @@ jobs:
           cd "$PROJECT"
           npm install
 
-      - name: Sincronizar Android
+      - name: Sincronizar Capacitor
         run: |
           cd "$PROJECT"
           npx cap sync android
