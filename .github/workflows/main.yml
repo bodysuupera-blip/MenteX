@@ -1,19 +1,23 @@
 
-name: Nexus 350 Ghost Run - APK
+name: Nexus 350 Ghost Run - Gerar APK
 
 on:
   workflow_dispatch:
   push:
+    paths:
+      - 'Nexus350_GhostRun_RECRIADO.zip'
+      - 'nexus350_rebuild/**'
+      - '.github/workflows/build-nexus350.yml'
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar repositório
+      - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Configurar Node
+      - name: Configurar Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -24,63 +28,89 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - name: Localizar ZIP do Nexus 350
+      - name: Localizar ZIP
         run: |
           ZIP=$(find . -maxdepth 3 -type f \
-            -iname 'Nexus350_GhostRun_RECRIADO.zip' \
-            | head -n 1)
+            -iname 'Nexus350_GhostRun_RECRIADO.zip' | head -n 1)
 
           if [ -z "$ZIP" ]; then
-            echo "ZIP do Nexus 350 não encontrado!"
-            echo "Envie Nexus350_GhostRun_RECRIADO.zip para a raiz do repositório."
+            echo "ERRO: ZIP do Nexus 350 nao encontrado."
             exit 1
           fi
 
           echo "ZIP encontrado: $ZIP"
           echo "ZIP_PATH=$ZIP" >> "$GITHUB_ENV"
 
-      - name: Extrair jogo
+      - name: Extrair projeto
         run: |
           mkdir -p extracted
           unzip -q "$ZIP_PATH" -d extracted
 
-      - name: Localizar projeto
-        id: projeto
+      - name: Localizar pasta do jogo
+        id: project
         run: |
-          PROJECT=$(find extracted -type f -name package.json | head -n 1)
+          PROJECT=$(find extracted -type f \
+            -name package.json | head -n 1)
 
           if [ -z "$PROJECT" ]; then
-            echo "package.json não existe dentro do ZIP"
+            echo "ERRO: package.json nao encontrado dentro do ZIP."
             find extracted -maxdepth 4 -type f
             exit 1
           fi
 
           DIR=$(dirname "$PROJECT")
           echo "dir=$DIR" >> "$GITHUB_OUTPUT"
-          echo "Projeto encontrado: $DIR"
+          echo "Projeto localizado: $DIR"
 
-      - name: Instalar dependências
+      - name: Corrigir dependencias Capacitor
         run: |
-          cd "${{ steps.projeto.outputs.dir }}"
+          cd "${{ steps.project.outputs.dir }}"
+
+          npm pkg set \
+            'dependencies.@capacitor/core=^7.0.0' \
+            'dependencies.@capacitor/android=^7.0.0' \
+            'dependencies.@capacitor/app=^7.0.0' \
+            'devDependencies.@capacitor/cli=^7.0.0'
+
+      - name: Instalar dependencias
+        run: |
+          cd "${{ steps.project.outputs.dir }}"
           npm install
+
+      - name: Verificar arquivos do jogo
+        run: |
+          cd "${{ steps.project.outputs.dir }}"
+
+          test -f www/index.html || {
+            echo "ERRO: www/index.html nao encontrado"
+            exit 1
+          }
+
+          test -f capacitor.config.json || {
+            echo "ERRO: capacitor.config.json nao encontrado"
+            exit 1
+          }
 
       - name: Preparar Android
         run: |
-          cd "${{ steps.projeto.outputs.dir }}"
+          cd "${{ steps.project.outputs.dir }}"
+
           if [ ! -d android ]; then
             npx cap add android
           fi
+
           npx cap sync android
 
       - name: Gerar APK
         run: |
-          cd "${{ steps.projeto.outputs.dir }}/android"
+          cd "${{ steps.project.outputs.dir }}/android"
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Disponibilizar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: Nexus350-GhostRun-APK
           path: extracted/**/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
           
