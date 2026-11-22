@@ -1,5 +1,5 @@
 
-name: Nexus 350 - Gerar APK Android
+name: Nexus 350 - Gerar APK Corrigido
 
 on:
   workflow_dispatch:
@@ -26,7 +26,7 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - name: Localizar ZIP Nexus 350
+      - name: Localizar e extrair Nexus 350
         shell: bash
         run: |
           set -e
@@ -34,29 +34,40 @@ jobs:
           ZIP=$(find . -type f -iname "*Nexus350*.zip" -print -quit)
 
           if [ -z "$ZIP" ]; then
-            echo "ZIP do Nexus 350 nao encontrado."
+            echo "ZIP Nexus 350 não encontrado!"
             exit 1
           fi
 
-          echo "ZIP encontrado: $ZIP"
+          echo "Arquivo encontrado: $ZIP"
 
           mkdir -p nexus_build
           unzip -oq "$ZIP" -d nexus_build
 
-          PROJECT=$(find nexus_build -name package.json -print -quit)
+          PROJECT=$(find nexus_build -name package.json -not -path "*/node_modules/*" -print -quit)
 
           if [ -z "$PROJECT" ]; then
-            echo "package.json nao encontrado dentro do ZIP."
+            echo "package.json não encontrado!"
             find nexus_build -maxdepth 5 -type f
             exit 1
           fi
 
           DIR=$(dirname "$PROJECT")
+
+          if [ ! -f "$DIR/capacitor.config.json" ]; then
+            echo "capacitor.config.json não encontrado!"
+            exit 1
+          fi
+
+          if [ ! -f "$DIR/www/index.html" ]; then
+            echo "www/index.html não encontrado!"
+            exit 1
+          fi
+
           echo "PROJECT_DIR=$DIR" >> "$GITHUB_ENV"
 
-          echo "Projeto: $DIR"
+          echo "Projeto localizado: $DIR"
 
-      - name: Instalar dependencias
+      - name: Instalar dependências
         run: |
           cd "$PROJECT_DIR"
           npm install
@@ -66,19 +77,10 @@ jobs:
           cd "$PROJECT_DIR"
           npx cap add android
 
-      - name: Sincronizar Android
+      - name: Sincronizar Capacitor
         run: |
           cd "$PROJECT_DIR"
           npx cap sync android
-
-      - name: Preparar icones
-        shell: bash
-        run: |
-          cd "$PROJECT_DIR"
-
-          if [ -d "resources/android" ]; then
-            cp -r resources/android/* android/app/src/main/res/
-          fi
 
       - name: Compilar APK
         run: |
