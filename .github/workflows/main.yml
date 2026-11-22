@@ -1,93 +1,59 @@
 
-name: MENTE EM FUGA - GERAR APK
+name: MENTE EM FUGA - APK INDEPENDENTE
 
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
+    paths:
+      - 'mente-em-fuga/**'
+      - '.github/workflows/mente-em-fuga.yml'
 
 jobs:
-  construir:
+  build:
     runs-on: ubuntu-latest
 
     steps:
       - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Instalar Java 17
+      - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Instalar Node.js
+      - name: Configurar Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Configurar Android
-        uses: android-actions/setup-android@v4
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: |
+            platform-tools
+            platforms;android-35
+            build-tools;35.0.0
 
-      - name: Instalar SDK
+      - name: Preparar jogo independente
+        working-directory: mente-em-fuga
         run: |
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
-
-      - name: Extrair jogo Mente em Fuga
-        run: |
-          mkdir -p jogo www
-
-          if [ -f "Mente_em_Fuga_1.0.zip" ]; then
-            unzip -oq "Mente_em_Fuga_1.0.zip" -d jogo
-          else
-            echo "ZIP Mente em Fuga não encontrado"
-            exit 1
-          fi
-
-          HTML=$(find jogo -type f -name "index.html" | head -n 1)
-
-          if [ -z "$HTML" ]; then
-            echo "index.html não encontrado dentro do ZIP"
-            find jogo -maxdepth 4 -type f
-            exit 1
-          fi
-
-          cp "$HTML" www/index.html
-
-          echo "Jogo localizado: $HTML"
-
-      - name: Preparar Capacitor
-        run: |
+          test -f www/index.html
           npm init -y
           npm install @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6
-
-      - name: Criar configuração
-        run: |
-          cat > capacitor.config.json <<'EOF'
-          {
-            "appId": "com.menteemfuga.game",
-            "appName": "Mente em Fuga",
-            "webDir": "www",
-            "bundledWebRuntime": false
-          }
-          EOF
-
-      - name: Criar Android
-        run: npx cap add android
-
-      - name: Sincronizar
-        run: npx cap sync android
+          npx cap init "Mente em Fuga" br.com.menteemfuga.app --web-dir www --npm-client npm
+          npx cap add android
+          npx cap sync android
 
       - name: Gerar APK
+        working-directory: mente-em-fuga/android
         run: |
-          cd android
           chmod +x gradlew
           ./gradlew assembleDebug
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTE-EM-FUGA-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
+          name: Mente-em-Fuga-APK
+          path: mente-em-fuga/android/app/build/outputs/apk/debug/app-debug.apk
           
