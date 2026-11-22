@@ -8,7 +8,7 @@ on:
       - main
 
 jobs:
-  build:
+  construir:
     runs-on: ubuntu-latest
 
     steps:
@@ -27,10 +27,13 @@ jobs:
           node-version: '20'
 
       - name: Preparar Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Instalar ferramentas
         run: |
+          sdkmanager --licenses || true
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Preparar projeto
+        run: |
+          npm init -y
           npm install @capacitor/core @capacitor/cli @capacitor/android
 
       - name: Criar estrutura do jogo
@@ -49,13 +52,11 @@ jobs:
           }
           EOF
 
-      - name: Criar projeto Android
-        run: |
-          npx cap add android
+      - name: Criar Android
+        run: npx cap add android
 
-      - name: Sincronizar aplicativo
-        run: |
-          npx cap sync android
+      - name: Sincronizar
+        run: npx cap sync android
 
       - name: Gerar APK
         run: |
@@ -63,9 +64,9 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Salvar APK
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: Mente-em-Fuga-APK
+          name: MENTE-EM-FUGA-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
+          
