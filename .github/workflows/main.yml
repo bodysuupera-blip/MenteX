@@ -1,11 +1,11 @@
 
-name: Nexus 350 Ghost Run - APK Corrigido
+name: Nexus 350 - Gerar APK Android
 
 on:
   workflow_dispatch:
   push:
     paths:
-      - 'Nexus350_GhostRun_RECRIADO.zip'
+      - 'Nexus350_Labirinto_Fantasmas.zip'
       - '.github/workflows/build-nexus350.yml'
 
 jobs:
@@ -27,14 +27,13 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - name: Localizar ZIP atualizado
+      - name: Localizar ZIP do jogo
         run: |
-          ZIP=$(find . -maxdepth 3 -type f \
-            -iname 'Nexus350_GhostRun_RECRIADO.zip' \
-            | head -n 1)
+          ZIP=$(find . -maxdepth 2 -type f \
+            -name 'Nexus350_Labirinto_Fantasmas.zip' | head -n 1)
 
           if [ -z "$ZIP" ]; then
-            echo "ERRO: ZIP Nexus 350 nao encontrado."
+            echo "ERRO: ZIP do Nexus 350 nao encontrado!"
             exit 1
           fi
 
@@ -46,44 +45,26 @@ jobs:
           mkdir -p extracted
           unzip -q "$ZIP_PATH" -d extracted
 
-      - name: Localizar projeto Android
+      - name: Localizar codigo do jogo
         id: project
         run: |
-          PROJECT=$(find extracted -type f \
+          P=$(find extracted -type f \
             -name package.json | head -n 1)
 
-          if [ -z "$PROJECT" ]; then
-            echo "ERRO: package.json nao encontrado."
-            find extracted -maxdepth 5 -type f
+          if [ -z "$P" ]; then
+            echo "ERRO: package.json nao encontrado!"
             exit 1
           fi
 
-          DIR=$(dirname "$PROJECT")
+          DIR=$(dirname "$P")
           echo "dir=$DIR" >> "$GITHUB_OUTPUT"
 
-          echo "Projeto localizado: $DIR"
-
-      - name: Corrigir dependencias
-        run: |
-          cd "${{ steps.project.outputs.dir }}"
-
-          npm pkg set \
-            'dependencies.@capacitor/core=^7.0.0' \
-            'dependencies.@capacitor/android=^7.0.0' \
-            'dependencies.@capacitor/app=^7.0.0' \
-            'devDependencies.@capacitor/cli=^7.0.0'
+          echo "Projeto encontrado: $DIR"
 
       - name: Instalar dependencias
         run: |
           cd "${{ steps.project.outputs.dir }}"
           npm install
-
-      - name: Verificar jogo
-        run: |
-          cd "${{ steps.project.outputs.dir }}"
-
-          test -f www/index.html
-          test -f capacitor.config.json
 
       - name: Preparar Android
         run: |
@@ -99,25 +80,33 @@ jobs:
         run: |
           cd "${{ steps.project.outputs.dir }}"
 
-          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          python3 - <<'PY'
+          from pathlib import Path
 
-          if ! grep -q 'android:screenOrientation="landscape"' "$MANIFEST"; then
-            sed -i \
-              's/<activity /<activity android:screenOrientation="landscape" /' \
-              "$MANIFEST"
-          fi
+          p = Path("android/app/src/main/AndroidManifest.xml")
+          s = p.read_text()
+
+          if 'android:screenOrientation="landscape"' not in s:
+              s = s.replace(
+                  '<activity ',
+                  '<activity android:screenOrientation="landscape" ',
+                  1
+              )
+
+          p.write_text(s)
+          print("Orientacao horizontal configurada.")
+          PY
 
       - name: Gerar APK
         run: |
           cd "${{ steps.project.outputs.dir }}/android"
-
           chmod +x gradlew
-
           ./gradlew assembleDebug
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: Nexus350-GhostRun-Corrigido
+          name: Nexus350-Labirinto-de-Fantasmas
           path: extracted/**/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          
