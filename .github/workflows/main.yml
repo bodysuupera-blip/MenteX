@@ -24,21 +24,40 @@ jobs:
           distribution: temurin
           java-version: 21
 
+      - name: Localizar ZIP do Nexus 350
+        run: |
+          ZIP=$(find . -maxdepth 3 -type f \
+            -iname 'Nexus350_GhostRun_RECRIADO.zip' \
+            | head -n 1)
+
+          if [ -z "$ZIP" ]; then
+            echo "ZIP do Nexus 350 não encontrado!"
+            echo "Envie Nexus350_GhostRun_RECRIADO.zip para a raiz do repositório."
+            exit 1
+          fi
+
+          echo "ZIP encontrado: $ZIP"
+          echo "ZIP_PATH=$ZIP" >> "$GITHUB_ENV"
+
+      - name: Extrair jogo
+        run: |
+          mkdir -p extracted
+          unzip -q "$ZIP_PATH" -d extracted
+
       - name: Localizar projeto
         id: projeto
         run: |
-          PROJECT=$(find . -type f -name package.json \
-            -not -path './node_modules/*' \
-            -not -path './android/*' | head -n 1)
+          PROJECT=$(find extracted -type f -name package.json | head -n 1)
 
           if [ -z "$PROJECT" ]; then
-            echo "package.json não encontrado"
+            echo "package.json não existe dentro do ZIP"
+            find extracted -maxdepth 4 -type f
             exit 1
           fi
 
           DIR=$(dirname "$PROJECT")
           echo "dir=$DIR" >> "$GITHUB_OUTPUT"
-          echo "Projeto encontrado em: $DIR"
+          echo "Projeto encontrado: $DIR"
 
       - name: Instalar dependências
         run: |
@@ -48,7 +67,9 @@ jobs:
       - name: Preparar Android
         run: |
           cd "${{ steps.projeto.outputs.dir }}"
-          npx cap add android || true
+          if [ ! -d android ]; then
+            npx cap add android
+          fi
           npx cap sync android
 
       - name: Gerar APK
@@ -61,5 +82,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Nexus350-GhostRun-APK
-          path: ${{ steps.projeto.outputs.dir }}/android/app/build/outputs/apk/debug/app-debug.apk
+          path: extracted/**/android/app/build/outputs/apk/debug/app-debug.apk
           
