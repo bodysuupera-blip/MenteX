@@ -1,5 +1,5 @@
 
-name: LABIRINTO DE FANTASMA - GERAR APK
+name: MENTE EM FUGA - LABIRINTO 2.0 APK
 
 on:
   workflow_dispatch:
@@ -21,66 +21,99 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Node.js 20
+      - name: Configurar Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Localizar ZIP
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Instalar componentes Android
         run: |
           set -euo pipefail
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
+
+      - name: Localizar ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+
           ZIP=$(find . -maxdepth 1 -type f \
-            -iname 'Labirinto_de_Fantasma_ANDROID_PRONTO.zip' \
+            -iname 'Mente_em_Fuga_Labirinto_2.0_ATUALIZADO.zip' \
             -print -quit)
-          test -n "$ZIP"
+
+          if [ -z "$ZIP" ]; then
+            echo "ERRO: ZIP atualizado nao encontrado na raiz."
+            exit 1
+          fi
+
+          echo "ZIP encontrado: $ZIP"
+
           echo "ZIP=$ZIP" >> "$GITHUB_ENV"
 
       - name: Extrair projeto
+        shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/labirinto"
-          unzip -q "$ZIP" -d "$RUNNER_TEMP/labirinto"
 
-          PROJECT="$RUNNER_TEMP/labirinto"
+          mkdir -p "$RUNNER_TEMP/mente-fuga"
+
+          unzip -q "$ZIP" -d "$RUNNER_TEMP/mente-fuga"
+
+          PROJECT="$RUNNER_TEMP/mente-fuga/mente-em-fuga"
+
           test -f "$PROJECT/package.json"
           test -f "$PROJECT/capacitor.config.json"
           test -f "$PROJECT/www/index.html"
 
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
 
-      - name: Instalar dependencias
-        run: |
-          set -euo pipefail
-          cd "$PROJECT"
-          npm install
-          npm install @capacitor/android@^6.2.0
+          echo "Projeto encontrado!"
 
-      - name: Configurar plataforma Android
+      - name: Instalar dependencias
+        shell: bash
         run: |
           set -euo pipefail
+
           cd "$PROJECT"
+
+          npm install
+
           npx cap add android
+
           npx cap sync android
 
-      - name: Gerar APK
+      - name: Gerar APK Android
+        shell: bash
         run: |
           set -euo pipefail
+
           cd "$PROJECT/android"
+
           chmod +x gradlew
+
           ./gradlew assembleDebug
 
       - name: Verificar APK
+        shell: bash
         run: |
           set -euo pipefail
+
           APK="$PROJECT/android/app/build/outputs/apk/debug/app-debug.apk"
+
           test -f "$APK"
+
           ls -lh "$APK"
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: LABIRINTO-DE-FANTASMA-APK
-          path: ${{ runner.temp }}/labirinto/android/app/build/outputs/apk/debug/app-debug.apk
+          name: MENTE-EM-FUGA-LABIRINTO-2.0-APK
+          path: ${{ runner.temp }}/mente-fuga/mente-em-fuga/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
           
