@@ -26,35 +26,34 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Localizar Android SDK e sdkmanager
+      - name: Localizar Android SDK
         shell: bash
         run: |
           set -e
 
           SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
 
-          echo "SDK: $SDK"
-
-          if [ ! -d "$SDK" ]; then
-            echo "Android SDK nao encontrado: $SDK"
-            exit 1
-          fi
-
-          SDKMANAGER=$(find "$SDK" -type f -name sdkmanager | head -n 1)
-
-          if [ -z "$SDKMANAGER" ]; then
-            echo "sdkmanager nao encontrado dentro do Android SDK"
-            find "$SDK" -maxdepth 5 -type d
-            exit 1
-          fi
-
-          SDKMANAGER_DIR=$(dirname "$SDKMANAGER")
-
-          echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
-          echo "$SDKMANAGER_DIR" >> "$GITHUB_PATH"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
           echo "$SDK/platform-tools" >> "$GITHUB_PATH"
 
-          echo "sdkmanager encontrado: $SDKMANAGER"
+          echo "SDK encontrado em: $SDK"
+
+      - name: Localizar sdkmanager
+        shell: bash
+        run: |
+          set -e
+
+          SDKMANAGER=$(find "$ANDROID_HOME" -type f -name sdkmanager | head -n 1)
+
+          if [ -z "$SDKMANAGER" ]; then
+            echo "sdkmanager nao encontrado"
+            exit 1
+          fi
+
+          echo "SDKMANAGER=$SDKMAN" >> "$GITHUB_ENV"
+          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
+
+          echo "sdkmanager localizado!"
 
       - name: Aceitar licencas Android
         shell: bash
@@ -131,7 +130,24 @@ jobs:
           cd "$PROJECT"
           npm install
 
-      - name: Sincronizar Capacitor
+      - name: Preparar plataforma Android
+        shell: bash
+        run: |
+          set -e
+
+          cd "$PROJECT"
+
+          CAP_VERSION=$(node -p "require('@capacitor/core/package.json').version")
+
+          echo "Versao Capacitor: $CAP_VERSION"
+
+          npm install "@capacitor/android@$CAP_VERSION"
+
+          if [ ! -d android ]; then
+            npx cap add android
+          fi
+
+      - name: Sincronizar Capacitor Android
         shell: bash
         run: |
           set -e
@@ -139,13 +155,21 @@ jobs:
           cd "$PROJECT"
           npx cap sync android
 
+      - name: Preparar Gradle
+        shell: bash
+        run: |
+          set -e
+
+          cd "$PROJECT/android"
+
+          chmod +x gradlew
+
       - name: Gerar APK
         shell: bash
         run: |
           set -e
 
           cd "$PROJECT/android"
-          chmod +x gradlew
           ./gradlew assembleDebug
 
       - name: Disponibilizar APK
