@@ -21,21 +21,24 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Node.js
+      - name: Configurar Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Configurar Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Instalar componentes Android
+      - name: Preparar Android SDK existente
+        shell: bash
         run: |
           set -euo pipefail
-          sdkmanager --install \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
+
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+
+          test -d "$ANDROID_HOME/platform-tools"
+          test -d "$ANDROID_HOME/platforms"
+
+          echo "Android SDK encontrado!"
+          ls "$ANDROID_HOME/platforms"
 
       - name: Localizar ZIP
         shell: bash
@@ -47,11 +50,9 @@ jobs:
             -print -quit)
 
           if [ -z "$ZIP" ]; then
-            echo "ERRO: ZIP atualizado nao encontrado na raiz."
+            echo "ZIP atualizado nao encontrado."
             exit 1
           fi
-
-          echo "ZIP encontrado: $ZIP"
 
           echo "ZIP=$ZIP" >> "$GITHUB_ENV"
 
@@ -72,8 +73,6 @@ jobs:
 
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
 
-          echo "Projeto encontrado!"
-
       - name: Instalar dependencias
         shell: bash
         run: |
@@ -82,12 +81,12 @@ jobs:
           cd "$PROJECT"
 
           npm install
+          npm install @capacitor/android@^6.2.0
 
           npx cap add android
-
           npx cap sync android
 
-      - name: Gerar APK Android
+      - name: Gerar APK
         shell: bash
         run: |
           set -euo pipefail
@@ -95,7 +94,6 @@ jobs:
           cd "$PROJECT/android"
 
           chmod +x gradlew
-
           ./gradlew assembleDebug
 
       - name: Verificar APK
@@ -106,7 +104,6 @@ jobs:
           APK="$PROJECT/android/app/build/outputs/apk/debug/app-debug.apk"
 
           test -f "$APK"
-
           ls -lh "$APK"
 
       - name: Publicar APK
