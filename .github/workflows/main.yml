@@ -1,5 +1,5 @@
 
-name: LABIRINTO FANTASMA - APK ANDROID
+name: LABIRINTO DE FANTASMA - GERAR APK
 
 on:
   workflow_dispatch:
@@ -21,25 +21,22 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Node.js
+      - name: Configurar Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Preparar Android SDK
-        run: |
-          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
-          echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
-
-      - name: Localizar ZIP do Labirinto Fantasma
+      - name: Localizar ZIP do jogo
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          ZIP=$(find . -maxdepth 1 -type f -iname 'Labirinto_Fantasma_Primeira_Versao_ANDROID.zip' -print -quit)
+          ZIP=$(find . -maxdepth 1 -type f \
+            -iname 'Labirinto_de_Fantasma_ANDROID_PRONTO.zip' \
+            -print -quit)
 
           if [ -z "$ZIP" ]; then
-            echo "ZIP do Labirinto Fantasma nao encontrado."
+            echo "ERRO: ZIP do jogo nao encontrado na raiz."
             exit 1
           fi
 
@@ -48,34 +45,31 @@ jobs:
       - name: Extrair projeto
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          mkdir -p labirinto-build
+          mkdir -p "$RUNNER_TEMP/labirinto"
 
-          ZIP=$(find . -maxdepth 1 -type f -iname 'Labirinto_Fantasma_Primeira_Versao_ANDROID.zip' -print -quit)
+          ZIP=$(find . -maxdepth 1 -type f \
+            -iname 'Labirinto_de_Fantasma_ANDROID_PRONTO.zip' \
+            -print -quit)
 
-          unzip -oq "$ZIP" -d labirinto-build
+          unzip -q "$ZIP" -d "$RUNNER_TEMP/labirinto"
 
-          PACKAGE=$(find labirinto-build -type f -name package.json -print -quit)
+          cd "$RUNNER_TEMP/labirinto"
 
-          if [ -z "$PACKAGE" ]; then
-            echo "package.json nao encontrado"
-            exit 1
-          fi
+          test -f package.json
+          test -f capacitor.config.json
+          test -f www/index.html
+          test -f www/hero-maze.png
 
-          PROJECT=$(dirname "$PACKAGE")
-
-          test -f "$PROJECT/www/index.html"
-          test -f "$PROJECT/capacitor.config.json"
-
-          echo "PROJECT_DIR=$PROJECT" >> $GITHUB_ENV
+          echo "Arquivos do jogo encontrados!"
 
       - name: Instalar dependencias
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          cd "$PROJECT_DIR"
+          cd "$RUNNER_TEMP/labirinto"
 
           npm install
 
@@ -83,33 +77,33 @@ jobs:
 
           npx cap sync android
 
-      - name: Compilar APK
+      - name: Gerar APK Android
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          cd "$PROJECT_DIR/android"
+          cd "$RUNNER_TEMP/labirinto/android"
 
           chmod +x gradlew
 
           ./gradlew assembleDebug
 
-      - name: Verificar APK
+      - name: Conferir APK
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          APK="$PROJECT_DIR/android/app/build/outputs/apk/debug/app-debug.apk"
+          APK="$RUNNER_TEMP/labirinto/android/app/build/outputs/apk/debug/app-debug.apk"
 
           test -f "$APK"
 
           ls -lh "$APK"
 
-      - name: Disponibilizar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: LABIRINTO-FANTASMA-ANDROID
-          path: labirinto-build/**/android/app/build/outputs/apk/debug/app-debug.apk
+          name: LABIRINTO-DE-FANTASMA-APK
+          path: ${{ runner.temp }}/labirinto/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
           
