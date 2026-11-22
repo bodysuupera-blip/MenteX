@@ -1,21 +1,22 @@
 
-name: Nexus 350 - Gerar APK Corrigido
+name: Nexus 350 Ghost Run - APK
 
 on:
   workflow_dispatch:
-
-permissions:
-  contents: read
+  push:
+    paths:
+      - 'nexus350_rebuild/**'
+      - '.github/workflows/build-apk.yml'
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar repositorio
+      - name: Baixar código
         uses: actions/checkout@v4
 
-      - name: Configurar Node.js
+      - name: Configurar Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -26,73 +27,24 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - name: Localizar e extrair Nexus 350
-        shell: bash
+      - name: Entrar no projeto
+        run: cd nexus350_rebuild && npm install
+
+      - name: Criar Android e sincronizar
         run: |
-          set -e
-
-          ZIP=$(find . -type f -iname "*Nexus350*.zip" -print -quit)
-
-          if [ -z "$ZIP" ]; then
-            echo "ZIP Nexus 350 não encontrado!"
-            exit 1
-          fi
-
-          echo "Arquivo encontrado: $ZIP"
-
-          mkdir -p nexus_build
-          unzip -oq "$ZIP" -d nexus_build
-
-          PROJECT=$(find nexus_build -name package.json -not -path "*/node_modules/*" -print -quit)
-
-          if [ -z "$PROJECT" ]; then
-            echo "package.json não encontrado!"
-            find nexus_build -maxdepth 5 -type f
-            exit 1
-          fi
-
-          DIR=$(dirname "$PROJECT")
-
-          if [ ! -f "$DIR/capacitor.config.json" ]; then
-            echo "capacitor.config.json não encontrado!"
-            exit 1
-          fi
-
-          if [ ! -f "$DIR/www/index.html" ]; then
-            echo "www/index.html não encontrado!"
-            exit 1
-          fi
-
-          echo "PROJECT_DIR=$DIR" >> "$GITHUB_ENV"
-
-          echo "Projeto localizado: $DIR"
-
-      - name: Instalar dependências
-        run: |
-          cd "$PROJECT_DIR"
-          npm install
-
-      - name: Adicionar Android
-        run: |
-          cd "$PROJECT_DIR"
+          cd nexus350_rebuild
           npx cap add android
-
-      - name: Sincronizar Capacitor
-        run: |
-          cd "$PROJECT_DIR"
           npx cap sync android
 
-      - name: Compilar APK
+      - name: Gerar APK
         run: |
-          cd "$PROJECT_DIR/android"
+          cd nexus350_rebuild/android
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Disponibilizar APK
+      - name: Salvar APK
         uses: actions/upload-artifact@v4
         with:
-          name: Nexus350-APK
-          path: ${{ env.PROJECT_DIR }}/android/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-          retention-days: 30
+          name: Nexus350-GhostRun
+          path: nexus350_rebuild/android/app/build/outputs/apk/debug/app-debug.apk
           
