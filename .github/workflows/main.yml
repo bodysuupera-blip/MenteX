@@ -12,38 +12,39 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Java 17
+      - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Node 20
+      - name: Configurar Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
       - name: Localizar Android SDK
         run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
           SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)
           echo "SDKMANAGER_PATH=$SDKMANAGER" >> $GITHUB_ENV
           echo "$(dirname "$SDKMANAGER")" >> $GITHUB_PATH
           echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
-          test -n "$SDKMANAGER"
 
       - name: Aceitar licencas
         run: |
           yes | "$SDKMANAGER_PATH" --licenses || true
 
-      - name: Instalar SDK
+      - name: Instalar componentes Android
         run: |
           "$SDKMANAGER_PATH" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Verificar arquivos
+      - name: Conferir estrutura
         run: |
+          ls -la
           test -f mente-em-fuga/www/index.html
           test -f mente-em-fuga/package.json
           test -f mente-em-fuga/capacitor.config.json
@@ -52,11 +53,11 @@ jobs:
         working-directory: mente-em-fuga
         run: npm install
 
-      - name: Criar projeto Android
+      - name: Criar Android
         working-directory: mente-em-fuga
         run: npx cap add android
 
-      - name: Sincronizar
+      - name: Sincronizar projeto
         working-directory: mente-em-fuga
         run: npx cap sync android
 
@@ -66,7 +67,7 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Salvar APK
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTE-EM-FUGA-APK
