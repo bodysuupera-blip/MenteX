@@ -21,51 +21,84 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Node.js
+      - name: Configurar Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Preparar Android SDK
+      - name: Localizar e extrair ZIP do jogo
+        shell: bash
         run: |
-          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
-          echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
+          set -euo pipefail
 
-      - name: Verificar arquivos do jogo
-        run: |
-          set -e
-          test -f labirinto-fantasma/package.json
-          test -f labirinto-fantasma/capacitor.config.json
-          test -f labirinto-fantasma/www/index.html
-          echo "Arquivos encontrados!"
+          ZIP="$(find "$GITHUB_WORKSPACE" -maxdepth 1 -type f -iname 'Labirinto_Fantasma_Projeto_Independente*.zip' -print -quit)"
 
-      - name: Instalar dependencias
-        working-directory: labirinto-fantasma
+          if [ -z "$ZIP" ]; then
+            echo "ERRO: ZIP do Labirinto Fantasma nao encontrado na raiz."
+            exit 1
+          fi
+
+          mkdir -p "$RUNNER_TEMP/labirinto-extract"
+
+          unzip -q "$ZIP" -d "$RUNNER_TEMP/labirinto-extract"
+
+          PACKAGE="$(find "$RUNNER_TEMP/labirinto-extract" -type f -name package.json -print -quit)"
+
+          if [ -z "$PACKAGE" ]; then
+            echo "ERRO: package.json nao encontrado dentro do ZIP."
+            exit 1
+          fi
+
+          PROJECT="$(dirname "$PACKAGE")"
+
+          test -f "$PROJECT/capacitor.config.json"
+          test -f "$PROJECT/www/index.html"
+
+          echo "PROJECT_DIR=$PROJECT" >> "$GITHUB_ENV"
+
+          echo "Projeto encontrado!"
+          echo "$PROJECT"
+
+      - name: Instalar dependencias e configurar Android
+        shell: bash
         run: |
-          set -e
+          set -euo pipefail
+
+          cd "$PROJECT_DIR"
+
           npm install
+
           npx cap add android
+
           npx cap sync android
 
-      - name: Gerar APK
-        working-directory: labirinto-fantasma/android
+      - name: Gerar APK debug
+        shell: bash
         run: |
-          set -e
+          set -euo pipefail
+
+          cd "$PROJECT_DIR/android"
+
           chmod +x gradlew
+
           ./gradlew assembleDebug
 
       - name: Conferir APK
+        shell: bash
         run: |
-          set -e
-          APK="labirinto-fantasma/android/app/build/outputs/apk/debug/app-debug.apk"
+          set -euo pipefail
+
+          APK="$PROJECT_DIR/android/app/build/outputs/apk/debug/app-debug.apk"
+
           test -f "$APK"
+
           ls -lh "$APK"
 
-      - name: Publicar APK
+      - name: Publicar APK para download
         uses: actions/upload-artifact@v4
         with:
           name: LABIRINTO-FANTASMA-APK
-          path: labirinto-fantasma/android/app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ runner.temp }}/labirinto-extract/**/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
           
