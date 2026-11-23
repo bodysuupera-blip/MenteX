@@ -1,5 +1,5 @@
 
-name: NEXUS 350 - GERAR APK ATUALIZADO
+name: NEXUS 350 - CORRIGIR JOGO E ICONE
 
 on:
   workflow_dispatch:
@@ -15,71 +15,70 @@ jobs:
       - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Configurar Node.js
+      - name: Configurar Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: Configurar Java
+      - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
 
-      - name: Extrair fonte Nexus 350
+      - name: Extrair fonte
         run: |
           set -e
-          ZIP="NEXUS350_ATUALIZACAO_ICONE_REDONDO_FONTE.zip"
+          mkdir -p /tmp/nexus
+          unzip -oq NEXUS350_ATUALIZACAO_ICONE_REDONDO_FONTE.zip -d /tmp/nexus
 
-          if [ ! -f "$ZIP" ]; then
-            echo "ERRO: ZIP da fonte atualizado nao encontrado"
-            ls -la
+          DIR=$(find /tmp/nexus -name package.json -printf '%h\n' | head -1)
+
+          if [ -z "$DIR" ]; then
+            echo "package.json nao encontrado"
             exit 1
           fi
 
-          mkdir -p nexus_fonte
-          unzip -o "$ZIP" -d nexus_fonte
+          echo "PROJECT_DIR=$DIR" >> $GITHUB_ENV
+          echo "Fonte: $DIR"
 
-          PROJECT=$(find nexus_fonte -type f -name package.json | head -n 1)
-
-          if [ -z "$PROJECT" ]; then
-            echo "ERRO: package.json nao encontrado"
-            exit 1
-          fi
-
-          DIR=$(dirname "$PROJECT")
-          echo "PROJECT_DIR=$DIR" >> "$GITHUB_ENV"
-          echo "Projeto encontrado: $DIR"
+      - name: Verificar jogo
+        run: |
+          cd "$PROJECT_DIR"
+          test -f www/index.html
+          grep -q '<canvas' www/index.html
+          grep -q 'id="start"' www/index.html
+          grep -q 'function generate' www/index.html
+          echo "JOGO HTML CONFIRMADO"
 
       - name: Instalar dependencias
         run: |
           cd "$PROJECT_DIR"
           npm install
 
-      - name: Preparar Capacitor Android
+      - name: Preparar Android
         run: |
           cd "$PROJECT_DIR"
           npx cap add android
 
-      - name: Sincronizar projeto Android
+      - name: Copiar jogo para Android
         run: |
           cd "$PROJECT_DIR"
           npx cap sync android
+          test -f android/app/src/main/assets/public/index.html
+          grep -q '<canvas' android/app/src/main/assets/public/index.html
+          echo "JOGO COPIADO PARA ANDROID"
 
-      - name: Configurar Gradle
+      - name: Compilar APK
         run: |
           cd "$PROJECT_DIR/android"
           chmod +x gradlew
-
-      - name: Gerar APK
-        run: |
-          cd "$PROJECT_DIR/android"
           ./gradlew --no-daemon assembleDebug
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: NEXUS350-APK-ATUALIZADO
-          path: nexus_fonte/**/android/app/build/outputs/apk/debug/app-debug.apk
+          name: NEXUS350-JOGO-CORRIGIDO
+          path: /tmp/nexus/**/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           
