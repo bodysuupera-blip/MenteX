@@ -30,22 +30,16 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Instalar Android SDK
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Instalar SDK Android
         run: |
           set -e
 
-          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | head -n 1)
+          sdkmanager --licenses || true
 
-          if [ -z "$SDKMANAGER" ]; then
-            echo "sdkmanager nao encontrado."
-            exit 1
-          fi
-
-          chmod +x "$SDKMAN"
-
-          "$SDKMANMANAGER" --licenses </dev/null || true
-
-          "$SDKMAN" \
+          sdkmanager \
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
@@ -80,7 +74,7 @@ jobs:
           PROJECT_DIR="$(dirname "$PACKAGE")"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-          echo "Projeto encontrado: $PROJECT_DIR"
+          echo "Projeto localizado: $PROJECT_DIR"
 
       - name: Instalar dependencias
         run: |
@@ -94,7 +88,7 @@ jobs:
           cd "$PROJECT_DIR"
           npm install @capacitor/android@^7.0.0
 
-      - name: Criar Android
+      - name: Criar e sincronizar Android
         run: |
           set -e
           cd "$PROJECT_DIR"
@@ -105,7 +99,7 @@ jobs:
 
           npx cap sync android
 
-      - name: Configurar orientacao horizontal
+      - name: Configurar tela horizontal
         run: |
           set -e
 
@@ -120,31 +114,30 @@ jobs:
           import sys
           import xml.etree.ElementTree as ET
 
-          manifest_path = sys.argv[1]
+          path = sys.argv[1]
           android = "http://schemas.android.com/apk/res/android"
 
           ET.register_namespace("android", android)
 
-          tree = ET.parse(manifest_path)
+          tree = ET.parse(path)
           root = tree.getroot()
-
           app = root.find("application")
 
           if app is None:
-              raise SystemExit("Application nao encontrada.")
+              raise SystemExit("Application nao encontrada")
 
           launcher = None
 
           for activity in app.findall("activity"):
               for intent in activity.findall("intent-filter"):
                   actions = [
-                      a.get(f"{{{android}}}name")
-                      for a in intent.findall("action")
+                      item.get(f"{{{android}}}name")
+                      for item in intent.findall("action")
                   ]
 
                   categories = [
-                      c.get(f"{{{android}}}name")
-                      for c in intent.findall("category")
+                      item.get(f"{{{android}}}name")
+                      for item in intent.findall("category")
                   ]
 
                   if (
@@ -158,29 +151,22 @@ jobs:
                   break
 
           if launcher is None:
-              raise SystemExit("Activity principal nao encontrada.")
+              raise SystemExit("Activity principal nao encontrada")
 
           launcher.set(f"{{{android}}}screenOrientation", "landscape")
           launcher.set(f"{{{android}}}resizeableActivity", "false")
 
-          tree.write(
-              manifest_path,
-              encoding="utf-8",
-              xml_declaration=True
-          )
+          tree.write(path, encoding="utf-8", xml_declaration=True)
+          ET.parse(path)
 
-          ET.parse(manifest_path)
-
-          print("Orientacao horizontal configurada com sucesso.")
+          print("Tela horizontal configurada")
           PY
 
       - name: Compilar APK
         run: |
           set -e
           cd "$PROJECT_DIR/android"
-
           chmod +x gradlew
-
           ./gradlew assembleDebug
 
       - name: Preparar APK
@@ -195,7 +181,6 @@ jobs:
           fi
 
           mkdir -p "$GITHUB_WORKSPACE/resultado"
-
           cp "$APK" "$GITHUB_WORKSPACE/resultado/NEXUS350-BOAS-VINDAS.apk"
 
           ls -lh "$GITHUB_WORKSPACE/resultado"
