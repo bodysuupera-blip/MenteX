@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  construir:
     runs-on: ubuntu-latest
 
     steps:
@@ -20,27 +20,64 @@ jobs:
         with:
           node-version: 20
 
-      - name: Configurar Java
+      - name: Configurar Java 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 21
 
-      - name: Instalar Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Localizar ZIP do Nexus 350
+      - name: Preparar Android SDK
         shell: bash
         run: |
           set -e
 
-          ZIP="Nexus350_Labirinto_Fantasmas.zip"
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "PATH=$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH" >> "$GITHUB_ENV"
 
-          if [ ! -f "$ZIP" ]; then
-            echo "ZIP não encontrado: $ZIP"
-            echo "Coloque o ZIP Nexus 350 na raiz do repositorio."
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | head -n 1)
+
+          if [ -z "$SDKMANAGER" ]; then
+            echo "sdkmanager não encontrado."
             exit 1
           fi
+
+          echo "SDKMANAGER=$SDKMAN" >> "$GITHUB_ENV"
+
+          yes | "$SDKMANAGER" --licenses || true
+
+          "$SDKMANAGER" --install \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
+
+      - name: Localizar ZIP do Nexus
+        shell: bash
+        run: |
+          set -e
+
+          ZIP=""
+
+          for FILE in \
+            "Nexus350_Labirinto_Fantasmas_ATUALIZADO.zip" \
+            "Nexus350_Labirinto_Fantasmas.zip"
+          do
+            if [ -f "$FILE" ]; then
+              ZIP="$FILE"
+              break
+            fi
+          done
+
+          if [ -z "$ZIP" ]; then
+            ZIP=$(find . -maxdepth 3 -type f \
+              -iname '*Nexus350*Fantasmas*.zip' | head -n 1)
+          fi
+
+          if [ -z "$ZIP" ]; then
+            echo "ZIP do Nexus 350 não encontrado."
+            exit 1
+          fi
+
+          echo "ZIP encontrado: $ZIP"
 
           mkdir -p extracted
           unzip -q "$ZIP" -d extracted
@@ -50,35 +87,39 @@ jobs:
         run: |
           set -e
 
-          PROJECT=$(find extracted -name package.json -printf '%h\n' | head -n 1)
+          PROJECT=$(find extracted -name package.json \
+            -not -path '*/node_modules/*' \
+            -printf '%h\n' | head -n 1)
 
           if [ -z "$PROJECT" ]; then
-            echo "package.json não encontrado dentro do ZIP."
+            echo "package.json não encontrado."
             exit 1
           fi
 
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
-          echo "Projeto encontrado: $PROJECT"
 
-      - name: Instalar dependencias
-        working-directory: extracted
+          echo "Projeto localizado: $PROJECT"
+
+      - name: Instalar dependências
+        shell: bash
         run: |
           set -e
 
           cd "$PROJECT"
 
-          npm pkg set dependencies.@capacitor/core="^7.0.0"
-          npm pkg set dependencies.@capacitor/android="^7.0.0"
-          npm pkg set devDependencies.@capacitor/cli="^7.0.0"
+          npm pkg set \
+            "dependencies.@capacitor/core=^7.0.0" \
+            "dependencies.@capacitor/android=^7.0.0" \
+            "devDependencies.@capacitor/cli=^7.0.0"
 
           npm install
 
-      - name: Preparar Android
+      - name: Preparar projeto Android
         shell: bash
         run: |
           set -e
 
-          cd "extracted/$PROJECT"
+          cd "$PROJECT"
 
           if [ ! -d android ]; then
             npx cap add android
@@ -86,19 +127,42 @@ jobs:
 
           npx cap sync android
 
-      - name: Configurar jogo horizontal
+      - name: Configurar tela horizontal
         shell: bash
         run: |
           set -e
 
-          MANIFEST="extracted/$PROJECT/android/app/src/main/AndroidManifest.xml"
+          MANIFEST="$PROJECT/android/app/src/main/AndroidManifest.xml"
 
           if [ -f "$MANIFEST" ]; then
-            sed -i 's/android:screenOrientation="[^"]*"/android:screenOrientation="landscape"/g' "$MANIFEST"
+            python3 - "$MANIFEST" <<'PY'
+          import sys
+          import re
 
-            if ! grep -q 'android:screenOrientation="landscape"' "$MANIFEST"; then
-              sed -i 's/<activity /<activity android:screenOrientation="landscape" /' "$MANIFEST"
-            fi
+          path = sys.argv[1]
+
+          with open(path, "r", encoding="utf-8") as f:
+              content = f.read()
+
+          content = re.sub(
+              r'android:screenOrientation="[^"]*"',
+              'android:screenOrientation="landscape"',
+              content
+          )
+
+          if 'android:screenOrientation="landscape"' not in content:
+              content = re.sub(
+                  r'(<activity\b)',
+                  r'\1 android:screenOrientation="landscape"',
+                  content,
+                  count=1
+              )
+
+          with open(path, "w", encoding="utf-8") as f:
+              f.write(content)
+
+          print("Orientação horizontal configurada.")
+          PY
           fi
 
       - name: Compilar APK
@@ -106,17 +170,33 @@ jobs:
         run: |
           set -e
 
-          cd "extracted/$PROJECT/android"
+          cd "$PROJECT/android"
 
           chmod +x gradlew
 
           ./gradlew assembleDebug
 
-      - name: Publicar APK
+      - name: Localizar APK
+        shell: bash
+        run: |
+          set -e
+
+          APK=$(find "$PROJECT/android/app/build/outputs/apk" \
+            -name '*.apk' -type f | head -n 1)
+
+          if [ -z "$APK" ]; then
+            echo "APK não foi gerado."
+            exit 1
+          fi
+
+          mkdir -p resultado
+          cp "$APK" resultado/NEXUS350.apk
+
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: NEXUS-350-APK
-          path: extracted/**/android/app/build/outputs/apk/debug/*.apk
+          name: NEXUS350-APK
+          path: resultado/NEXUS350.apk
           if-no-files-found: error
           retention-days: 30
           
