@@ -1,5 +1,5 @@
 
-name: NEXUS 350 - GERAR APK ANDROID
+name: NEXUS 350 - GERAR APK CORRIGIDO
 
 on:
   workflow_dispatch:
@@ -20,60 +20,35 @@ jobs:
         with:
           node-version: 20
 
-      - name: Configurar Java 21
+      - name: Configurar Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 21
 
       - name: Preparar Android SDK
-        shell: bash
         run: |
           set -e
 
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "PATH=$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH" >> "$GITHUB_ENV"
-
-          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | head -n 1)
-
-          if [ -z "$SDKMANAGER" ]; then
-            echo "sdkmanager não encontrado."
-            exit 1
-          fi
-
-          echo "SDKMANAGER=$SDKMAN" >> "$GITHUB_ENV"
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" \
+            -name sdkmanager -type f | head -n 1)
 
           yes | "$SDKMANAGER" --licenses || true
 
-          "$SDKMANAGER" --install \
-            "platform-tools" \
+          "$SDKMANAGER" "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-      - name: Localizar ZIP do Nexus
-        shell: bash
+      - name: Localizar ZIP atualizado
         run: |
           set -e
 
-          ZIP=""
-
-          for FILE in \
-            "Nexus350_Labirinto_Fantasmas_ATUALIZADO.zip" \
-            "Nexus350_Labirinto_Fantasmas.zip"
-          do
-            if [ -f "$FILE" ]; then
-              ZIP="$FILE"
-              break
-            fi
-          done
+          ZIP=$(find . -maxdepth 4 -type f \
+            -name 'Nexus350_Labirinto_Fantasmas_CORRIGIDO.zip' \
+            | head -n 1)
 
           if [ -z "$ZIP" ]; then
-            ZIP=$(find . -maxdepth 3 -type f \
-              -iname '*Nexus350*Fantasmas*.zip' | head -n 1)
-          fi
-
-          if [ -z "$ZIP" ]; then
-            echo "ZIP do Nexus 350 não encontrado."
+            echo "ZIP corrigido não encontrado."
             exit 1
           fi
 
@@ -83,7 +58,6 @@ jobs:
           unzip -q "$ZIP" -d extracted
 
       - name: Localizar projeto
-        shell: bash
         run: |
           set -e
 
@@ -98,10 +72,7 @@ jobs:
 
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
 
-          echo "Projeto localizado: $PROJECT"
-
-      - name: Instalar dependências
-        shell: bash
+      - name: Instalar dependencias
         run: |
           set -e
 
@@ -114,8 +85,7 @@ jobs:
 
           npm install
 
-      - name: Preparar projeto Android
-        shell: bash
+      - name: Preparar Android
         run: |
           set -e
 
@@ -127,57 +97,29 @@ jobs:
 
           npx cap sync android
 
-      - name: Configurar tela horizontal
-        shell: bash
+      - name: Configurar jogo horizontal
         run: |
           set -e
 
           MANIFEST="$PROJECT/android/app/src/main/AndroidManifest.xml"
 
           if [ -f "$MANIFEST" ]; then
-            python3 - "$MANIFEST" <<'PY'
-          import sys
-          import re
+            sed -i 's/android:screenOrientation="[^"]*"/android:screenOrientation="landscape"/g' "$MANIFEST"
 
-          path = sys.argv[1]
-
-          with open(path, "r", encoding="utf-8") as f:
-              content = f.read()
-
-          content = re.sub(
-              r'android:screenOrientation="[^"]*"',
-              'android:screenOrientation="landscape"',
-              content
-          )
-
-          if 'android:screenOrientation="landscape"' not in content:
-              content = re.sub(
-                  r'(<activity\b)',
-                  r'\1 android:screenOrientation="landscape"',
-                  content,
-                  count=1
-              )
-
-          with open(path, "w", encoding="utf-8") as f:
-              f.write(content)
-
-          print("Orientação horizontal configurada.")
-          PY
+            if ! grep -q 'android:screenOrientation="landscape"' "$MANIFEST"; then
+              sed -i 's/<activity /<activity android:screenOrientation="landscape" /' "$MANIFEST"
+            fi
           fi
 
       - name: Compilar APK
-        shell: bash
         run: |
           set -e
 
           cd "$PROJECT/android"
-
           chmod +x gradlew
-
           ./gradlew assembleDebug
 
       - name: Localizar APK
-        shell: bash
         run: |
           set -e
 
@@ -185,7 +127,7 @@ jobs:
             -name '*.apk' -type f | head -n 1)
 
           if [ -z "$APK" ]; then
-            echo "APK não foi gerado."
+            echo "APK não encontrado."
             exit 1
           fi
 
@@ -195,8 +137,7 @@ jobs:
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: NEXUS350-APK
+          name: NEXUS350-APK-CORRIGIDO
           path: resultado/NEXUS350.apk
           if-no-files-found: error
           retention-days: 30
-          
