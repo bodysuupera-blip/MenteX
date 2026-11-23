@@ -1,152 +1,56 @@
 
-name: NEXUS 350 EVOLUTION 5.2 - APK
+name: MENTEX - Assinar APK
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-      - master
 
 permissions:
   contents: read
 
 jobs:
-  build:
+  assinar:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar repositorio
+      - name: Baixar arquivos do repositorio
         uses: actions/checkout@v4
 
-      - name: Configurar Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Configurar Java 21
+      - name: Preparar Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: '17'
 
-      - name: Conferir ambiente
+      - name: Preparar assinatura
         run: |
-          java -version
-          node -v
-          npm -v
+          mkdir -p assinatura
+          echo "${{ secrets.MENTEX_KEYSTORE_BASE64 }}" | base64 -d > assinatura/mentex.jks
 
-      - name: Verificar fonte do jogo
+      - name: Assinar APK
         run: |
-          test -f package.json
-          test -f capacitor.config.json
-          test -f www/index.html
-          echo "Fonte encontrada!"
+          APK="MENTEX-original.apk"
 
-      - name: Instalar dependencias
-        run: npm install --no-audit --no-fund
+          if [ ! -f "$APK" ]; then
+            echo "APK nao encontrado: $APK"
+            exit 1
+          fi
 
-      - name: Preparar Android
-        run: |
-          npx cap add android
-          npx cap sync android
+          $ANDROID_HOME/build-tools/35.0.0/apksigner sign \
+            --ks assinatura/mentex.jks \
+            --ks-key-alias "${{ secrets.MENTEX_KEY_ALIAS }}" \
+            --ks-pass env:KEYSTORE_PASSWORD \
+            --key-pass env:KEY_PASSWORD \
+            --out MENTEX-assinado.apk \
+            "$APK"
 
-      - name: Configurar tela horizontal
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
+          $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose MENTEX-assinado.apk
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.MENTEX_STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.MENTEX_KEY_PASSWORD }}
 
-          p = Path("android/app/src/main/AndroidManifest.xml")
-          s = p.read_text()
-
-          s = re.sub(
-              r'android:screenOrientation="[^"]+"',
-              '',
-              s
-          )
-
-          s = re.sub(
-              r'(<activity\b[^>]*android:name="[^"]*MainActivity"[^>]*)(>)',
-              r'\1 android:screenOrientation="landscape"\2',
-              s,
-              count=1
-          )
-
-          p.write_text(s)
-          print("Orientacao horizontal ativada")
-          PY
-
-      - name: Configurar Android em tela cheia
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          files = list(Path("android/app/src/main/java").rglob("MainActivity.java"))
-          if not files:
-              raise SystemExit("MainActivity.java nao encontrado")
-
-          p = files[0]
-          s = p.read_text()
-
-          if "IMMERSIVE_STICKY" not in s:
-              s = s.replace(
-                  "import android.os.Bundle;",
-                  "import android.os.Bundle;\nimport android.view.View;"
-              )
-
-              marker = "public class MainActivity extends BridgeActivity {"
-
-              body = """public class MainActivity extends BridgeActivity {
-          @Override
-          public void onCreate(Bundle savedInstanceState) {
-              super.onCreate(savedInstanceState);
-              getWindow().getDecorView().setSystemUiVisibility(
-                  View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                  | View.SYSTEM_UI_FLAG_FULLSCREEN
-                  | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                  | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                  | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                  | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-              );
-          }
-          """
-
-              s = s.replace(marker, body)
-              p.write_text(s)
-
-          print("Tela cheia configurada")
-          PY
-
-      - name: Unificar bibliotecas Kotlin
-        run: |
-          cat >> android/build.gradle <<'EOF'
-
-          allprojects {
-              configurations.configureEach {
-                  resolutionStrategy.eachDependency { details ->
-                      if (details.requested.group == "org.jetbrains.kotlin") {
-                          details.useVersion "1.8.22"
-                      }
-                  }
-              }
-          }
-          EOF
-
-      - name: Compilar APK
-        run: |
-          cd android
-          chmod +x gradlew
-          ./gradlew clean
-          ./gradlew assembleDebug \
-            --no-daemon \
-            --max-workers=2
-
-      - name: Publicar APK
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: NEXUS-350-EVOLUTION-V5-2-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-          retention-days: 7
+          name: MENTEX-APK-ASSINADO
+          path: MENTEX-assinado.apk
           
