@@ -1,5 +1,5 @@
 
-name: NEXUS 350 - ANALISAR FONTE ORIGINAL
+name: NEXUS 350 - LOCALIZAR FONTE REAL
 
 on:
   workflow_dispatch:
@@ -8,49 +8,73 @@ permissions:
   contents: read
 
 jobs:
-  analisar:
+  localizar:
     runs-on: ubuntu-latest
 
     steps:
       - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Localizar fonte original
+      - name: Procurar fontes ZIP
         shell: bash
         run: |
           set -e
 
-          ZIP="NEXUS350_FONTE_ORIGINAL_SEM_MUDANCAS.zip"
+          echo "===== ZIPs ENCONTRADOS ====="
 
-          if [ ! -f "$ZIP" ]; then
-            ZIP=$(find . -type f -name "NEXUS350_FONTE_ORIGINAL_SEM_MUDANCAS.zip" | head -n 1)
-          fi
+          find "$GITHUB_WORKSPACE" \
+            -type f \
+            -iname "*.zip" \
+            -not -path "*/.git/*" \
+            -printf "%s bytes | %p\n" \
+            | sort -n
 
-          if [ -z "$ZIP" ] || [ ! -f "$ZIP" ]; then
-            echo "Fonte original nao encontrada."
-            find . -maxdepth 3 -type f -name "*.zip"
-            exit 1
-          fi
+          echo "===== PROCURAR ZIP DA FONTE ORIGINAL ====="
 
-          echo "Fonte encontrada: $ZIP"
+          find "$GITHUB_WORKSPACE" \
+            -type f \
+            -iname "*FONTE*ORIGINAL*.zip" \
+            -not -path "*/.git/*"
 
-          echo "===== CONTEUDO DA FONTE ORIGINAL ====="
-          unzip -l "$ZIP" | head -n 150
+          echo "===== PROCURAR CONFIGURACOES DO PROJETO ====="
 
-          mkdir -p /tmp/nexus_original
-          unzip -q "$ZIP" -d /tmp/nexus_original
-
-          echo "===== ARQUIVOS DE COMPILACAO ====="
-          find /tmp/nexus_original -type f \
+          find "$GITHUB_WORKSPACE" \
+            -type f \
             \( -name "package.json" \
             -o -name "config.xml" \
-            -o -name "capacitor.config.*" \
+            -o -name "capacitor.config.js" \
+            -o -name "capacitor.config.json" \
             -o -name "build.gradle" \
             -o -name "settings.gradle" \
-            -o -name "gradlew" \
-            -o -name "AndroidManifest.xml" \) \
-            | head -n 100
+            -o -name "gradlew" \) \
+            -not -path "*/.git/*" \
+            -not -path "*/node_modules/*" \
+            | head -n 200
 
-          echo "===== PASTAS DO PROJETO ====="
-          find /tmp/nexus_original -maxdepth 3 -type d | head -n 100
-          
+      - name: Inspecionar ZIP da fonte original
+        shell: bash
+        run: |
+          set -e
+
+          ZIP=$(find "$GITHUB_WORKSPACE" \
+            -type f \
+            -iname "NEXUS350_FONTE_ORIGINAL_SEM_MUDANCAS.zip" \
+            -not -path "*/.git/*" \
+            | head -n 1)
+
+          if [ -z "$ZIP" ]; then
+            echo "Fonte original nao encontrada com esse nome."
+            exit 0
+          fi
+
+          echo "===== ZIP SELECIONADO ====="
+          echo "$ZIP"
+
+          echo "===== CONTEUDO INTERNO ====="
+          unzip -Z1 "$ZIP" | head -n 200
+
+          echo "===== ARQUIVOS DE COMPILACAO DENTRO DO ZIP ====="
+          unzip -Z1 "$ZIP" | grep -Ei \
+            '(^|/)(package.json|config.xml|gradlew|build.gradle|settings.gradle|capacitor.config.*|AndroidManifest.xml)$' \
+            | head -n 100 || true
+            
