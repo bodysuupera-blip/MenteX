@@ -1,12 +1,11 @@
 
-name: Nexus 350 - APK Horizontal Atualizado
+name: NEXUS 350 - GERAR APK ANDROID
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - 'Nexus350_Labirinto_Fantasmas.zip'
-      - '.github/workflows/build-nexus350.yml'
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -27,64 +26,59 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - name: Localizar ZIP atualizado
-        run: |
-          ZIP=$(find . -maxdepth 3 -type f \
-            -iname 'Nexus350_Labirinto_Fantasmas.zip' | head -n 1)
+      - name: Instalar Android SDK
+        uses: android-actions/setup-android@v3
 
-          if [ -z "$ZIP" ]; then
-            echo "ZIP do Nexus 350 nao encontrado!"
+      - name: Localizar ZIP do Nexus 350
+        shell: bash
+        run: |
+          set -e
+
+          ZIP="Nexus350_Labirinto_Fantasmas.zip"
+
+          if [ ! -f "$ZIP" ]; then
+            echo "ZIP não encontrado: $ZIP"
+            echo "Coloque o ZIP Nexus 350 na raiz do repositorio."
             exit 1
           fi
 
-          echo "ZIP encontrado: $ZIP"
-          echo "ZIP_PATH=$ZIP" >> "$GITHUB_ENV"
-
-      - name: Extrair projeto
-        run: |
           mkdir -p extracted
-          unzip -q "$ZIP_PATH" -d extracted
+          unzip -q "$ZIP" -d extracted
 
       - name: Localizar projeto
-        id: project
+        shell: bash
         run: |
-          P=$(find extracted -type f \
-            -name package.json | head -n 1)
+          set -e
 
-          if [ -z "$P" ]; then
-            echo "package.json nao encontrado!"
-            find extracted -maxdepth 5 -type f
+          PROJECT=$(find extracted -name package.json -printf '%h\n' | head -n 1)
+
+          if [ -z "$PROJECT" ]; then
+            echo "package.json não encontrado dentro do ZIP."
             exit 1
           fi
 
-          DIR=$(dirname "$P")
-          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
-          echo "Projeto encontrado: $DIR"
-
-      - name: Corrigir dependencias Capacitor
-        run: |
-          cd "${{ steps.project.outputs.dir }}"
-
-          npm pkg set \
-            'dependencies.@capacitor/core=^7.0.0' \
-            'dependencies.@capacitor/android=^7.0.0' \
-            'dependencies.@capacitor/app=^7.0.0' \
-            'devDependencies.@capacitor/cli=^7.0.0'
+          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
+          echo "Projeto encontrado: $PROJECT"
 
       - name: Instalar dependencias
+        working-directory: extracted
         run: |
-          cd "${{ steps.project.outputs.dir }}"
+          set -e
+
+          cd "$PROJECT"
+
+          npm pkg set dependencies.@capacitor/core="^7.0.0"
+          npm pkg set dependencies.@capacitor/android="^7.0.0"
+          npm pkg set devDependencies.@capacitor/cli="^7.0.0"
+
           npm install
 
-      - name: Verificar jogo
-        run: |
-          cd "${{ steps.project.outputs.dir }}"
-          test -f www/index.html
-          test -f capacitor.config.json
-
       - name: Preparar Android
+        shell: bash
         run: |
-          cd "${{ steps.project.outputs.dir }}"
+          set -e
+
+          cd "extracted/$PROJECT"
 
           if [ ! -d android ]; then
             npx cap add android
@@ -92,39 +86,37 @@ jobs:
 
           npx cap sync android
 
-      - name: Configurar tela horizontal
+      - name: Configurar jogo horizontal
+        shell: bash
         run: |
-          cd "${{ steps.project.outputs.dir }}"
+          set -e
 
-          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          MANIFEST="extracted/$PROJECT/android/app/src/main/AndroidManifest.xml"
 
-          python3 - <<'PY'
-          from pathlib import Path
+          if [ -f "$MANIFEST" ]; then
+            sed -i 's/android:screenOrientation="[^"]*"/android:screenOrientation="landscape"/g' "$MANIFEST"
 
-          p = Path("android/app/src/main/AndroidManifest.xml")
-          s = p.read_text()
+            if ! grep -q 'android:screenOrientation="landscape"' "$MANIFEST"; then
+              sed -i 's/<activity /<activity android:screenOrientation="landscape" /' "$MANIFEST"
+            fi
+          fi
 
-          if 'android:screenOrientation="landscape"' not in s:
-              s = s.replace(
-                  '<activity ',
-                  '<activity android:screenOrientation="landscape" ',
-                  1
-              )
-
-          p.write_text(s)
-          print("Tela horizontal configurada.")
-          PY
-
-      - name: Gerar APK
+      - name: Compilar APK
+        shell: bash
         run: |
-          cd "${{ steps.project.outputs.dir }}/android"
+          set -e
+
+          cd "extracted/$PROJECT/android"
+
           chmod +x gradlew
+
           ./gradlew assembleDebug
 
-      - name: Disponibilizar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: Nexus350-Horizontal-Controles-Moedas
-          path: extracted/**/android/app/build/outputs/apk/debug/app-debug.apk
+          name: NEXUS-350-APK
+          path: extracted/**/android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+          retention-days: 30
           
