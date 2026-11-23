@@ -1,5 +1,4 @@
-
-name: NEXUS 350 - DIAGNOSTICO DO PROJETO
+name: NEXUS 350 - LOCALIZAR ESTRUTURA
 
 on:
   workflow_dispatch:
@@ -8,35 +7,36 @@ permissions:
   contents: read
 
 jobs:
-  diagnostico:
+  localizar:
     runs-on: ubuntu-latest
 
     steps:
       - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Mostrar estrutura do projeto
+      - name: Identificar arquivos de compilacao
+        shell: bash
         run: |
-          echo "===== RAIZ DO REPOSITORIO ====="
-          ls -la
+          echo "===== RAIZ ====="
+          ls -lah
 
-          echo "===== ARQUIVOS DO PROJETO =====
-          "
-          find . -maxdepth 4 -type f \
+          echo "===== CONFIGURACOES ====="
+          find . -type f \
+            \( -name "package.json" \
+            -o -name "config.xml" \
+            -o -name "capacitor.config.*" \
+            -o -name "build.gradle" \
+            -o -name "settings.gradle" \
+            -o -name "gradlew" \
+            -o -name "AndroidManifest.xml" \ \
+            -o -name "*.apk" \) \
             ! -path "./.git/*" \
             ! -path "./node_modules/*" \
-            ! -path "./.github/*" \
-            | sort | head -n 300
+            ! -path "./build/*" \
+            | head -n 150
 
-      - name: Criar ZIP do projeto original
-        run: |
-          zip -r NEXUS350-PROJETO-ORIGINAL.zip . \
-            -x ".git/*" \
-            -x "*/node_modules/*"
-
-      - name: Disponibilizar projeto para download
-        uses: actions/upload-artifact@v4
-        with:
-          name: NEXUS350-PROJETO-DIAGNOSTICO
-          path: NEXUS350-PROJETO-ORIGINAL.zip
-          retention-days: 7
+          echo "===== DIRETORIOS PRINCIPAIS ====="
+          find . -maxdepth 3 -type d \
+            ! -path "./.git*" \
+            ! -path "./node_modules*" \
+            | head -n 100
