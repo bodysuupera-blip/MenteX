@@ -1,10 +1,12 @@
 
-name: NEXUS 350 EVOLUTION - BUILD APK NOVO
+name: NEXUS 350 EVOLUTION - APK
 
 on:
   workflow_dispatch:
   push:
-    branches: [main, master]
+    branches:
+      - main
+      - master
 
 permissions:
   contents: read
@@ -17,56 +19,58 @@ jobs:
       - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Configurar Node
+      - name: Configurar Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: Configurar Java
+      - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
 
-      - name: Criar estrutura independente
+      - name: Criar estrutura Web
         run: |
-          mkdir -p game assets .github/workflows
+          mkdir -p www
 
-          if [ ! -f package.json ]; then
-            npm init -y
-          fi
-
-          npm pkg set name="nexus-350-evolution"
-          npm pkg set version="1.0.0"
-          npm pkg set scripts.build="echo Build preparado"
-
-      - name: Instalar Capacitor
-        run: |
-          npm install @capacitor/core
-          npm install @capacitor/cli @capacitor/android
-
-      - name: Criar tela inicial caso nao exista
-        run: |
-          if [ ! -f index.html ]; then
-            cat > index.html <<'EOF'
+          if [ ! -f www/index.html ]; then
+            cat > www/index.html <<'EOF'
           <!DOCTYPE html>
           <html lang="pt-BR">
           <head>
           <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+          <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
           <title>Nexus 350 Evolution</title>
           <style>
           *{box-sizing:border-box}
           body{
-            margin:0;background:radial-gradient(circle,#182c54,#050914);
-            color:white;font-family:Arial;height:100vh;
-            display:flex;align-items:center;justify-content:center;
-            text-align:center;overflow:hidden
+            margin:0;
+            background:radial-gradient(circle,#1b3260,#050914);
+            color:#fff;
+            font-family:Arial;
+            height:100vh;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            text-align:center;
+            overflow:hidden
           }
-          .box{padding:25px}
-          h1{font-size:42px;color:#65d9ff;text-shadow:0 0 20px #008cff}
-          button{padding:18px 45px;font-size:22px;border:0;border-radius:15px;
-          background:#087dff;color:white;font-weight:bold}
+          .box{padding:20px}
+          h1{
+            font-size:48px;
+            color:#5de0ff;
+            text-shadow:0 0 25px #008cff
+          }
+          button{
+            padding:18px 45px;
+            border:0;
+            border-radius:15px;
+            background:#087dff;
+            color:white;
+            font-size:22px;
+            font-weight:bold
+          }
           </style>
           </head>
           <body>
@@ -74,30 +78,38 @@ jobs:
           <h1>NEXUS 350</h1>
           <h2>EVOLUTION</h2>
           <p>Uma nova aventura está começando!</p>
-          <button onclick="alert('Projeto Nexus 350 Evolution iniciado!')">JOGAR</button>
+          <button onclick="alert('Nexus 350 Evolution')">JOGAR</button>
           </div>
           </body>
           </html>
           EOF
           fi
 
-      - name: Configurar Capacitor
+      - name: Criar package.json
         run: |
-          if [ ! -f capacitor.config.json ]; then
-            cat > capacitor.config.json <<'EOF'
+          if [ ! -f package.json ]; then
+            npm init -y
+          fi
+
+      - name: Instalar Capacitor
+        run: |
+          npm install @capacitor/core @capacitor/cli @capacitor/android
+
+      - name: Criar configuracao
+        run: |
+          cat > capacitor.config.json <<'EOF'
           {
             "appId": "com.nexus350.evolution",
             "appName": "Nexus 350 Evolution",
-            "webDir": ".",
+            "webDir": "www",
             "bundledWebRuntime": false
           }
           EOF
-          fi
 
       - name: Criar Android
         run: npx cap add android
 
-      - name: Sincronizar
+      - name: Sincronizar Android
         run: npx cap sync android
 
       - name: Compilar APK
@@ -106,7 +118,7 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Salvar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: NEXUS-350-EVOLUTION-APK
