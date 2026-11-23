@@ -1,5 +1,5 @@
 
-name: NEXUS 350 - GERAR APK CORRIGIDO
+name: NEXUS 350 - HORIZONTAL V2 APK
 
 on:
   workflow_dispatch:
@@ -20,35 +20,43 @@ jobs:
         with:
           node-version: 20
 
-      - name: Configurar Java
+      - name: Configurar Java 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 21
 
       - name: Preparar Android SDK
+        shell: bash
         run: |
           set -e
 
           SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" \
             -name sdkmanager -type f | head -n 1)
 
+          if [ -z "$SDKMANAGER" ]; then
+            echo "sdkmanager nao encontrado."
+            exit 1
+          fi
+
           yes | "$SDKMANAGER" --licenses || true
 
-          "$SDKMANAGER" "platform-tools" \
+          "$SDKMANAGER" \
+            "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-      - name: Localizar ZIP atualizado
+      - name: Localizar ZIP Horizontal V2
+        shell: bash
         run: |
           set -e
 
           ZIP=$(find . -maxdepth 4 -type f \
-            -name 'Nexus350_Labirinto_Fantasmas_CORRIGIDO.zip' \
+            -name 'Nexus350_Labirinto_Fantasmas_HORIZONTAL_V2.zip' \
             | head -n 1)
 
           if [ -z "$ZIP" ]; then
-            echo "ZIP corrigido não encontrado."
+            echo "ZIP Horizontal V2 nao encontrado."
             exit 1
           fi
 
@@ -58,6 +66,7 @@ jobs:
           unzip -q "$ZIP" -d extracted
 
       - name: Localizar projeto
+        shell: bash
         run: |
           set -e
 
@@ -66,13 +75,15 @@ jobs:
             -printf '%h\n' | head -n 1)
 
           if [ -z "$PROJECT" ]; then
-            echo "package.json não encontrado."
+            echo "package.json nao encontrado."
             exit 1
           fi
 
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
+          echo "Projeto: $PROJECT"
 
       - name: Instalar dependencias
+        shell: bash
         run: |
           set -e
 
@@ -86,6 +97,7 @@ jobs:
           npm install
 
       - name: Preparar Android
+        shell: bash
         run: |
           set -e
 
@@ -97,7 +109,8 @@ jobs:
 
           npx cap sync android
 
-      - name: Configurar jogo horizontal
+      - name: Forcar tela horizontal
+        shell: bash
         run: |
           set -e
 
@@ -112,32 +125,36 @@ jobs:
           fi
 
       - name: Compilar APK
+        shell: bash
         run: |
           set -e
 
           cd "$PROJECT/android"
+
           chmod +x gradlew
           ./gradlew assembleDebug
 
       - name: Localizar APK
+        shell: bash
         run: |
           set -e
 
           APK=$(find "$PROJECT/android/app/build/outputs/apk" \
-            -name '*.apk' -type f | head -n 1)
+            -type f -name '*.apk' | head -n 1)
 
           if [ -z "$APK" ]; then
-            echo "APK não encontrado."
+            echo "APK nao foi gerado."
             exit 1
           fi
 
           mkdir -p resultado
-          cp "$APK" resultado/NEXUS350.apk
+          cp "$APK" resultado/NEXUS350_HORIZONTAL_V2.apk
 
-      - name: Disponibilizar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: NEXUS350-APK-CORRIGIDO
-          path: resultado/NEXUS350.apk
+          name: NEXUS350-HORIZONTAL-V2
+          path: resultado/NEXUS350_HORIZONTAL_V2.apk
           if-no-files-found: error
           retention-days: 30
+          
