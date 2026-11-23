@@ -1,5 +1,5 @@
 
-name: NEXUS 350 - COMPILAR FONTE ORIGINAL
+name: NEXUS 350 - TROCAR ICONE APK ORIGINAL
 
 on:
   workflow_dispatch:
@@ -8,71 +8,113 @@ permissions:
   contents: read
 
 jobs:
-  construir:
+  trocar_icone:
     runs-on: ubuntu-latest
 
     steps:
       - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Configurar Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Configurar Java 17
+      - name: Configurar Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
 
-      - name: Extrair fonte correta
-        shell: bash
+      - name: Instalar ferramentas Android
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y apktool zipalign apksigner unzip
+
+      - name: Extrair pacote original
+        run: |
+          set -e
+          mkdir -p pacote
+
+          unzip -oq NEXUS350_ICONE_RECURSOS_APK_ORIGINAL.zip -d pacote
+
+          APK=$(find pacote -type f -name 'NEXUS350_APK_ORIGINAL_INALTERADO.apk' | head -1)
+
+          test -n "$APK"
+          echo "APK_ORIGINAL=$APK" >> $GITHUB_ENV
+
+      - name: Decodificar APK original
+        run: |
+          apktool d -f "$APK_ORIGINAL" -o apk_decodificado
+
+      - name: Substituir somente recursos de icone
         run: |
           set -e
 
-          ZIP="NEXUS350_FONTE_ORIGINAL_SEM_MUDANCAS.zip"
+          ICONS="pacote/icons"
 
-          if [ ! -f "$ZIP" ]; then
-            echo "ERRO: A fonte original ZIP nao esta na raiz do repositorio."
-            echo "Arquivos encontrados:"
-            ls -la
-            exit 1
-          fi
+          for DIR in apk_decodificado/res/mipmap-*; do
+            [ -d "$DIR" ] || continue
 
-          mkdir -p fonte_nexus
-          unzip -oq "$ZIP" -d fonte_nexus
+            if [ -f "$ICONS/ic_launcher.png" ]; then
+              cp "$ICONS/ic_launcher.png" "$DIR/ic_launcher.png"
+            fi
 
-          test -f fonte_nexus/package.json
-          test -f fonte_nexus/capacitor.config.json
-          test -f fonte_nexus/www/index.html
-          test -f fonte_nexus/www/game.js
-          test -f fonte_nexus/www/style.css
+            if [ -f "$ICONS/ic_launcher_mdpi.png" ]; then
+              cp "$ICONS/ic_launcher_mdpi.png" "$DIR/ic_launcher.png"
+            fi
 
-          echo "FONTE ORIGINAL VALIDADA"
+            if [ -f "$ICONS/ic_launcher_hdpi.png" ]; then
+              cp "$ICONS/ic_launcher_hdpi.png" "$DIR/ic_launcher.png"
+            fi
 
-      - name: Instalar dependencias
-        working-directory: fonte_nexus
-        run: npm install
+            if [ -f "$ICONS/ic_launcher_xhdpi.png" ]; then
+              cp "$ICONS/ic_launcher_xhdpi.png" "$DIR/ic_launcher.png"
+            fi
 
-      - name: Instalar plataforma Android
-        working-directory: fonte_nexus
-        run: npx cap add android
+            if [ -f "$ICONS/ic_launcher_xxhdpi.png" ]; then
+              cp "$ICONS/ic_launcher_xxhdpi.png" "$DIR/ic_launcher.png"
+            fi
 
-      - name: Sincronizar Android
-        working-directory: fonte_nexus
-        run: npx cap sync android
+            if [ -f "$ICONS/ic_launcher_xxxhdpi.png" ]; then
+              cp "$ICONS/ic_launcher_xxxhdpi.png" "$DIR/ic_launcher.png"
+            fi
+          done
 
-      - name: Compilar APK
-        working-directory: fonte_nexus/android
+      - name: Reconstruir APK
         run: |
-          chmod +x gradlew
-          ./gradlew --no-daemon assembleDebug
+          apktool b apk_decodificado -o nexus_unsigned.apk
+
+      - name: Alinhar APK
+        run: |
+          zipalign -f 4 nexus_unsigned.apk nexus_aligned.apk
+
+      - name: Criar chave de assinatura
+        run: |
+          keytool -genkeypair \
+            -v \
+            -keystore nexus.keystore \
+            -alias nexus \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -storepass nexus350123 \
+            -keypass nexus350123 \
+            -dname "CN=Nexus350, OU=Game, O=Nexus, L=Sorocaba, S=SP, C=BR"
+
+      - name: Assinar APK
+        run: |
+          apksigner sign \
+            --ks nexus.keystore \
+            --ks-key-alias nexus \
+            --ks-pass pass:nexus350123 \
+            --key-pass pass:nexus350123 \
+            --out NEXUS350-ICONE-NOVO.apk \
+            nexus_aligned.apk
+
+      - name: Verificar assinatura
+        run: |
+          apksigner verify --verbose NEXUS350-ICONE-NOVO.apk
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: NEXUS350-FONTE-ORIGINAL
-          path: fonte_nexus/android/app/build/outputs/apk/debug/app-debug.apk
+          name: NEXUS350-APK-ICONE-NOVO
+          path: NEXUS350-ICONE-NOVO.apk
           if-no-files-found: error
           
