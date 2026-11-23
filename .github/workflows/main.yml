@@ -16,11 +16,12 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Localizar e extrair projeto Nexus
+        shell: bash
         run: |
-          ZIP=$(find . -maxdepth 3 -name "NEXUS-PROJETO-RECUPERADO-APK-ICON.zip" | head -n 1)
+          ZIP=$(find . -maxdepth 4 -name "NEXUS-PROJETO-RECUPERADO-APK-ICON.zip" | head -n 1)
 
           if [ -z "$ZIP" ]; then
-            echo "ZIP do Nexus não encontrado no repositório"
+            echo "ZIP do Nexus não encontrado"
             exit 1
           fi
 
@@ -30,36 +31,50 @@ jobs:
           PROJECT=$(find recovered -name package.json -printf '%h\n' | head -n 1)
 
           if [ -z "$PROJECT" ]; then
-            echo "package.json não encontrado após extração"
+            echo "package.json não encontrado"
+            find recovered -maxdepth 5 -type f
             exit 1
           fi
 
-          echo "PROJECT_DIR=$PROJECT" >> $GITHUB_ENV
-          echo "Projeto encontrado: $PROJECT"
+          echo "PROJECT_DIR=$PROJECT" >> "$GITHUB_ENV"
+          echo "Projeto localizado em: $PROJECT"
 
-      - name: Node.js
+      - name: Configurar Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Java 17
+      - name: Configurar Java 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
+
+      - name: Verificar versões
+        run: |
+          node --version
+          npm --version
+          java -version
 
       - name: Instalar dependências
+        shell: bash
         run: |
           cd "$PROJECT_DIR"
           npm install
 
       - name: Preparar Android
+        shell: bash
         run: |
           cd "$PROJECT_DIR"
-          npx cap add android
+
+          if [ ! -d android ]; then
+            npx cap add android
+          fi
+
           npx cap sync android
 
-      - name: Aplicar ícones
+      - name: Aplicar ícone Nexus
+        shell: bash
         run: |
           cd "$PROJECT_DIR"
 
@@ -69,19 +84,45 @@ jobs:
 
             mkdir -p "$DEST"
 
-            cp "$SRC/ic_launcher.png" "$DEST/ic_launcher.png"
-            cp "$SRC/ic_launcher_round.png" "$DEST/ic_launcher_round.png"
+            if [ -f "$SRC/ic_launcher.png" ]; then
+              cp "$SRC/ic_launcher.png" "$DEST/ic_launcher.png"
+            fi
+
+            if [ -f "$SRC/ic_launcher_round.png" ]; then
+              cp "$SRC/ic_launcher_round.png" "$DEST/ic_launcher_round.png"
+            fi
           done
 
-      - name: Compilar APK
+          echo "Ícones aplicados."
+
+      - name: Configurar permissões Gradle
         run: |
           cd "$PROJECT_DIR/android"
           chmod +x gradlew
+
+      - name: Compilar APK Debug
+        shell: bash
+        run: |
+          cd "$PROJECT_DIR/android"
           ./gradlew assembleDebug
 
-      - name: Salvar APK
+      - name: Verificar APK
+        shell: bash
+        run: |
+          APK="$PROJECT_DIR/android/app/build/outputs/apk/debug/app-debug.apk"
+
+          if [ ! -f "$APK" ]; then
+            echo "APK não foi gerado"
+            exit 1
+          fi
+
+          ls -lh "$APK"
+
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: NEXUS-350-APK
+          name: NEXUS-350-APK-NOVO-ICONE
           path: recovered/**/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          retention-days: 7
+          
