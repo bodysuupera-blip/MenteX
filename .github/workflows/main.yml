@@ -3,9 +3,9 @@ name: NEXUS 350 - APK COM NOVO ICONE REDONDO
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
+
+permissions:
+  contents: read
 
 jobs:
   construir:
@@ -20,51 +20,49 @@ jobs:
         with:
           node-version: 20
 
-      - name: Configurar Java
+      - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
 
+      - name: Verificar fonte
+        run: |
+          cd labirinto_novo
+          ls -la
+          test -f package.json
+          test -f capacitor.config.json
+
       - name: Instalar dependencias
         run: |
+          cd labirinto_novo
           npm install
 
-      - name: Instalar Capacitor
+      - name: Preparar Android
         run: |
-          npm install @capacitor/core @capacitor/cli @capacitor/android
+          cd labirinto_novo
+          npx cap add android
 
-      - name: Preparar icone Nexus 350
+      - name: Gerar icones Android
         run: |
-          mkdir -p assets
-          if [ -f www/icon.png ]; then
-            cp www/icon.png assets/icon.png
-          elif [ -f icon.png ]; then
-            cp icon.png assets/icon.png
-          fi
+          cd labirinto_novo
+          npx capacitor-assets generate --android
 
       - name: Sincronizar Android
         run: |
+          cd labirinto_novo
           npx cap sync android
 
-      - name: Configurar Android
+      - name: Compilar APK
         run: |
-          cd android
+          cd labirinto_novo/android
           chmod +x gradlew
+          ./gradlew --no-daemon assembleDebug
 
-      - name: Gerar APK
-        run: |
-          cd android
-          ./gradlew assembleDebug
-
-      - name: Localizar APK
-        run: |
-          find android -name "*.apk"
-
-      - name: Enviar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: NEXUS350-APK
-          path: android/app/build/outputs/apk/debug/*.apk
+          name: NEXUS350-APK-ICONE-REDONDO
+          path: labirinto_novo/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           
