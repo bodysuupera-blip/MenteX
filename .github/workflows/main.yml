@@ -1,32 +1,41 @@
 
-name: NEXUS 350 EVOLUTION - APK
+name: NEXUS 350 EVOLUTION - GERAR APK
 
 on:
   workflow_dispatch:
   push:
-    branches: [main, master]
+    branches:
+      - main
+      - master
 
 permissions:
   contents: read
 
 jobs:
-  build:
+  construir:
     runs-on: ubuntu-latest
 
     steps:
       - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Configurar Node.js
+      - name: Configurar Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: Configurar Java 17
+      - name: Configurar Java 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: '21'
+
+      - name: Conferir Java e Node
+        run: |
+          java -version
+          javac -version
+          node -v
+          npm -v
 
       - name: Cache Gradle
         uses: actions/cache@v4
@@ -34,11 +43,11 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: gradle-nexus350-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          key: nexus350-java21-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
           restore-keys: |
-            gradle-nexus350-${{ runner.os }}-
+            nexus350-java21-${{ runner.os }}-
 
-      - name: Criar estrutura Web
+      - name: Criar estrutura do jogo
         run: |
           mkdir -p www
 
@@ -47,13 +56,13 @@ jobs:
           <!DOCTYPE html>
           <html lang="pt-BR">
           <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-          <title>Nexus 350 Evolution</title>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+            <title>Nexus 350 Evolution</title>
           </head>
           <body>
-          <h1>NEXUS 350 EVOLUTION</h1>
-          <p>Nova aventura!</p>
+            <h1>NEXUS 350 EVOLUTION</h1>
+            <p>Nova aventura!</p>
           </body>
           </html>
           EOF
@@ -80,13 +89,13 @@ jobs:
           }
           EOF
 
-      - name: Criar Android
+      - name: Criar projeto Android
         run: npx cap add android
 
       - name: Sincronizar Android
         run: npx cap sync android
 
-      - name: Compilar APK com tentativas
+      - name: Compilar APK
         shell: bash
         run: |
           cd android
@@ -97,22 +106,19 @@ jobs:
 
             if ./gradlew assembleDebug \
               --no-daemon \
-              --max-workers=2 \
-              --stacktrace; then
-              echo "APK compilado com sucesso!"
+              --max-workers=2; then
+              echo "APK compilado!"
               exit 0
             fi
 
             if [ "$tentativa" -lt 3 ]; then
-              echo "Falha temporaria. Aguardando 30 segundos..."
               sleep 30
             fi
           done
 
-          echo "Todas as tentativas falharam."
           exit 1
 
-      - name: Publicar APK
+      - name: Enviar APK
         uses: actions/upload-artifact@v4
         with:
           name: NEXUS-350-EVOLUTION-APK
