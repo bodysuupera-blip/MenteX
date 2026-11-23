@@ -1,25 +1,23 @@
 
-name: NEXUS 350 EVOLUTION - GERAR APK
+name: NEXUS 350 EVOLUTION - APK COMPLETO
 
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
-      - master
+    branches: [main, master]
 
 permissions:
   contents: read
 
 jobs:
-  construir:
+  build:
     runs-on: ubuntu-latest
 
     steps:
       - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Configurar Node.js
+      - name: Configurar Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -30,113 +28,56 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Conferir ambiente
+      - name: Extrair jogo verdadeiro
         run: |
-          java -version
-          javac -version
-          node -v
-          npm -v
+          set -e
 
-      - name: Cache Gradle
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: nexus350-java21-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-          restore-keys: |
-            nexus350-java21-${{ runner.os }}-
-
-      - name: Criar estrutura Web
-        run: |
-          mkdir -p www
-
-          if [ ! -f www/index.html ]; then
-            cat > www/index.html <<'EOF'
-          <!DOCTYPE html>
-          <html lang="pt-BR">
-          <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-            <title>NEXUS 350 EVOLUTION</title>
-          </head>
-          <body>
-            <h1>NEXUS 350 EVOLUTION</h1>
-            <p>Nova aventura!</p>
-          </body>
-          </html>
-          EOF
+          if [ -f NEXUS_350_EVOLUTION_FONTE.zip ]; then
+            unzip -o NEXUS_350_EVOLUTION_FONTE.zip -d .
           fi
 
-      - name: Criar package.json
+          test -f www/index.html
+          test -f package.json
+          test -f capacitor.config.json
+
+          echo "Fonte do jogo encontrada:"
+          ls -lah www/
+
+      - name: Instalar dependencias
+        run: npm install
+
+      - name: Preparar Android
         run: |
-          if [ ! -f package.json ]; then
-            npm init -y
-          fi
+          npx cap add android
+          npx cap sync android
 
-      - name: Instalar Capacitor
+      - name: Unificar Kotlin
         run: |
-          npm install @capacitor/core @capacitor/cli @capacitor/android
-
-      - name: Configurar Capacitor
-        run: |
-          cat > capacitor.config.json <<'EOF'
-          {
-            "appId": "com.nexus350.evolution",
-            "appName": "Nexus 350 Evolution",
-            "webDir": "www",
-            "bundledWebRuntime": false
-          }
-          EOF
-
-      - name: Criar projeto Android
-        run: npx cap add android
-
-      - name: Sincronizar Android
-        run: npx cap sync android
-
-      - name: Corrigir versoes Kotlin
-        run: |
-          cd android
-
-          cat >> build.gradle <<'EOF'
+          cat >> android/build.gradle <<'EOF'
 
           allprojects {
-              configurations.configureEach {
-                  resolutionStrategy.eachDependency { details ->
-                      if (details.requested.group == "org.jetbrains.kotlin") {
-                          details.useVersion "1.8.22"
-                          details.because "Unificar bibliotecas Kotlin"
-                      }
-                  }
+            configurations.configureEach {
+              resolutionStrategy.eachDependency { details ->
+                if (details.requested.group == "org.jetbrains.kotlin") {
+                  details.useVersion "1.8.22"
+                }
               }
+            }
           }
           EOF
 
+      - name: Conferir jogo antes de compilar
+        run: |
+          grep -q "NEXUS 350" www/index.html
+          grep -q "COMO JOGAR" www/index.html
+          echo "Jogo encontrado!"
+
       - name: Compilar APK
-        shell: bash
         run: |
           cd android
           chmod +x gradlew
-
           ./gradlew clean
-
-          for tentativa in 1 2 3; do
-            echo "Tentativa $tentativa de 3"
-
-            if ./gradlew assembleDebug \
-              --no-daemon \
-              --max-workers=2; then
-              echo "APK gerado com sucesso!"
-              exit 0
-            fi
-
-            if [ "$tentativa" -lt 3 ]; then
-              sleep 30
-            fi
-          done
-
-          exit 1
+          ./gradlew assembleDebug --no-daemon --max-workers=2
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
