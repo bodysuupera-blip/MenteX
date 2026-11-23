@@ -1,107 +1,83 @@
-
-name: NEXUS 350 - V6 HORIZONTAL FIX
+name: NEXUS 350 - SONS LOJA VOLTAR APK
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - 'NEXUS350-SONS-LOJA-VOLTAR.zip'
+      - '.github/workflows/nexus350.yml'
 
 permissions:
   contents: read
 
 jobs:
-  construir:
+  build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar repositorio
+      - name: Baixar repositório
         uses: actions/checkout@v4
 
-      - name: Configurar Node.js
+      - name: Instalar Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '20'
+          cache: ''
 
-      - name: Configurar Java 21
+      - name: Instalar Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 21
+          java-version: '21'
 
       - name: Preparar Android SDK
-        shell: bash
         run: |
           set -e
-
-          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" \
-            -name sdkmanager -type f | head -n 1)
-
-          if [ -z "$SDKMANAGER" ]; then
-            echo "sdkmanager nao encontrado."
-            exit 1
-          fi
-
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | head -n 1)
           yes | "$SDKMANAGER" --licenses || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-          "$SDKMANAGER" \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
-
-      - name: Localizar ZIP V5
-        shell: bash
+      - name: Encontrar ZIP atualizado
         run: |
           set -e
-
-          ZIP=$(find . -maxdepth 4 -type f \
-            -name 'Nexus350_Labirinto_Fantasmas_TELAS_ANIMADAS_V5.zip' \
-            | head -n 1)
-
+          ZIP="$(find . -maxdepth 4 -type f -name 'NEXUS350-SONS-LOJA-VOLTAR.zip' | head -n 1)"
           if [ -z "$ZIP" ]; then
-            echo "ZIP V5 nao encontrado."
+            echo "ZIP atualizado não encontrado no repositório."
             exit 1
           fi
+          echo "ZIP encontrado: $ZIP"
+          echo "ZIP_PATH=$ZIP" >> "$GITHUB_ENV"
 
-          mkdir -p extracted
-          unzip -q "$ZIP" -d extracted
-
-          echo "ZIP extraido com sucesso."
-
-      - name: Localizar projeto
-        shell: bash
+      - name: Extrair projeto
         run: |
           set -e
+          mkdir -p extracted
+          unzip -q "$ZIP_PATH" -d extracted
 
-          PROJECT=$(find extracted -name package.json \
+          PROJECT="$(find extracted -type f -name package.json \
             -not -path '*/node_modules/*' \
-            -printf '%h\n' | head -n 1)
+            -printf '%h\n' | head -n 1)"
 
           if [ -z "$PROJECT" ]; then
-            echo "package.json nao encontrado."
+            echo "package.json não encontrado dentro do ZIP."
             exit 1
           fi
 
-          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
-          echo "Projeto: $PROJECT"
+          echo "Projeto encontrado: $PROJECT"
+          echo "PROJECT_DIR=$PROJECT" >> "$GITHUB_ENV"
 
-      - name: Instalar dependencias
-        shell: bash
+      - name: Instalar dependências
+        working-directory: extracted
         run: |
           set -e
-
-          cd "$PROJECT"
-
-          npm pkg set \
-            "dependencies.@capacitor/core=^7.0.0" \
-            "dependencies.@capacitor/android=^7.0.0" \
-            "devDependencies.@capacitor/cli=^7.0.0"
-
+          cd "$PROJECT_DIR"
           npm install
 
-      - name: Preparar Android
-        shell: bash
+      - name: Preparar Capacitor Android
+        working-directory: extracted
         run: |
           set -e
-
-          cd "$PROJECT"
+          cd "$PROJECT_DIR"
 
           if [ ! -d android ]; then
             npx cap add android
@@ -109,110 +85,98 @@ jobs:
 
           npx cap sync android
 
-      - name: Corrigir orientacao sem corromper XML
-        shell: bash
+      - name: Fixar orientação horizontal
+        working-directory: extracted
         run: |
           set -e
+          cd "$PROJECT_DIR"
 
-          MANIFEST="$PROJECT/android/app/src/main/AndroidManifest.xml"
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
 
           if [ ! -f "$MANIFEST" ]; then
-            echo "AndroidManifest.xml nao encontrado."
+            echo "AndroidManifest.xml não encontrado."
             exit 1
           fi
 
-          python3 - "$MANIFEST" <<'PY'
-          import sys
-          import re
-
-          path = sys.argv[1]
-
-          with open(path, "r", encoding="utf-8") as f:
-              xml = f.read()
-
-          # Preserva a declaracao original do XML.
-          # Garante que o namespace Android exista no elemento manifest.
-          if not re.search(r'xmlns:android\s*=', xml):
-              xml = re.sub(
-                  r'<manifest\b',
-                  '<manifest xmlns:android="http://schemas.android.com/apk/res/android"',
-                  xml,
-                  count=1
-              )
-
-          # Altera apenas activities, sem modificar permissões.
-          def fix_activity(match):
-              tag = match.group(0)
-
-              tag = re.sub(
-                  r'\s+android:screenOrientation="[^"]*"',
-                  '',
-                  tag
-              )
-
-              tag = re.sub(
-                  r'\s+android:resizeableActivity="[^"]*"',
-                  '',
-                  tag
-              )
-
-              tag = tag[:-1] + ' android:screenOrientation="landscape" android:resizeableActivity="false">'
-
-              return tag
-
-          xml = re.sub(
-              r'<activity\b[^>]*>',
-              fix_activity,
-              xml
-          )
-
-          with open(path, "w", encoding="utf-8") as f:
-              f.write(xml)
-
-          print("Orientacao horizontal aplicada.")
-          print("Namespace Android preservado.")
-          PY
-
-          # Verifica se o XML continua valido
           python3 - "$MANIFEST" <<'PY'
           import sys
           import xml.etree.ElementTree as ET
 
-          ET.parse(sys.argv[1])
-          print("AndroidManifest.xml valido.")
+          manifest_path = sys.argv[1]
+          android_ns = "http://schemas.android.com/apk/res/android"
+          ET.register_namespace("android", android_ns)
+
+          tree = ET.parse(manifest_path)
+          root = tree.getroot()
+
+          attr_orientation = f"{{{android_ns}}}screenOrientation"
+          attr_resize = f"{{{android_ns}}}resizeableActivity"
+
+          app = root.find("application")
+          if app is None:
+              raise SystemExit("Tag application não encontrada.")
+
+          activities = app.findall("activity")
+          if not activities:
+              raise SystemExit("Nenhuma activity encontrada.")
+
+          main_activity = None
+          for activity in activities:
+              for intent in activity.findall("intent-filter"):
+                  actions = [
+                      a.get(f"{{{android_ns}}}name")
+                      for a in intent.findall("action")
+                  ]
+                  categories = [
+                      c.get(f"{{{android_ns}}}name")
+                      for c in intent.findall("category")
+                  ]
+                  if "android.intent.action.MAIN" in actions and \
+                     "android.intent.category.LAUNCHER" in categories:
+                      main_activity = activity
+                      break
+              if main_activity is not None:
+                  break
+
+          if main_activity is None:
+              main_activity = activities[0]
+
+          main_activity.set(attr_orientation, "landscape")
+          main_activity.set(attr_resize, "false")
+
+          tree.write(manifest_path, encoding="utf-8", xml_declaration=True)
+
+          # Confere se o XML continua válido
+          ET.parse(manifest_path)
+          print("Manifest validado e orientação horizontal aplicada.")
           PY
 
       - name: Compilar APK
-        shell: bash
+        working-directory: extracted
         run: |
           set -e
-
-          cd "$PROJECT/android"
-
+          cd "$PROJECT_DIR/android"
           chmod +x gradlew
           ./gradlew assembleDebug
 
       - name: Localizar APK
-        shell: bash
         run: |
           set -e
-
-          APK=$(find "$PROJECT/android/app/build/outputs/apk" \
-            -type f -name '*.apk' | head -n 1)
+          APK="$(find extracted -type f -path '*/build/outputs/apk/debug/*.apk' | head -n 1)"
 
           if [ -z "$APK" ]; then
-            echo "APK nao encontrado."
+            echo "APK não foi gerado."
             exit 1
           fi
 
           mkdir -p resultado
-          cp "$APK" resultado/NEXUS350_HORIZONTAL_FIX.apk
+          cp "$APK" resultado/NEXUS350-SONS-LOJA-VOLTAR.apk
+          ls -lh resultado/
 
-      - name: Publicar APK
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: NEXUS350-HORIZONTAL-FIX
-          path: resultado/NEXUS350_HORIZONTAL_FIX.apk
+          name: NEXUS350-SONS-LOJA-VOLTAR-APK
+          path: resultado/NEXUS350-SONS-LOJA-VOLTAR.apk
           if-no-files-found: error
           retention-days: 30
-          
