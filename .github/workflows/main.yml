@@ -1,3 +1,4 @@
+
 name: NEXUS 350 - SONS LOJA VOLTAR APK
 
 on:
@@ -15,14 +16,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar repositório
+      - name: Baixar repositorio
         uses: actions/checkout@v4
 
       - name: Instalar Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: ''
 
       - name: Instalar Java
         uses: actions/setup-java@v4
@@ -37,44 +37,42 @@ jobs:
           yes | "$SDKMANAGER" --licenses || true
           "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Encontrar ZIP atualizado
+      - name: Encontrar ZIP
         run: |
           set -e
-          ZIP="$(find . -maxdepth 4 -type f -name 'NEXUS350-SONS-LOJA-VOLTAR.zip' | head -n 1)"
+          ZIP="$(find "$GITHUB_WORKSPACE" -maxdepth 4 -type f -name 'NEXUS350-SONS-LOJA-VOLTAR.zip' | head -n 1)"
           if [ -z "$ZIP" ]; then
-            echo "ZIP atualizado não encontrado no repositório."
+            echo "ZIP atualizado nao encontrado."
             exit 1
           fi
           echo "ZIP encontrado: $ZIP"
           echo "ZIP_PATH=$ZIP" >> "$GITHUB_ENV"
 
-      - name: Extrair projeto
+      - name: Extrair projeto e localizar package.json
         run: |
           set -e
-          mkdir -p extracted
-          unzip -q "$ZIP_PATH" -d extracted
+          mkdir -p "$GITHUB_WORKSPACE/extracted"
+          unzip -q "$ZIP_PATH" -d "$GITHUB_WORKSPACE/extracted"
 
-          PROJECT="$(find extracted -type f -name package.json \
-            -not -path '*/node_modules/*' \
-            -printf '%h\n' | head -n 1)"
+          PROJECT="$(find "$GITHUB_WORKSPACE/extracted" -type f -name package.json -not -path '*/node_modules/*' | head -n 1)"
 
           if [ -z "$PROJECT" ]; then
-            echo "package.json não encontrado dentro do ZIP."
+            echo "ERRO: package.json nao encontrado."
+            find "$GITHUB_WORKSPACE/extracted" -maxdepth 4 -type f
             exit 1
           fi
 
-          echo "Projeto encontrado: $PROJECT"
-          echo "PROJECT_DIR=$PROJECT" >> "$GITHUB_ENV"
+          PROJECT_DIR="$(dirname "$PROJECT")"
+          echo "Projeto localizado: $PROJECT_DIR"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      - name: Instalar dependências
-        working-directory: extracted
+      - name: Instalar dependencias
         run: |
           set -e
           cd "$PROJECT_DIR"
           npm install
 
       - name: Preparar Capacitor Android
-        working-directory: extracted
         run: |
           set -e
           cd "$PROJECT_DIR"
@@ -85,98 +83,107 @@ jobs:
 
           npx cap sync android
 
-      - name: Fixar orientação horizontal
-        working-directory: extracted
+      - name: Fixar orientacao horizontal
         run: |
           set -e
-          cd "$PROJECT_DIR"
-
-          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          MANIFEST="$PROJECT_DIR/android/app/src/main/AndroidManifest.xml"
 
           if [ ! -f "$MANIFEST" ]; then
-            echo "AndroidManifest.xml não encontrado."
+            echo "AndroidManifest.xml nao encontrado."
             exit 1
           fi
 
           python3 - "$MANIFEST" <<'PY'
-          import sys
-          import xml.etree.ElementTree as ET
+          import sys, re, xml.etree.ElementTree as ET
 
-          manifest_path = sys.argv[1]
-          android_ns = "http://schemas.android.com/apk/res/android"
-          ET.register_namespace("android", android_ns)
+          path = sys.argv[1]
 
-          tree = ET.parse(manifest_path)
-          root = tree.getroot()
+          with open(path, "r", encoding="utf-8") as f:
+              text = f.read()
 
-          attr_orientation = f"{{{android_ns}}}screenOrientation"
-          attr_resize = f"{{{android_ns}}}resizeableActivity"
+          if "xmlns:android=" not in text:
+              text = text.replace(
+                  "<manifest",
+                  '<manifest xmlns:android="http://schemas.android.com/apk/res/android',
+                  1
+              )
 
-          app = root.find("application")
-          if app is None:
-              raise SystemExit("Tag application não encontrada.")
+          pattern = re.compile(r"<activity\\b[^>]*>", re.DOTALL)
+          matches = list(pattern.finditer(text))
 
-          activities = app.findall("activity")
-          if not activities:
-              raise SystemExit("Nenhuma activity encontrada.")
+          if not matches:
+              raise SystemExit("Nenhuma activity encontrada no Manifest.")
 
-          main_activity = None
-          for activity in activities:
-              for intent in activity.findall("intent-filter"):
-                  actions = [
-                      a.get(f"{{{android_ns}}}name")
-                      for a in intent.findall("action")
-                  ]
-                  categories = [
-                      c.get(f"{{{android_ns}}}name")
-                      for c in intent.findall("category")
-                  ]
-                  if "android.intent.action.MAIN" in actions and \
-                     "android.intent.category.LAUNCHER" in categories:
-                      main_activity = activity
-                      break
-              if main_activity is not None:
+          def is_launcher(tag):
+              return (
+                  "android.intent.action.MAIN" in tag
+                  and "android.intent.category.LAUNCHER" in tag
+              )
+
+          target = None
+          for match in matches:
+              if is_launcher(match.group(0)):
+                  target = match
                   break
 
-          if main_activity is None:
-              main_activity = activities[0]
+          if target is None:
+              target = matches[0]
 
-          main_activity.set(attr_orientation, "landscape")
-          main_activity.set(attr_resize, "false")
+          tag = target.group(0)
 
-          tree.write(manifest_path, encoding="utf-8", xml_declaration=True)
+          tag = re.sub(
+              r'\\s+android:screenOrientation="[^"]*"',
+              '',
+              tag
+          )
 
-          # Confere se o XML continua válido
-          ET.parse(manifest_path)
-          print("Manifest validado e orientação horizontal aplicada.")
+          tag = re.sub(
+              r'\\s+android:resizeableActivity="[^"]*"',
+              '',
+              tag
+          )
+
+          tag = tag[:-1] + (
+              ' android:screenOrientation="landscape"'
+              ' android:resizeableActivity="false">'
+          )
+
+          text = text[:target.start()] + tag + text[target.end():]
+
+          with open(path, "w", encoding="utf-8") as f:
+              f.write(text)
+
+          ET.parse(path)
+          print("Manifest XML validado.")
+          print("Orientacao horizontal aplicada.")
           PY
 
       - name: Compilar APK
-        working-directory: extracted
         run: |
           set -e
           cd "$PROJECT_DIR/android"
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Localizar APK
+      - name: Preparar APK
         run: |
           set -e
-          APK="$(find extracted -type f -path '*/build/outputs/apk/debug/*.apk' | head -n 1)"
+          APK="$(find "$PROJECT_DIR/android" -type f -path '*/build/outputs/apk/debug/*.apk' | head -n 1)"
 
           if [ -z "$APK" ]; then
-            echo "APK não foi gerado."
+            echo "APK nao encontrado."
             exit 1
           fi
 
-          mkdir -p resultado
-          cp "$APK" resultado/NEXUS350-SONS-LOJA-VOLTAR.apk
-          ls -lh resultado/
+          mkdir -p "$GITHUB_WORKSPACE/resultado"
+          cp "$APK" "$GITHUB_WORKSPACE/resultado/NEXUS350-SONS-LOJA-VOLTAR.apk"
+          ls -lh "$GITHUB_WORKSPACE/resultado"
 
-      - name: Disponibilizar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: NEXUS350-SONS-LOJA-VOLTAR-APK
           path: resultado/NEXUS350-SONS-LOJA-VOLTAR.apk
           if-no-files-found: error
           retention-days: 30
+          
