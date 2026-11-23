@@ -1,5 +1,5 @@
 
-name: NEXUS 350 - ANALOGICO V3 APK
+name: NEXUS 350 - V5 TELAS ANIMADAS APK
 
 on:
   workflow_dispatch:
@@ -46,17 +46,17 @@ jobs:
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-      - name: Localizar ZIP V3
+      - name: Localizar ZIP V5
         shell: bash
         run: |
           set -e
 
           ZIP=$(find . -maxdepth 4 -type f \
-            -name 'Nexus350_Labirinto_Fantasmas_ANALOGICO_V3.zip' \
+            -name 'Nexus350_Labirinto_Fantasmas_TELAS_ANIMADAS_V5.zip' \
             | head -n 1)
 
           if [ -z "$ZIP" ]; then
-            echo "ZIP ANALOGICO V3 nao encontrado."
+            echo "ZIP V5 nao encontrado."
             exit 1
           fi
 
@@ -147,13 +147,13 @@ jobs:
           fi
 
           mkdir -p resultado
-          cp "$APK" resultado/NEXUS350_ANALOGICO_V3.apk
+          cp "$APK" resultado/NEXUS350_V5.apk
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: NEXUS350-ANALOGICO-V3
-          path: resultado/NEXUS350_ANALOGICO_V3.apk
+          name: NEXUS350-V5-TELAS-ANIMADAS
+          path: resultado/NEXUS350_V5.apk
           if-no-files-found: error
           retention-days: 30
           
