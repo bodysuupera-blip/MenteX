@@ -19,7 +19,7 @@ jobs:
       - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Configurar Node.js 20
+      - name: Configurar Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -30,7 +30,7 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Conferir Java e Node
+      - name: Conferir ambiente
         run: |
           java -version
           javac -version
@@ -47,7 +47,7 @@ jobs:
           restore-keys: |
             nexus350-java21-${{ runner.os }}-
 
-      - name: Criar estrutura do jogo
+      - name: Criar estrutura Web
         run: |
           mkdir -p www
 
@@ -57,8 +57,8 @@ jobs:
           <html lang="pt-BR">
           <head>
             <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-            <title>Nexus 350 Evolution</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+            <title>NEXUS 350 EVOLUTION</title>
           </head>
           <body>
             <h1>NEXUS 350 EVOLUTION</h1>
@@ -95,11 +95,31 @@ jobs:
       - name: Sincronizar Android
         run: npx cap sync android
 
+      - name: Corrigir versoes Kotlin
+        run: |
+          cd android
+
+          cat >> build.gradle <<'EOF'
+
+          allprojects {
+              configurations.configureEach {
+                  resolutionStrategy.eachDependency { details ->
+                      if (details.requested.group == "org.jetbrains.kotlin") {
+                          details.useVersion "1.8.22"
+                          details.because "Unificar bibliotecas Kotlin"
+                      }
+                  }
+              }
+          }
+          EOF
+
       - name: Compilar APK
         shell: bash
         run: |
           cd android
           chmod +x gradlew
+
+          ./gradlew clean
 
           for tentativa in 1 2 3; do
             echo "Tentativa $tentativa de 3"
@@ -107,7 +127,7 @@ jobs:
             if ./gradlew assembleDebug \
               --no-daemon \
               --max-workers=2; then
-              echo "APK compilado!"
+              echo "APK gerado com sucesso!"
               exit 0
             fi
 
@@ -118,7 +138,7 @@ jobs:
 
           exit 1
 
-      - name: Enviar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: NEXUS-350-EVOLUTION-APK
