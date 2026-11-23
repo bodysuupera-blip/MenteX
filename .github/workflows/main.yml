@@ -1,4 +1,5 @@
-name: NEXUS 350 - LOCALIZAR ESTRUTURA
+
+name: NEXUS 350 - ANALISAR FONTE ORIGINAL
 
 on:
   workflow_dispatch:
@@ -7,36 +8,49 @@ permissions:
   contents: read
 
 jobs:
-  localizar:
+  analisar:
     runs-on: ubuntu-latest
 
     steps:
       - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Identificar arquivos de compilacao
+      - name: Localizar fonte original
         shell: bash
         run: |
-          echo "===== RAIZ ====="
-          ls -lah
+          set -e
 
-          echo "===== CONFIGURACOES ====="
-          find . -type f \
+          ZIP="NEXUS350_FONTE_ORIGINAL_SEM_MUDANCAS.zip"
+
+          if [ ! -f "$ZIP" ]; then
+            ZIP=$(find . -type f -name "NEXUS350_FONTE_ORIGINAL_SEM_MUDANCAS.zip" | head -n 1)
+          fi
+
+          if [ -z "$ZIP" ] || [ ! -f "$ZIP" ]; then
+            echo "Fonte original nao encontrada."
+            find . -maxdepth 3 -type f -name "*.zip"
+            exit 1
+          fi
+
+          echo "Fonte encontrada: $ZIP"
+
+          echo "===== CONTEUDO DA FONTE ORIGINAL ====="
+          unzip -l "$ZIP" | head -n 150
+
+          mkdir -p /tmp/nexus_original
+          unzip -q "$ZIP" -d /tmp/nexus_original
+
+          echo "===== ARQUIVOS DE COMPILACAO ====="
+          find /tmp/nexus_original -type f \
             \( -name "package.json" \
             -o -name "config.xml" \
             -o -name "capacitor.config.*" \
             -o -name "build.gradle" \
             -o -name "settings.gradle" \
             -o -name "gradlew" \
-            -o -name "AndroidManifest.xml" \ \
-            -o -name "*.apk" \) \
-            ! -path "./.git/*" \
-            ! -path "./node_modules/*" \
-            ! -path "./build/*" \
-            | head -n 150
-
-          echo "===== DIRETORIOS PRINCIPAIS ====="
-          find . -maxdepth 3 -type d \
-            ! -path "./.git*" \
-            ! -path "./node_modules*" \
+            -o -name "AndroidManifest.xml" \) \
             | head -n 100
+
+          echo "===== PASTAS DO PROJETO ====="
+          find /tmp/nexus_original -maxdepth 3 -type d | head -n 100
+          
