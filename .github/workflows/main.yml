@@ -1,5 +1,5 @@
 
-name: NEXUS 350 - LOCALIZAR FONTE REAL
+name: NEXUS 350 - NOVA BUILD ORIGINAL
 
 on:
   workflow_dispatch:
@@ -8,73 +8,106 @@ permissions:
   contents: read
 
 jobs:
-  localizar:
+  construir:
     runs-on: ubuntu-latest
 
     steps:
       - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Procurar fontes ZIP
-        shell: bash
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: ''
+
+      - name: Preparar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Preparar Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+
+      - name: Extrair fonte original
         run: |
           set -e
 
-          echo "===== ZIPs ENCONTRADOS ====="
+          ZIP="NEXUS350_FONTE_ORIGINAL_SEM_MUDANCAS.zip"
 
-          find "$GITHUB_WORKSPACE" \
-            -type f \
-            -iname "*.zip" \
-            -not -path "*/.git/*" \
-            -printf "%s bytes | %p\n" \
-            | sort -n
-
-          echo "===== PROCURAR ZIP DA FONTE ORIGINAL ====="
-
-          find "$GITHUB_WORKSPACE" \
-            -type f \
-            -iname "*FONTE*ORIGINAL*.zip" \
-            -not -path "*/.git/*"
-
-          echo "===== PROCURAR CONFIGURACOES DO PROJETO ====="
-
-          find "$GITHUB_WORKSPACE" \
-            -type f \
-            \( -name "package.json" \
-            -o -name "config.xml" \
-            -o -name "capacitor.config.js" \
-            -o -name "capacitor.config.json" \
-            -o -name "build.gradle" \
-            -o -name "settings.gradle" \
-            -o -name "gradlew" \) \
-            -not -path "*/.git/*" \
-            -not -path "*/node_modules/*" \
-            | head -n 200
-
-      - name: Inspecionar ZIP da fonte original
-        shell: bash
-        run: |
-          set -e
-
-          ZIP=$(find "$GITHUB_WORKSPACE" \
-            -type f \
-            -iname "NEXUS350_FONTE_ORIGINAL_SEM_MUDANCAS.zip" \
-            -not -path "*/.git/*" \
-            | head -n 1)
-
-          if [ -z "$ZIP" ]; then
-            echo "Fonte original nao encontrada com esse nome."
-            exit 0
+          if [ ! -f "$ZIP" ]; then
+            ZIP=$(find . -type f -name "NEXUS350_FONTE_ORIGINAL_SEM_MUDANCAS.zip" | head -n 1)
           fi
 
-          echo "===== ZIP SELECIONADO ====="
-          echo "$ZIP"
+          if [ -z "$ZIP" ] || [ ! -f "$ZIP" ]; then
+            echo "ERRO: Fonte original nao encontrada."
+            exit 1
+          fi
 
-          echo "===== CONTEUDO INTERNO ====="
-          unzip -Z1 "$ZIP" | head -n 200
+          mkdir -p /tmp/nexus350
+          unzip -q "$ZIP" -d /tmp/nexus350
 
-          echo "===== ARQUIVOS DE COMPILACAO DENTRO DO ZIP ====="
-          unzip -Z1 "$ZIP" | grep -Ei \
-            '(^|/)(package.json|config.xml|gradlew|build.gradle|settings.gradle|capacitor.config.*|AndroidManifest.xml)$' \
-            | head -n 100 || true
-            
+          cd /tmp/nexus350
+
+          if [ ! -f package.json ]; then
+            echo "ERRO: package.json nao encontrado."
+            exit 1
+          fi
+
+          cat package.json
+
+      - name: Instalar dependencias
+        working-directory: /tmp/nexus350
+        run: |
+          set -e
+          npm install
+
+      - name: Preparar Android Capacitor
+        working-directory: /tmp/nexus350
+        run: |
+          set -e
+
+          if [ ! -d android ]; then
+            npx cap add android
+          fi
+
+          npx cap sync android
+
+      - name: Compilar APK
+        working-directory: /tmp/nexus350/android
+        run: |
+          set -e
+
+          chmod +x gradlew
+
+          ./gradlew assembleDebug
+
+      - name: Localizar APK
+        run: |
+          set -e
+
+          mkdir -p entrega
+
+          find /tmp/nexus350/android \
+            -type f \
+            -name "*.apk" \
+            -path "*/build/outputs/apk/*" \
+            -exec cp {} entrega/ \;
+
+          if [ -z "$(ls -A entrega)" ]; then
+            echo "ERRO: APK nao encontrado."
+            exit 1
+          fi
+
+          ls -lh entrega
+
+      - name: Disponibilizar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: NEXUS350-NOVA-BUILD-ORIGINAL
+          path: entrega/*.apk
+          retention-days: 30
+          
