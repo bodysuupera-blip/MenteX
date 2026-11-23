@@ -1,13 +1,8 @@
 
-name: NEXUS 350 - APK COM NOVO ICONE
+name: NEXUS - APK com novo ícone
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - 'NEXUS350-BOAS-VINDAS-CHAVE-FUGA.zip'
-      - 'NEXUS350-ICON-ROUND.zip'
-      - '.github/workflows/nexus350.yml'
 
 permissions:
   contents: read
@@ -17,208 +12,49 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar repositorio
+      - name: Baixar código
         uses: actions/checkout@v4
 
-      - name: Configurar Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Configurar Java
+      - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: '17'
 
-      - name: Configurar Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          cmdline-tools-version: 'latest'
-          accept-android-sdk-licenses: true
-
-      - name: Instalar pacotes Android
+      - name: Verificar projeto Android
         run: |
-          set -e
-
-          sdkmanager --install \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
-
-      - name: Localizar ZIPs
-        run: |
-          set -e
-
-          GAMEZIP=$(find "$GITHUB_WORKSPACE" -type f -name 'NEXUS350-BOAS-VINDAS-CHAVE-FUGA.zip' | head -n 1)
-          ICONZIP=$(find "$GITHUB_WORKSPACE" -type f -name 'NEXUS350-ICON-ROUND.zip' | head -n 1)
-
-          if [ -z "$GAMEZIP" ]; then
-            echo "ZIP do jogo nao encontrado."
+          if [ ! -d android/app/src/main ]; then
+            echo "ERRO: android/app/src/main não encontrado"
             exit 1
           fi
 
-          if [ -z "$ICONZIP" ]; then
-            echo "ZIP do icone nao encontrado."
+          if [ ! -f android/gradlew ]; then
+            echo "ERRO: gradlew não encontrado"
             exit 1
           fi
 
-          echo "GAMEZIP=$GAMEZIP" >> "$GITHUB_ENV"
-          echo "ICONZIP=$ICONZIP" >> "$GITHUB_ENV"
-
-      - name: Extrair jogo e icone
+      - name: Aplicar novo ícone Nexus
         run: |
-          set -e
+          for density in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            mkdir -p android/app/src/main/res/mipmap-$density
 
-          mkdir -p extracted iconfiles
+            cp assets/icons/mipmap-$density/ic_launcher.png \
+            android/app/src/main/res/mipmap-$density/ic_launcher.png
 
-          unzip -q "$GAMEZIP" -d extracted
-          unzip -q "$ICONZIP" -d iconfiles
-
-          PACKAGE=$(find extracted -type f -name package.json -not -path '*/node_modules/*' | head -n 1)
-          ICON=$(find iconfiles -type f -name 'NEXUS350-ICON-ROUND.png' | head -n 1)
-
-          if [ -z "$PACKAGE" ]; then
-            echo "package.json nao encontrado."
-            exit 1
-          fi
-
-          if [ -z "$ICON" ]; then
-            echo "PNG do icone nao encontrado."
-            exit 1
-          fi
-
-          echo "PROJECT_DIR=$(dirname "$PACKAGE")" >> "$GITHUB_ENV"
-          echo "ICON_PATH=$ICON" >> "$GITHUB_ENV"
-
-      - name: Instalar dependencias
-        run: |
-          set -e
-          cd "$PROJECT_DIR"
-          npm install
-          npm install @capacitor/android@^7.0.0
-
-      - name: Criar Android
-        run: |
-          set -e
-          cd "$PROJECT_DIR"
-
-          if [ ! -d android ]; then
-            npx cap add android
-          fi
-
-          npx cap sync android
-
-      - name: Instalar ferramenta de imagem
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y imagemagick
-
-      - name: Aplicar novo icone
-        run: |
-          set -e
-
-          RES="$PROJECT_DIR/android/app/src/main/res"
-
-          mkdir -p "$RES/mipmap-mdpi"
-          mkdir -p "$RES/mipmap-hdpi"
-          mkdir -p "$RES/mipmap-xhdpi"
-          mkdir -p "$RES/mipmap-xxhdpi"
-          mkdir -p "$RES/mipmap-xxxhdpi"
-
-          convert "$ICON_PATH" -resize 48x48 "$RES/mipmap-mdpi/ic_launcher.png"
-          convert "$ICON_PATH" -resize 72x72 "$RES/mipmap-hdpi/ic_launcher.png"
-          convert "$ICON_PATH" -resize 96x96 "$RES/mipmap-xhdpi/ic_launcher.png"
-          convert "$ICON_PATH" -resize 144x144 "$RES/mipmap-xxhdpi/ic_launcher.png"
-          convert "$ICON_PATH" -resize 192x192 "$RES/mipmap-xxxhdpi/ic_launcher.png"
-
-          convert "$ICON_PATH" -resize 48x48 "$RES/mipmap-mdpi/ic_launcher_round.png"
-          convert "$ICON_PATH" -resize 72x72 "$RES/mipmap-hdpi/ic_launcher_round.png"
-          convert "$ICON_PATH" -resize 96x96 "$RES/mipmap-xhdpi/ic_launcher_round.png"
-          convert "$ICON_PATH" -resize 144x144 "$RES/mipmap-xxhdpi/ic_launcher_round.png"
-          convert "$ICON_PATH" -resize 192x192 "$RES/mipmap-xxxhdpi/ic_launcher_round.png"
-
-          echo "Icone aplicado."
-
-      - name: Configurar tela horizontal
-        run: |
-          set -e
-
-          MANIFEST="$PROJECT_DIR/android/app/src/main/AndroidManifest.xml"
-
-          python3 - "$MANIFEST" <<'PY'
-          import sys
-          import xml.etree.ElementTree as ET
-
-          path = sys.argv[1]
-          android = "http://schemas.android.com/apk/res/android"
-
-          ET.register_namespace("android", android)
-
-          tree = ET.parse(path)
-          root = tree.getroot()
-          app = root.find("application")
-
-          if app is None:
-              raise SystemExit("Application nao encontrada.")
-
-          for activity in app.findall("activity"):
-              for intent in activity.findall("intent-filter"):
-                  actions = [
-                      a.get(f"{{{android}}}name")
-                      for a in intent.findall("action")
-                  ]
-
-                  categories = [
-                      c.get(f"{{{android}}}name")
-                      for c in intent.findall("category")
-                  ]
-
-                  if (
-                      "android.intent.action.MAIN" in actions
-                      and "android.intent.category.LAUNCHER" in categories
-                  ):
-                      activity.set(
-                          f"{{{android}}}screenOrientation",
-                          "landscape"
-                      )
-                      activity.set(
-                          f"{{{android}}}resizeableActivity",
-                          "false"
-                      )
-
-          tree.write(path, encoding="utf-8", xml_declaration=True)
-          ET.parse(path)
-
-          print("Tela horizontal configurada.")
-          PY
+            cp assets/icons/mipmap-$density/ic_launcher_round.png \
+            android/app/src/main/res/mipmap-$density/ic_launcher_round.png
+          done
 
       - name: Compilar APK
         run: |
-          set -e
-          cd "$PROJECT_DIR/android"
+          cd android
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Preparar APK
-        run: |
-          set -e
-
-          APK=$(find "$PROJECT_DIR/android" -type f -path '*/build/outputs/apk/debug/*.apk' | head -n 1)
-
-          if [ -z "$APK" ]; then
-            echo "APK nao encontrado."
-            exit 1
-          fi
-
-          mkdir -p resultado
-          cp "$APK" resultado/NEXUS350-ICONE-NOVO.apk
-
-      - name: Publicar APK
+      - name: Salvar APK
         uses: actions/upload-artifact@v4
         with:
-          name: NEXUS350-APK-NOVO-ICONE
-          path: resultado/NEXUS350-ICONE-NOVO.apk
+          name: NEXUS-APK-NOVO-ICONE
+          path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          retention-days: 30
           
