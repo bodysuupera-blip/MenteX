@@ -1,128 +1,70 @@
 
-name: NEXUS 350 - RECUPERAR E GERAR APK
+name: NEXUS 350 - APK COM NOVO ICONE REDONDO
 
 on:
   workflow_dispatch:
-
-permissions:
-  contents: read
+  push:
+    branches:
+      - main
 
 jobs:
-  build:
+  construir:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar repositório
+      - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Localizar e extrair projeto Nexus
-        shell: bash
-        run: |
-          ZIP=$(find . -maxdepth 4 -name "NEXUS-PROJETO-RECUPERADO-APK-ICON.zip" | head -n 1)
-
-          if [ -z "$ZIP" ]; then
-            echo "ZIP do Nexus não encontrado"
-            exit 1
-          fi
-
-          mkdir -p recovered
-          unzip -o "$ZIP" -d recovered
-
-          PROJECT=$(find recovered -name package.json -printf '%h\n' | head -n 1)
-
-          if [ -z "$PROJECT" ]; then
-            echo "package.json não encontrado"
-            find recovered -maxdepth 5 -type f
-            exit 1
-          fi
-
-          echo "PROJECT_DIR=$PROJECT" >> "$GITHUB_ENV"
-          echo "Projeto localizado em: $PROJECT"
-
-      - name: Configurar Node.js 20
+      - name: Configurar Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: 20
 
-      - name: Configurar Java 21
+      - name: Configurar Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: 17
 
-      - name: Verificar versões
+      - name: Instalar dependencias
         run: |
-          node --version
-          npm --version
-          java -version
-
-      - name: Instalar dependências
-        shell: bash
-        run: |
-          cd "$PROJECT_DIR"
           npm install
 
-      - name: Preparar Android
-        shell: bash
+      - name: Instalar Capacitor
         run: |
-          cd "$PROJECT_DIR"
+          npm install @capacitor/core @capacitor/cli @capacitor/android
 
-          if [ ! -d android ]; then
-            npx cap add android
+      - name: Preparar icone Nexus 350
+        run: |
+          mkdir -p assets
+          if [ -f www/icon.png ]; then
+            cp www/icon.png assets/icon.png
+          elif [ -f icon.png ]; then
+            cp icon.png assets/icon.png
           fi
 
+      - name: Sincronizar Android
+        run: |
           npx cap sync android
 
-      - name: Aplicar ícone Nexus
-        shell: bash
+      - name: Configurar Android
         run: |
-          cd "$PROJECT_DIR"
-
-          for density in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
-            DEST="android/app/src/main/res/mipmap-$density"
-            SRC="assets/icons/mipmap-$density"
-
-            mkdir -p "$DEST"
-
-            if [ -f "$SRC/ic_launcher.png" ]; then
-              cp "$SRC/ic_launcher.png" "$DEST/ic_launcher.png"
-            fi
-
-            if [ -f "$SRC/ic_launcher_round.png" ]; then
-              cp "$SRC/ic_launcher_round.png" "$DEST/ic_launcher_round.png"
-            fi
-          done
-
-          echo "Ícones aplicados."
-
-      - name: Configurar permissões Gradle
-        run: |
-          cd "$PROJECT_DIR/android"
+          cd android
           chmod +x gradlew
 
-      - name: Compilar APK Debug
-        shell: bash
+      - name: Gerar APK
         run: |
-          cd "$PROJECT_DIR/android"
+          cd android
           ./gradlew assembleDebug
 
-      - name: Verificar APK
-        shell: bash
+      - name: Localizar APK
         run: |
-          APK="$PROJECT_DIR/android/app/build/outputs/apk/debug/app-debug.apk"
+          find android -name "*.apk"
 
-          if [ ! -f "$APK" ]; then
-            echo "APK não foi gerado"
-            exit 1
-          fi
-
-          ls -lh "$APK"
-
-      - name: Disponibilizar APK
+      - name: Enviar APK
         uses: actions/upload-artifact@v4
         with:
-          name: NEXUS-350-APK-NOVO-ICONE
-          path: recovered/**/android/app/build/outputs/apk/debug/app-debug.apk
+          name: NEXUS350-APK
+          path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
-          retention-days: 7
           
