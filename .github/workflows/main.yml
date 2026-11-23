@@ -31,15 +31,26 @@ jobs:
           java-version: '21'
 
       - name: Configurar Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Instalar SDK Android
         run: |
           set -e
 
-          sdkmanager --licenses || true
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "SDK instalado em $ANDROID_HOME"
 
-          sdkmanager \
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager"
+
+          if [ ! -f "$SDKMANAGER" ]; then
+            SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)
+          fi
+
+          if [ -z "$SDKMANAGER" ] || [ ! -f "$SDKMANAGER" ]; then
+            echo "sdkmanager nao encontrado"
+            exit 1
+          fi
+
+          yes | "$SDKMANAGER" --licenses || true
+
+          "$SDKMANAGER" \
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
@@ -51,7 +62,7 @@ jobs:
           ZIP="$(find "$GITHUB_WORKSPACE" -type f -name 'NEXUS350-BOAS-VINDAS-CHAVE-FUGA.zip' | head -n 1)"
 
           if [ -z "$ZIP" ]; then
-            echo "ZIP nao encontrado."
+            echo "ZIP nao encontrado"
             exit 1
           fi
 
@@ -67,7 +78,7 @@ jobs:
           PACKAGE="$(find "$GITHUB_WORKSPACE/extracted" -type f -name package.json -not -path '*/node_modules/*' | head -n 1)"
 
           if [ -z "$PACKAGE" ]; then
-            echo "package.json nao encontrado."
+            echo "package.json nao encontrado"
             exit 1
           fi
 
@@ -88,7 +99,7 @@ jobs:
           cd "$PROJECT_DIR"
           npm install @capacitor/android@^7.0.0
 
-      - name: Criar e sincronizar Android
+      - name: Criar Android
         run: |
           set -e
           cd "$PROJECT_DIR"
@@ -104,11 +115,6 @@ jobs:
           set -e
 
           MANIFEST="$PROJECT_DIR/android/app/src/main/AndroidManifest.xml"
-
-          if [ ! -f "$MANIFEST" ]; then
-            echo "AndroidManifest.xml nao encontrado."
-            exit 1
-          fi
 
           python3 - "$MANIFEST" <<'PY'
           import sys
@@ -131,13 +137,13 @@ jobs:
           for activity in app.findall("activity"):
               for intent in activity.findall("intent-filter"):
                   actions = [
-                      item.get(f"{{{android}}}name")
-                      for item in intent.findall("action")
+                      a.get(f"{{{android}}}name")
+                      for a in intent.findall("action")
                   ]
 
                   categories = [
-                      item.get(f"{{{android}}}name")
-                      for item in intent.findall("category")
+                      c.get(f"{{{android}}}name")
+                      for c in intent.findall("category")
                   ]
 
                   if (
@@ -159,7 +165,7 @@ jobs:
           tree.write(path, encoding="utf-8", xml_declaration=True)
           ET.parse(path)
 
-          print("Tela horizontal configurada")
+          print("Orientacao horizontal configurada")
           PY
 
       - name: Compilar APK
@@ -176,11 +182,12 @@ jobs:
           APK="$(find "$PROJECT_DIR/android" -type f -path '*/build/outputs/apk/debug/*.apk' | head -n 1)"
 
           if [ -z "$APK" ]; then
-            echo "APK nao encontrado."
+            echo "APK nao encontrado"
             exit 1
           fi
 
           mkdir -p "$GITHUB_WORKSPACE/resultado"
+
           cp "$APK" "$GITHUB_WORKSPACE/resultado/NEXUS350-BOAS-VINDAS.apk"
 
           ls -lh "$GITHUB_WORKSPACE/resultado"
