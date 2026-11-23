@@ -1,5 +1,5 @@
 
-name: NEXUS 350 - HORIZONTAL V2 APK
+name: NEXUS 350 - ANALOGICO V3 APK
 
 on:
   workflow_dispatch:
@@ -46,17 +46,17 @@ jobs:
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-      - name: Localizar ZIP Horizontal V2
+      - name: Localizar ZIP V3
         shell: bash
         run: |
           set -e
 
           ZIP=$(find . -maxdepth 4 -type f \
-            -name 'Nexus350_Labirinto_Fantasmas_HORIZONTAL_V2.zip' \
+            -name 'Nexus350_Labirinto_Fantasmas_ANALOGICO_V3.zip' \
             | head -n 1)
 
           if [ -z "$ZIP" ]; then
-            echo "ZIP Horizontal V2 nao encontrado."
+            echo "ZIP ANALOGICO V3 nao encontrado."
             exit 1
           fi
 
@@ -80,7 +80,7 @@ jobs:
           fi
 
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
-          echo "Projeto: $PROJECT"
+          echo "Projeto localizado: $PROJECT"
 
       - name: Instalar dependencias
         shell: bash
@@ -109,7 +109,7 @@ jobs:
 
           npx cap sync android
 
-      - name: Forcar tela horizontal
+      - name: Configurar tela horizontal
         shell: bash
         run: |
           set -e
@@ -130,7 +130,6 @@ jobs:
           set -e
 
           cd "$PROJECT/android"
-
           chmod +x gradlew
           ./gradlew assembleDebug
 
@@ -143,18 +142,18 @@ jobs:
             -type f -name '*.apk' | head -n 1)
 
           if [ -z "$APK" ]; then
-            echo "APK nao foi gerado."
+            echo "APK nao encontrado."
             exit 1
           fi
 
           mkdir -p resultado
-          cp "$APK" resultado/NEXUS350_HORIZONTAL_V2.apk
+          cp "$APK" resultado/NEXUS350_ANALOGICO_V3.apk
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: NEXUS350-HORIZONTAL-V2
-          path: resultado/NEXUS350_HORIZONTAL_V2.apk
+          name: NEXUS350-ANALOGICO-V3
+          path: resultado/NEXUS350_ANALOGICO_V3.apk
           if-no-files-found: error
           retention-days: 30
           
