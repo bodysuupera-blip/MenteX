@@ -1,5 +1,5 @@
 
-name: NEXUS 350 - V5 HORIZONTAL FIXO
+name: NEXUS 350 - V6 HORIZONTAL FIX
 
 on:
   workflow_dispatch:
@@ -35,7 +35,7 @@ jobs:
             -name sdkmanager -type f | head -n 1)
 
           if [ -z "$SDKMANAGER" ]; then
-            echo "ERRO: sdkmanager nao encontrado."
+            echo "sdkmanager nao encontrado."
             exit 1
           fi
 
@@ -56,14 +56,14 @@ jobs:
             | head -n 1)
 
           if [ -z "$ZIP" ]; then
-            echo "ERRO: ZIP V5 nao encontrado."
+            echo "ZIP V5 nao encontrado."
             exit 1
           fi
 
-          echo "ZIP localizado: $ZIP"
-
           mkdir -p extracted
           unzip -q "$ZIP" -d extracted
+
+          echo "ZIP extraido com sucesso."
 
       - name: Localizar projeto
         shell: bash
@@ -75,12 +75,12 @@ jobs:
             -printf '%h\n' | head -n 1)
 
           if [ -z "$PROJECT" ]; then
-            echo "ERRO: package.json nao encontrado."
+            echo "package.json nao encontrado."
             exit 1
           fi
 
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
-          echo "Projeto localizado: $PROJECT"
+          echo "Projeto: $PROJECT"
 
       - name: Instalar dependencias
         shell: bash
@@ -109,7 +109,7 @@ jobs:
 
           npx cap sync android
 
-      - name: FIX DEFINITIVO - HORIZONTAL UNICO
+      - name: Corrigir orientacao sem corromper XML
         shell: bash
         run: |
           set -e
@@ -117,41 +117,70 @@ jobs:
           MANIFEST="$PROJECT/android/app/src/main/AndroidManifest.xml"
 
           if [ ! -f "$MANIFEST" ]; then
-            echo "ERRO: AndroidManifest.xml nao encontrado."
+            echo "AndroidManifest.xml nao encontrado."
             exit 1
           fi
 
           python3 - "$MANIFEST" <<'PY'
           import sys
-          import xml.etree.ElementTree as ET
+          import re
 
-          manifest_path = sys.argv[1]
-          android = "{http://schemas.android.com/apk/res/android}"
+          path = sys.argv[1]
 
-          tree = ET.parse(manifest_path)
-          root = tree.getroot()
+          with open(path, "r", encoding="utf-8") as f:
+              xml = f.read()
 
-          activities = root.findall(".//activity")
+          # Preserva a declaracao original do XML.
+          # Garante que o namespace Android exista no elemento manifest.
+          if not re.search(r'xmlns:android\s*=', xml):
+              xml = re.sub(
+                  r'<manifest\b',
+                  '<manifest xmlns:android="http://schemas.android.com/apk/res/android"',
+                  xml,
+                  count=1
+              )
 
-          if not activities:
-              raise SystemExit("ERRO: Nenhuma activity encontrada.")
+          # Altera apenas activities, sem modificar permissões.
+          def fix_activity(match):
+              tag = match.group(0)
 
-          for activity in activities:
-              activity.set(android + "screenOrientation", "landscape")
-              activity.set(android + "resizeableActivity", "false")
+              tag = re.sub(
+                  r'\s+android:screenOrientation="[^"]*"',
+                  '',
+                  tag
+              )
 
-          tree.write(
-              manifest_path,
-              encoding="utf-8",
-              xml_declaration=True
+              tag = re.sub(
+                  r'\s+android:resizeableActivity="[^"]*"',
+                  '',
+                  tag
+              )
+
+              tag = tag[:-1] + ' android:screenOrientation="landscape" android:resizeableActivity="false">'
+
+              return tag
+
+          xml = re.sub(
+              r'<activity\b[^>]*>',
+              fix_activity,
+              xml
           )
 
-          print("Todas as activities foram travadas em LANDSCAPE.")
-          print("Reverse landscape e retrato nao serao permitidos.")
+          with open(path, "w", encoding="utf-8") as f:
+              f.write(xml)
+
+          print("Orientacao horizontal aplicada.")
+          print("Namespace Android preservado.")
           PY
 
-          echo "Conferencia de orientacao:"
-          grep -o 'screenOrientation="[^"]*"' "$MANIFEST" || true
+          # Verifica se o XML continua valido
+          python3 - "$MANIFEST" <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+
+          ET.parse(sys.argv[1])
+          print("AndroidManifest.xml valido.")
+          PY
 
       - name: Compilar APK
         shell: bash
@@ -161,7 +190,6 @@ jobs:
           cd "$PROJECT/android"
 
           chmod +x gradlew
-
           ./gradlew assembleDebug
 
       - name: Localizar APK
@@ -173,20 +201,18 @@ jobs:
             -type f -name '*.apk' | head -n 1)
 
           if [ -z "$APK" ]; then
-            echo "ERRO: APK nao foi gerado."
+            echo "APK nao encontrado."
             exit 1
           fi
 
           mkdir -p resultado
-
-          cp "$APK" resultado/NEXUS350_HORIZONTAL_FIXO.apk
-
-          echo "APK encontrado e preparado."
+          cp "$APK" resultado/NEXUS350_HORIZONTAL_FIX.apk
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: NEXUS350-HORIZONTAL-FIXO
-          path: resultado/NEXUS350_HORIZONTAL_FIXO.apk
+          name: NEXUS350-HORIZONTAL-FIX
+          path: resultado/NEXUS350_HORIZONTAL_FIX.apk
           if-no-files-found: error
           retention-days: 30
+          
