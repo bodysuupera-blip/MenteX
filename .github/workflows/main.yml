@@ -1,10 +1,12 @@
 
-name: NEXUS 350 EVOLUTION 5.0 - APK
+name: NEXUS 350 EVOLUTION 5.2 - APK
 
 on:
   workflow_dispatch:
   push:
-    branches: [main, master]
+    branches:
+      - main
+      - master
 
 permissions:
   contents: read
@@ -28,80 +30,95 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Procurar e extrair ZIP V5
+      - name: Conferir ambiente
         run: |
-          set -e
+          java -version
+          node -v
+          npm -v
 
-          if [ -f NEXUS_350_EVOLUTION_V5_FONTE.zip ]; then
-            unzip -o NEXUS_350_EVOLUTION_V5_FONTE.zip -d .
-          fi
-
-          if [ ! -f www/index.html ]; then
-            echo "ERRO: www/index.html nao encontrado."
-            find . -maxdepth 4 -type f | head -100
-            exit 1
-          fi
-
-          echo "Fonte V5 encontrada!"
-
-      - name: Criar package.json se necessario
-        run: |
-          if [ ! -f package.json ]; then
-            cat > package.json <<'EOF'
-          {
-            "name": "nexus-350-evolution",
-            "version": "5.0.0",
-            "private": true,
-            "dependencies": {
-              "@capacitor/core": "^7.0.0",
-              "@capacitor/android": "^7.0.0"
-            },
-            "devDependencies": {
-              "@capacitor/cli": "^7.0.0"
-            }
-          }
-          EOF
-          fi
-
-      - name: Instalar dependencias
-        run: |
-          npm install --no-audit --no-fund
-
-      - name: Verificar arquivos
+      - name: Verificar fonte do jogo
         run: |
           test -f package.json
           test -f capacitor.config.json
           test -f www/index.html
-          grep -q "EVOLUTION 5.0" www/index.html
-          grep -q "joystick" www/index.html
-          echo "Arquivos V5 conferidos!"
+          echo "Fonte encontrada!"
 
-      - name: Criar projeto Android
+      - name: Instalar dependencias
+        run: npm install --no-audit --no-fund
+
+      - name: Preparar Android
         run: |
-          if [ ! -d android ]; then
-            npx cap add android
-          fi
+          npx cap add android
           npx cap sync android
 
       - name: Configurar tela horizontal
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           p = Path("android/app/src/main/AndroidManifest.xml")
           s = p.read_text()
 
-          if 'android:screenOrientation=' not in s:
-              s = s.replace(
-                  'android:name=".MainActivity"',
-                  'android:name=".MainActivity" android:screenOrientation="landscape"'
-              )
+          s = re.sub(
+              r'android:screenOrientation="[^"]+"',
+              '',
+              s
+          )
+
+          s = re.sub(
+              r'(<activity\b[^>]*android:name="[^"]*MainActivity"[^>]*)(>)',
+              r'\1 android:screenOrientation="landscape"\2',
+              s,
+              count=1
+          )
 
           p.write_text(s)
-          print("Orientacao horizontal configurada")
+          print("Orientacao horizontal ativada")
           PY
 
-      - name: Unificar Kotlin
+      - name: Configurar Android em tela cheia
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          files = list(Path("android/app/src/main/java").rglob("MainActivity.java"))
+          if not files:
+              raise SystemExit("MainActivity.java nao encontrado")
+
+          p = files[0]
+          s = p.read_text()
+
+          if "IMMERSIVE_STICKY" not in s:
+              s = s.replace(
+                  "import android.os.Bundle;",
+                  "import android.os.Bundle;\nimport android.view.View;"
+              )
+
+              marker = "public class MainActivity extends BridgeActivity {"
+
+              body = """public class MainActivity extends BridgeActivity {
+          @Override
+          public void onCreate(Bundle savedInstanceState) {
+              super.onCreate(savedInstanceState);
+              getWindow().getDecorView().setSystemUiVisibility(
+                  View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                  | View.SYSTEM_UI_FLAG_FULLSCREEN
+                  | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                  | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                  | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                  | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+              );
+          }
+          """
+
+              s = s.replace(marker, body)
+              p.write_text(s)
+
+          print("Tela cheia configurada")
+          PY
+
+      - name: Unificar bibliotecas Kotlin
         run: |
           cat >> android/build.gradle <<'EOF'
 
@@ -121,12 +138,14 @@ jobs:
           cd android
           chmod +x gradlew
           ./gradlew clean
-          ./gradlew assembleDebug --no-daemon --max-workers=2
+          ./gradlew assembleDebug \
+            --no-daemon \
+            --max-workers=2
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: NEXUS-350-EVOLUTION-V5-APK
+          name: NEXUS-350-EVOLUTION-V5-2-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
