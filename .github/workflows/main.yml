@@ -32,23 +32,16 @@ jobs:
           java-version: '21'
 
       - name: Configurar Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 'latest'
+          accept-android-sdk-licenses: true
+
+      - name: Instalar pacotes Android
         run: |
           set -e
 
-          echo "ANDROID_HOME=$ANDROID_HOME"
-
-          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)
-
-          if [ -z "$SDKMANAGER" ]; then
-            echo "sdkmanager nao encontrado."
-            exit 1
-          fi
-
-          echo "SDKMANAGER=$SDKMAN"
-
-          yes | "$SDKMAN" --licenses || true
-
-          "$SDKMAN" \
+          sdkmanager --install \
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
@@ -121,7 +114,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y imagemagick
 
-      - name: Aplicar icone Android
+      - name: Aplicar novo icone
         run: |
           set -e
 
@@ -185,8 +178,14 @@ jobs:
                       "android.intent.action.MAIN" in actions
                       and "android.intent.category.LAUNCHER" in categories
                   ):
-                      activity.set(f"{{{android}}}screenOrientation", "landscape")
-                      activity.set(f"{{{android}}}resizeableActivity", "false")
+                      activity.set(
+                          f"{{{android}}}screenOrientation",
+                          "landscape"
+                      )
+                      activity.set(
+                          f"{{{android}}}resizeableActivity",
+                          "false"
+                      )
 
           tree.write(path, encoding="utf-8", xml_declaration=True)
           ET.parse(path)
