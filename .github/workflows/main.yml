@@ -1,5 +1,5 @@
 
-name: NEXUS 350 - NOVA BUILD SEM ALTERAR O JOGO
+name: NEXUS 350 - DIAGNOSTICO DO PROJETO
 
 on:
   workflow_dispatch:
@@ -8,82 +8,36 @@ permissions:
   contents: read
 
 jobs:
-  construir:
+  diagnostico:
     runs-on: ubuntu-latest
 
     steps:
       - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Preparar Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Preparar Android SDK
-        uses: android-actions/setup-android@v4
-        with:
-          packages: platform-tools
-
-      - name: Localizar projeto Android
-        id: projeto
-        shell: bash
+      - name: Mostrar estrutura do projeto
         run: |
-          set -e
+          echo "===== RAIZ DO REPOSITORIO ====="
+          ls -la
 
-          if [ -f "gradlew" ]; then
-            echo "dir=." >> "$GITHUB_OUTPUT"
+          echo "===== ARQUIVOS DO PROJETO =====
+          "
+          find . -maxdepth 4 -type f \
+            ! -path "./.git/*" \
+            ! -path "./node_modules/*" \
+            ! -path "./.github/*" \
+            | sort | head -n 300
 
-          elif [ -f "android/gradlew" ]; then
-            echo "dir=android" >> "$GITHUB_OUTPUT"
-
-          else
-            GRADLE=$(find . -maxdepth 5 -name gradlew -type f | head -n 1)
-
-            if [ -z "$GRADLE" ]; then
-              echo "ERRO: gradlew nao encontrado."
-              exit 1
-            fi
-
-            DIR=$(dirname "$GRADLE")
-            echo "dir=$DIR" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Compilar APK original
-        shell: bash
+      - name: Criar ZIP do projeto original
         run: |
-          set -e
+          zip -r NEXUS350-PROJETO-ORIGINAL.zip . \
+            -x ".git/*" \
+            -x "*/node_modules/*"
 
-          cd "${{ steps.projeto.outputs.dir }}"
-
-          chmod +x gradlew
-
-          ./gradlew --no-daemon assembleDebug
-
-      - name: Encontrar APK
-        shell: bash
-        run: |
-          set -e
-
-          mkdir -p entrega
-
-          find . -type f \
-            -path "*/build/outputs/apk/*" \
-            -name "*.apk" \
-            -exec cp {} entrega/ \;
-
-          if [ -z "$(ls -A entrega)" ]; then
-            echo "ERRO: APK nao foi gerado."
-            exit 1
-          fi
-
-          ls -lh entrega
-
-      - name: Disponibilizar APK
+      - name: Disponibilizar projeto para download
         uses: actions/upload-artifact@v4
         with:
-          name: NEXUS-350-NOVA-BUILD-ORIGINAL
-          path: entrega/*.apk
-          retention-days: 30
+          name: NEXUS350-PROJETO-DIAGNOSTICO
+          path: NEXUS350-PROJETO-ORIGINAL.zip
+          retention-days: 7
           
