@@ -1,5 +1,5 @@
 
-name: NEXUS 350 - SONS LOJA VOLTAR APK
+name: NEXUS 350 - APK SONS LOJA CORRIGIDO
 
 on:
   workflow_dispatch:
@@ -19,52 +19,50 @@ jobs:
       - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Instalar Node.js
+      - name: Configurar Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Instalar Java
+      - name: Configurar Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
 
-      - name: Preparar Android SDK
+      - name: Instalar Android SDK
         run: |
           set -e
           SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | head -n 1)
           yes | "$SDKMANAGER" --licenses || true
           "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Encontrar ZIP
+      - name: Localizar ZIP
         run: |
           set -e
           ZIP="$(find "$GITHUB_WORKSPACE" -maxdepth 4 -type f -name 'NEXUS350-SONS-LOJA-VOLTAR.zip' | head -n 1)"
           if [ -z "$ZIP" ]; then
-            echo "ZIP atualizado nao encontrado."
+            echo "ZIP NEXUS 350 nao encontrado."
             exit 1
           fi
-          echo "ZIP encontrado: $ZIP"
           echo "ZIP_PATH=$ZIP" >> "$GITHUB_ENV"
 
-      - name: Extrair projeto e localizar package.json
+      - name: Extrair jogo
         run: |
           set -e
           mkdir -p "$GITHUB_WORKSPACE/extracted"
           unzip -q "$ZIP_PATH" -d "$GITHUB_WORKSPACE/extracted"
 
-          PROJECT="$(find "$GITHUB_WORKSPACE/extracted" -type f -name package.json -not -path '*/node_modules/*' | head -n 1)"
+          PACKAGE="$(find "$GITHUB_WORKSPACE/extracted" -type f -name package.json -not -path '*/node_modules/*' | head -n 1)"
 
-          if [ -z "$PROJECT" ]; then
-            echo "ERRO: package.json nao encontrado."
-            find "$GITHUB_WORKSPACE/extracted" -maxdepth 4 -type f
+          if [ -z "$PACKAGE" ]; then
+            echo "package.json nao encontrado."
             exit 1
           fi
 
-          PROJECT_DIR="$(dirname "$PROJECT")"
-          echo "Projeto localizado: $PROJECT_DIR"
+          PROJECT_DIR="$(dirname "$PACKAGE")"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Projeto localizado: $PROJECT_DIR"
 
       - name: Instalar dependencias
         run: |
@@ -72,7 +70,13 @@ jobs:
           cd "$PROJECT_DIR"
           npm install
 
-      - name: Preparar Capacitor Android
+      - name: Instalar plataforma Android do Capacitor
+        run: |
+          set -e
+          cd "$PROJECT_DIR"
+          npm install @capacitor/android@^7.0.0
+
+      - name: Criar Android e sincronizar
         run: |
           set -e
           cd "$PROJECT_DIR"
@@ -83,18 +87,20 @@ jobs:
 
           npx cap sync android
 
-      - name: Fixar orientacao horizontal
+      - name: Configurar orientacao horizontal
         run: |
           set -e
           MANIFEST="$PROJECT_DIR/android/app/src/main/AndroidManifest.xml"
 
           if [ ! -f "$MANIFEST" ]; then
-            echo "AndroidManifest.xml nao encontrado."
+            echo "Manifest Android nao encontrado."
             exit 1
           fi
 
           python3 - "$MANIFEST" <<'PY'
-          import sys, re, xml.etree.ElementTree as ET
+          import sys
+          import re
+          import xml.etree.ElementTree as ET
 
           path = sys.argv[1]
 
@@ -108,21 +114,20 @@ jobs:
                   1
               )
 
-          pattern = re.compile(r"<activity\\b[^>]*>", re.DOTALL)
+          pattern = re.compile(r"<activity\b[^>]*>", re.DOTALL)
           matches = list(pattern.finditer(text))
 
           if not matches:
-              raise SystemExit("Nenhuma activity encontrada no Manifest.")
-
-          def is_launcher(tag):
-              return (
-                  "android.intent.action.MAIN" in tag
-                  and "android.intent.category.LAUNCHER" in tag
-              )
+              raise SystemExit("Activity nao encontrada.")
 
           target = None
+
           for match in matches:
-              if is_launcher(match.group(0)):
+              tag = match.group(0)
+              if (
+                  "android.intent.action.MAIN" in tag
+                  and "android.intent.category.LAUNCHER" in tag
+              ):
                   target = match
                   break
 
@@ -154,8 +159,7 @@ jobs:
               f.write(text)
 
           ET.parse(path)
-          print("Manifest XML validado.")
-          print("Orientacao horizontal aplicada.")
+          print("Manifest validado. Orientacao horizontal aplicada.")
           PY
 
       - name: Compilar APK
@@ -165,13 +169,13 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Preparar APK
+      - name: Localizar e preparar APK
         run: |
           set -e
           APK="$(find "$PROJECT_DIR/android" -type f -path '*/build/outputs/apk/debug/*.apk' | head -n 1)"
 
           if [ -z "$APK" ]; then
-            echo "APK nao encontrado."
+            echo "APK nao foi gerado."
             exit 1
           fi
 
