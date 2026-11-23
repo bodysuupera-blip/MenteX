@@ -4,9 +4,7 @@ name: NEXUS 350 EVOLUTION 5.0 - APK
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
-      - master
+    branches: [main, master]
 
 permissions:
   contents: read
@@ -30,27 +28,59 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Conferir ambiente
+      - name: Procurar e extrair ZIP V5
         run: |
-          java -version
-          node -v
-          npm -v
+          set -e
+
+          if [ -f NEXUS_350_EVOLUTION_V5_FONTE.zip ]; then
+            unzip -o NEXUS_350_EVOLUTION_V5_FONTE.zip -d .
+          fi
+
+          if [ ! -f www/index.html ]; then
+            echo "ERRO: www/index.html nao encontrado."
+            find . -maxdepth 4 -type f | head -100
+            exit 1
+          fi
+
+          echo "Fonte V5 encontrada!"
+
+      - name: Criar package.json se necessario
+        run: |
+          if [ ! -f package.json ]; then
+            cat > package.json <<'EOF'
+          {
+            "name": "nexus-350-evolution",
+            "version": "5.0.0",
+            "private": true,
+            "dependencies": {
+              "@capacitor/core": "^7.0.0",
+              "@capacitor/android": "^7.0.0"
+            },
+            "devDependencies": {
+              "@capacitor/cli": "^7.0.0"
+            }
+          }
+          EOF
+          fi
 
       - name: Instalar dependencias
-        run: npm install
-
-      - name: Verificar arquivos V5
         run: |
-          test -f www/index.html
+          npm install --no-audit --no-fund
+
+      - name: Verificar arquivos
+        run: |
           test -f package.json
           test -f capacitor.config.json
+          test -f www/index.html
           grep -q "EVOLUTION 5.0" www/index.html
           grep -q "joystick" www/index.html
-          echo "Fonte V5 encontrada!"
+          echo "Arquivos V5 conferidos!"
 
       - name: Criar projeto Android
         run: |
-          npx cap add android
+          if [ ! -d android ]; then
+            npx cap add android
+          fi
           npx cap sync android
 
       - name: Configurar tela horizontal
@@ -68,10 +98,10 @@ jobs:
               )
 
           p.write_text(s)
-          print("Tela horizontal configurada")
+          print("Orientacao horizontal configurada")
           PY
 
-      - name: Corrigir dependencias Kotlin
+      - name: Unificar Kotlin
         run: |
           cat >> android/build.gradle <<'EOF'
 
@@ -80,7 +110,6 @@ jobs:
                   resolutionStrategy.eachDependency { details ->
                       if (details.requested.group == "org.jetbrains.kotlin") {
                           details.useVersion "1.8.22"
-                          details.because "Unificar bibliotecas Kotlin"
                       }
                   }
               }
@@ -91,12 +120,8 @@ jobs:
         run: |
           cd android
           chmod +x gradlew
-
           ./gradlew clean
-
-          ./gradlew assembleDebug \
-            --no-daemon \
-            --max-workers=2
+          ./gradlew assembleDebug --no-daemon --max-workers=2
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
