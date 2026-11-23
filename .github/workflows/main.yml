@@ -37,18 +37,17 @@ jobs:
           yes | "$SDKMANAGER" --licenses || true
           "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Localizar ZIP corrigido
+      - name: Localizar ZIP
         run: |
           set -e
           ZIP="$(find "$GITHUB_WORKSPACE" -maxdepth 4 -type f -name 'NEXUS350-MENU-BOTOES-CORRIGIDOS.zip' | head -n 1)"
 
           if [ -z "$ZIP" ]; then
-            echo "ZIP corrigido nao encontrado."
+            echo "ZIP nao encontrado."
             exit 1
           fi
 
           echo "ZIP_PATH=$ZIP" >> "$GITHUB_ENV"
-          echo "Arquivo encontrado: $ZIP"
 
       - name: Extrair projeto
         run: |
@@ -59,14 +58,13 @@ jobs:
           PACKAGE="$(find "$GITHUB_WORKSPACE/extracted" -type f -name package.json -not -path '*/node_modules/*' | head -n 1)"
 
           if [ -z "$PACKAGE" ]; then
-            echo "package.json nao encontrado no ZIP."
-            find "$GITHUB_WORKSPACE/extracted" -maxdepth 4 -type f
+            echo "package.json nao encontrado."
             exit 1
           fi
 
           PROJECT_DIR="$(dirname "$PACKAGE")"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Projeto localizado: $PROJECT_DIR"
+          echo "Projeto: $PROJECT_DIR"
 
       - name: Instalar dependencias
         run: |
@@ -74,13 +72,13 @@ jobs:
           cd "$PROJECT_DIR"
           npm install
 
-      - name: Instalar plataforma Android
+      - name: Instalar Capacitor Android
         run: |
           set -e
           cd "$PROJECT_DIR"
           npm install @capacitor/android@^7.0.0
 
-      - name: Criar Android e sincronizar
+      - name: Criar Android
         run: |
           set -e
           cd "$PROJECT_DIR"
@@ -91,7 +89,7 @@ jobs:
 
           npx cap sync android
 
-      - name: Fixar orientacao horizontal
+      - name: Configurar orientacao horizontal
         run: |
           set -e
           MANIFEST="$PROJECT_DIR/android/app/src/main/AndroidManifest.xml"
@@ -103,67 +101,60 @@ jobs:
 
           python3 - "$MANIFEST" <<'PY'
           import sys
-          import re
           import xml.etree.ElementTree as ET
 
-          path = sys.argv[1]
+          manifest_path = sys.argv[1]
 
-          with open(path, "r", encoding="utf-8") as f:
-              text = f.read()
+          android = "http://schemas.android.com/apk/res/android"
+          ET.register_namespace("android", android)
 
-          if "xmlns:android=" not in text:
-              text = text.replace(
-                  "<manifest",
-                  '<manifest xmlns:android="http://schemas.android.com/apk/res/android',
-                  1
-              )
+          tree = ET.parse(manifest_path)
+          root = tree.getroot()
 
-          pattern = re.compile(r"<activity\\b[^>]*>", re.DOTALL)
-          matches = list(pattern.finditer(text))
+          app = root.find("application")
+          if app is None:
+              raise SystemExit("Tag application nao encontrada.")
 
-          if not matches:
-              raise SystemExit("Nenhuma activity encontrada.")
+          launcher = None
 
-          target = None
+          for activity in app.findall("activity"):
+              for intent in activity.findall("intent-filter"):
+                  actions = [
+                      a.get(f"{{{android}}}name")
+                      for a in intent.findall("action")
+                  ]
+                  categories = [
+                      c.get(f"{{{android}}}name")
+                      for c in intent.findall("category")
+                  ]
 
-          for match in matches:
-              tag = match.group(0)
-              if (
-                  "android.intent.action.MAIN" in tag
-                  and "android.intent.category.LAUNCHER" in tag
-              ):
-                  target = match
+                  if (
+                      "android.intent.action.MAIN" in actions
+                      and "android.intent.category.LAUNCHER" in categories
+                  ):
+                      launcher = activity
+                      break
+
+              if launcher is not None:
                   break
 
-          if target is None:
-              target = matches[0]
+          if launcher is None:
+              print("Launcher nao encontrado. Activities disponiveis:")
+              for activity in app.findall("activity"):
+                  print(activity.attrib)
+              raise SystemExit("Activity principal nao encontrada.")
 
-          tag = target.group(0)
+          launcher.set(f"{{{android}}}screenOrientation", "landscape")
+          launcher.set(f"{{{android}}}resizeableActivity", "false")
 
-          tag = re.sub(
-              r'\\s+android:screenOrientation="[^"]*"',
-              '',
-              tag
+          tree.write(
+              manifest_path,
+              encoding="utf-8",
+              xml_declaration=True
           )
 
-          tag = re.sub(
-              r'\\s+android:resizeableActivity="[^"]*"',
-              '',
-              tag
-          )
-
-          tag = tag[:-1] + (
-              ' android:screenOrientation="landscape"'
-              ' android:resizeableActivity="false">'
-          )
-
-          text = text[:target.start()] + tag + text[target.end():]
-
-          with open(path, "w", encoding="utf-8") as f:
-              f.write(text)
-
-          ET.parse(path)
-          print("Manifest validado. Orientacao horizontal aplicada.")
+          ET.parse(manifest_path)
+          print("Orientacao horizontal configurada.")
           PY
 
       - name: Compilar APK
@@ -176,15 +167,17 @@ jobs:
       - name: Preparar APK
         run: |
           set -e
+
           APK="$(find "$PROJECT_DIR/android" -type f -path '*/build/outputs/apk/debug/*.apk' | head -n 1)"
 
           if [ -z "$APK" ]; then
-            echo "APK nao foi encontrado."
+            echo "APK nao encontrado."
             exit 1
           fi
 
           mkdir -p "$GITHUB_WORKSPACE/resultado"
           cp "$APK" "$GITHUB_WORKSPACE/resultado/NEXUS350-MENU-CORRIGIDO.apk"
+
           ls -lh "$GITHUB_WORKSPACE/resultado"
 
       - name: Publicar APK
