@@ -1,5 +1,5 @@
 
-name: NEXUS 350 - V5 TELAS ANIMADAS APK
+name: NEXUS 350 - V5 HORIZONTAL FIXO
 
 on:
   workflow_dispatch:
@@ -35,7 +35,7 @@ jobs:
             -name sdkmanager -type f | head -n 1)
 
           if [ -z "$SDKMANAGER" ]; then
-            echo "sdkmanager nao encontrado."
+            echo "ERRO: sdkmanager nao encontrado."
             exit 1
           fi
 
@@ -56,11 +56,11 @@ jobs:
             | head -n 1)
 
           if [ -z "$ZIP" ]; then
-            echo "ZIP V5 nao encontrado."
+            echo "ERRO: ZIP V5 nao encontrado."
             exit 1
           fi
 
-          echo "ZIP encontrado: $ZIP"
+          echo "ZIP localizado: $ZIP"
 
           mkdir -p extracted
           unzip -q "$ZIP" -d extracted
@@ -75,7 +75,7 @@ jobs:
             -printf '%h\n' | head -n 1)
 
           if [ -z "$PROJECT" ]; then
-            echo "package.json nao encontrado."
+            echo "ERRO: package.json nao encontrado."
             exit 1
           fi
 
@@ -109,20 +109,49 @@ jobs:
 
           npx cap sync android
 
-      - name: Configurar tela horizontal
+      - name: FIX DEFINITIVO - HORIZONTAL UNICO
         shell: bash
         run: |
           set -e
 
           MANIFEST="$PROJECT/android/app/src/main/AndroidManifest.xml"
 
-          if [ -f "$MANIFEST" ]; then
-            sed -i 's/android:screenOrientation="[^"]*"/android:screenOrientation="landscape"/g' "$MANIFEST"
-
-            if ! grep -q 'android:screenOrientation="landscape"' "$MANIFEST"; then
-              sed -i 's/<activity /<activity android:screenOrientation="landscape" /' "$MANIFEST"
-            fi
+          if [ ! -f "$MANIFEST" ]; then
+            echo "ERRO: AndroidManifest.xml nao encontrado."
+            exit 1
           fi
+
+          python3 - "$MANIFEST" <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+
+          manifest_path = sys.argv[1]
+          android = "{http://schemas.android.com/apk/res/android}"
+
+          tree = ET.parse(manifest_path)
+          root = tree.getroot()
+
+          activities = root.findall(".//activity")
+
+          if not activities:
+              raise SystemExit("ERRO: Nenhuma activity encontrada.")
+
+          for activity in activities:
+              activity.set(android + "screenOrientation", "landscape")
+              activity.set(android + "resizeableActivity", "false")
+
+          tree.write(
+              manifest_path,
+              encoding="utf-8",
+              xml_declaration=True
+          )
+
+          print("Todas as activities foram travadas em LANDSCAPE.")
+          print("Reverse landscape e retrato nao serao permitidos.")
+          PY
+
+          echo "Conferencia de orientacao:"
+          grep -o 'screenOrientation="[^"]*"' "$MANIFEST" || true
 
       - name: Compilar APK
         shell: bash
@@ -130,7 +159,9 @@ jobs:
           set -e
 
           cd "$PROJECT/android"
+
           chmod +x gradlew
+
           ./gradlew assembleDebug
 
       - name: Localizar APK
@@ -142,18 +173,21 @@ jobs:
             -type f -name '*.apk' | head -n 1)
 
           if [ -z "$APK" ]; then
-            echo "APK nao encontrado."
+            echo "ERRO: APK nao foi gerado."
             exit 1
           fi
 
           mkdir -p resultado
-          cp "$APK" resultado/NEXUS350_V5.apk
+
+          cp "$APK" resultado/NEXUS350_HORIZONTAL_FIXO.apk
+
+          echo "APK encontrado e preparado."
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: NEXUS350-V5-TELAS-ANIMADAS
-          path: resultado/NEXUS350_V5.apk
+          name: NEXUS350-HORIZONTAL-FIXO
+          path: resultado/NEXUS350_HORIZONTAL_FIXO.apk
           if-no-files-found: error
           retention-days: 30
           
