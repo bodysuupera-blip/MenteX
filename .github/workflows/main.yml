@@ -1,5 +1,5 @@
 
-name: NEXUS 350 - APK COM ICONE REDONDO
+name: NEXUS 350 - GERAR APK ATUALIZADO
 
 on:
   workflow_dispatch:
@@ -15,7 +15,7 @@ jobs:
       - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Configurar Node
+      - name: Configurar Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -26,74 +26,60 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Localizar e extrair fonte
-        shell: bash
+      - name: Extrair fonte Nexus 350
         run: |
           set -e
+          ZIP="NEXUS350_ATUALIZACAO_ICONE_REDONDO_FONTE.zip"
 
-          ZIP=$(find . -type f -name 'NEXUS350-BOAS-VINDAS-APK.zip' | head -n 1)
-
-          if [ -z "$ZIP" ]; then
-            ZIP=$(find . -type f -name '*.zip' | head -n 1)
-          fi
-
-          if [ -z "$ZIP" ]; then
-            echo "ERRO: Nenhum ZIP da fonte encontrado no repositorio"
+          if [ ! -f "$ZIP" ]; then
+            echo "ERRO: ZIP da fonte atualizado nao encontrado"
+            ls -la
             exit 1
           fi
 
-          echo "Fonte encontrada: $ZIP"
+          mkdir -p nexus_fonte
+          unzip -o "$ZIP" -d nexus_fonte
 
-          mkdir -p /tmp/nexus_fonte
-          unzip -oq "$ZIP" -d /tmp/nexus_fonte
+          PROJECT=$(find nexus_fonte -type f -name package.json | head -n 1)
 
-          PACKAGE=$(find /tmp/nexus_fonte -type f -name package.json | head -n 1)
-
-          if [ -z "$PACKAGE" ]; then
-            echo "ERRO: package.json nao encontrado dentro do ZIP"
+          if [ -z "$PROJECT" ]; then
+            echo "ERRO: package.json nao encontrado"
             exit 1
           fi
 
-          PROJECT=$(dirname "$PACKAGE")
-
-          echo "Projeto localizado em: $PROJECT"
-          echo "PROJECT_DIR=$PROJECT" >> $GITHUB_ENV
+          DIR=$(dirname "$PROJECT")
+          echo "PROJECT_DIR=$DIR" >> "$GITHUB_ENV"
+          echo "Projeto encontrado: $DIR"
 
       - name: Instalar dependencias
-        shell: bash
         run: |
           cd "$PROJECT_DIR"
           npm install
 
-      - name: Preparar Capacitor
-        shell: bash
+      - name: Preparar Capacitor Android
         run: |
           cd "$PROJECT_DIR"
           npx cap add android
 
-      - name: Gerar icones
-        shell: bash
-        run: |
-          cd "$PROJECT_DIR"
-          npx capacitor-assets generate --android
-
-      - name: Sincronizar Android
-        shell: bash
+      - name: Sincronizar projeto Android
         run: |
           cd "$PROJECT_DIR"
           npx cap sync android
 
-      - name: Compilar APK
-        shell: bash
+      - name: Configurar Gradle
         run: |
           cd "$PROJECT_DIR/android"
           chmod +x gradlew
+
+      - name: Gerar APK
+        run: |
+          cd "$PROJECT_DIR/android"
           ./gradlew --no-daemon assembleDebug
 
-      - name: Enviar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: NEXUS350-APK-ICONE-REDONDO
-          path: ${{ env.PROJECT_DIR }}/android/app/build/outputs/apk/debug/app-debug.apk
+          name: NEXUS350-APK-ATUALIZADO
+          path: nexus_fonte/**/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           
