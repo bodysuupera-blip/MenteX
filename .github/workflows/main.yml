@@ -1,11 +1,11 @@
 
-name: NEXUS 350 - APK SONS LOJA CORRIGIDO
+name: NEXUS 350 - MENU CORRIGIDO APK
 
 on:
   workflow_dispatch:
   push:
     paths:
-      - 'NEXUS350-SONS-LOJA-VOLTAR.zip'
+      - 'NEXUS350-MENU-BOTOES-CORRIGIDOS.zip'
       - '.github/workflows/nexus350.yml'
 
 permissions:
@@ -37,17 +37,20 @@ jobs:
           yes | "$SDKMANAGER" --licenses || true
           "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Localizar ZIP
+      - name: Localizar ZIP corrigido
         run: |
           set -e
-          ZIP="$(find "$GITHUB_WORKSPACE" -maxdepth 4 -type f -name 'NEXUS350-SONS-LOJA-VOLTAR.zip' | head -n 1)"
+          ZIP="$(find "$GITHUB_WORKSPACE" -maxdepth 4 -type f -name 'NEXUS350-MENU-BOTOES-CORRIGIDOS.zip' | head -n 1)"
+
           if [ -z "$ZIP" ]; then
-            echo "ZIP NEXUS 350 nao encontrado."
+            echo "ZIP corrigido nao encontrado."
             exit 1
           fi
-          echo "ZIP_PATH=$ZIP" >> "$GITHUB_ENV"
 
-      - name: Extrair jogo
+          echo "ZIP_PATH=$ZIP" >> "$GITHUB_ENV"
+          echo "Arquivo encontrado: $ZIP"
+
+      - name: Extrair projeto
         run: |
           set -e
           mkdir -p "$GITHUB_WORKSPACE/extracted"
@@ -56,7 +59,8 @@ jobs:
           PACKAGE="$(find "$GITHUB_WORKSPACE/extracted" -type f -name package.json -not -path '*/node_modules/*' | head -n 1)"
 
           if [ -z "$PACKAGE" ]; then
-            echo "package.json nao encontrado."
+            echo "package.json nao encontrado no ZIP."
+            find "$GITHUB_WORKSPACE/extracted" -maxdepth 4 -type f
             exit 1
           fi
 
@@ -70,7 +74,7 @@ jobs:
           cd "$PROJECT_DIR"
           npm install
 
-      - name: Instalar plataforma Android do Capacitor
+      - name: Instalar plataforma Android
         run: |
           set -e
           cd "$PROJECT_DIR"
@@ -87,13 +91,13 @@ jobs:
 
           npx cap sync android
 
-      - name: Configurar orientacao horizontal
+      - name: Fixar orientacao horizontal
         run: |
           set -e
           MANIFEST="$PROJECT_DIR/android/app/src/main/AndroidManifest.xml"
 
           if [ ! -f "$MANIFEST" ]; then
-            echo "Manifest Android nao encontrado."
+            echo "AndroidManifest.xml nao encontrado."
             exit 1
           fi
 
@@ -114,11 +118,11 @@ jobs:
                   1
               )
 
-          pattern = re.compile(r"<activity\b[^>]*>", re.DOTALL)
+          pattern = re.compile(r"<activity\\b[^>]*>", re.DOTALL)
           matches = list(pattern.finditer(text))
 
           if not matches:
-              raise SystemExit("Activity nao encontrada.")
+              raise SystemExit("Nenhuma activity encontrada.")
 
           target = None
 
@@ -169,25 +173,25 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Localizar e preparar APK
+      - name: Preparar APK
         run: |
           set -e
           APK="$(find "$PROJECT_DIR/android" -type f -path '*/build/outputs/apk/debug/*.apk' | head -n 1)"
 
           if [ -z "$APK" ]; then
-            echo "APK nao foi gerado."
+            echo "APK nao foi encontrado."
             exit 1
           fi
 
           mkdir -p "$GITHUB_WORKSPACE/resultado"
-          cp "$APK" "$GITHUB_WORKSPACE/resultado/NEXUS350-SONS-LOJA-VOLTAR.apk"
+          cp "$APK" "$GITHUB_WORKSPACE/resultado/NEXUS350-MENU-CORRIGIDO.apk"
           ls -lh "$GITHUB_WORKSPACE/resultado"
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: NEXUS350-SONS-LOJA-VOLTAR-APK
-          path: resultado/NEXUS350-SONS-LOJA-VOLTAR.apk
+          name: NEXUS350-MENU-CORRIGIDO-APK
+          path: resultado/NEXUS350-MENU-CORRIGIDO.apk
           if-no-files-found: error
           retention-days: 30
           
