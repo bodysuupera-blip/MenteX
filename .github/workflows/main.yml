@@ -4,9 +4,7 @@ name: NEXUS 350 EVOLUTION - APK
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
-      - master
+    branches: [main, master]
 
 permissions:
   contents: read
@@ -30,6 +28,16 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-nexus350-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-nexus350-${{ runner.os }}-
+
       - name: Criar estrutura Web
         run: |
           mkdir -p www
@@ -42,44 +50,10 @@ jobs:
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
           <title>Nexus 350 Evolution</title>
-          <style>
-          *{box-sizing:border-box}
-          body{
-            margin:0;
-            background:radial-gradient(circle,#1b3260,#050914);
-            color:#fff;
-            font-family:Arial;
-            height:100vh;
-            display:flex;
-            align-items:center;
-            justify-content:center;
-            text-align:center;
-            overflow:hidden
-          }
-          .box{padding:20px}
-          h1{
-            font-size:48px;
-            color:#5de0ff;
-            text-shadow:0 0 25px #008cff
-          }
-          button{
-            padding:18px 45px;
-            border:0;
-            border-radius:15px;
-            background:#087dff;
-            color:white;
-            font-size:22px;
-            font-weight:bold
-          }
-          </style>
           </head>
           <body>
-          <div class="box">
-          <h1>NEXUS 350</h1>
-          <h2>EVOLUTION</h2>
-          <p>Uma nova aventura está começando!</p>
-          <button onclick="alert('Nexus 350 Evolution')">JOGAR</button>
-          </div>
+          <h1>NEXUS 350 EVOLUTION</h1>
+          <p>Nova aventura!</p>
           </body>
           </html>
           EOF
@@ -95,7 +69,7 @@ jobs:
         run: |
           npm install @capacitor/core @capacitor/cli @capacitor/android
 
-      - name: Criar configuracao
+      - name: Configurar Capacitor
         run: |
           cat > capacitor.config.json <<'EOF'
           {
@@ -112,11 +86,31 @@ jobs:
       - name: Sincronizar Android
         run: npx cap sync android
 
-      - name: Compilar APK
+      - name: Compilar APK com tentativas
+        shell: bash
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug
+
+          for tentativa in 1 2 3; do
+            echo "Tentativa $tentativa de 3"
+
+            if ./gradlew assembleDebug \
+              --no-daemon \
+              --max-workers=2 \
+              --stacktrace; then
+              echo "APK compilado com sucesso!"
+              exit 0
+            fi
+
+            if [ "$tentativa" -lt 3 ]; then
+              echo "Falha temporaria. Aguardando 30 segundos..."
+              sleep 30
+            fi
+          done
+
+          echo "Todas as tentativas falharam."
+          exit 1
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
