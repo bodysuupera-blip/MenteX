@@ -1,5 +1,5 @@
 
-name: NEXUS 350 - APK RECUPERADO COM NOVO ICONE
+name: NEXUS 350 - RECUPERAR E GERAR APK
 
 on:
   workflow_dispatch:
@@ -15,24 +15,34 @@ jobs:
       - name: Baixar repositório
         uses: actions/checkout@v4
 
-      - name: Localizar projeto Nexus
+      - name: Localizar e extrair projeto Nexus
         run: |
-          if [ -f "nexus-recovered/package.json" ]; then
-            echo "PROJECT_DIR=nexus-recovered" >> $GITHUB_ENV
-          elif [ -f "package.json" ]; then
-            echo "PROJECT_DIR=." >> $GITHUB_ENV
-          else
-            echo "ERRO: package.json do Nexus não encontrado"
-            find . -maxdepth 4 -name package.json
+          ZIP=$(find . -maxdepth 3 -name "NEXUS-PROJETO-RECUPERADO-APK-ICON.zip" | head -n 1)
+
+          if [ -z "$ZIP" ]; then
+            echo "ZIP do Nexus não encontrado no repositório"
             exit 1
           fi
 
-      - name: Configurar Node.js
+          mkdir -p recovered
+          unzip -o "$ZIP" -d recovered
+
+          PROJECT=$(find recovered -name package.json -printf '%h\n' | head -n 1)
+
+          if [ -z "$PROJECT" ]; then
+            echo "package.json não encontrado após extração"
+            exit 1
+          fi
+
+          echo "PROJECT_DIR=$PROJECT" >> $GITHUB_ENV
+          echo "Projeto encontrado: $PROJECT"
+
+      - name: Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Configurar Java 17
+      - name: Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -46,14 +56,10 @@ jobs:
       - name: Preparar Android
         run: |
           cd "$PROJECT_DIR"
-
-          if [ ! -d android ]; then
-            npx cap add android
-          fi
-
+          npx cap add android
           npx cap sync android
 
-      - name: Aplicar ícones do Nexus
+      - name: Aplicar ícones
         run: |
           cd "$PROJECT_DIR"
 
@@ -73,10 +79,10 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Publicar APK
+      - name: Salvar APK
         uses: actions/upload-artifact@v4
         with:
-          name: NEXUS-350-NOVO-ICONE
-          path: ${{ env.PROJECT_DIR }}/android/app/build/outputs/apk/debug/app-debug.apk
+          name: NEXUS-350-APK
+          path: recovered/**/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           
