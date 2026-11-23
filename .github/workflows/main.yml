@@ -190,4 +190,3 @@ jobs:
           path: resultado/NEXUS350_HORIZONTAL_FIXO.apk
           if-no-files-found: error
           retention-days: 30
-          
