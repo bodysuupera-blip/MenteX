@@ -1,5 +1,5 @@
 
-name: NEXUS 350 - APK DA FONTE ORIGINAL
+name: NEXUS 350 - COMPILAR FONTE ORIGINAL
 
 on:
   workflow_dispatch:
@@ -26,49 +26,53 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Verificar fonte original
+      - name: Extrair fonte correta
+        shell: bash
         run: |
           set -e
-          test -f package.json
-          test -f capacitor.config.json
-          test -f www/index.html
-          test -f www/game.js
-          test -f www/style.css
 
-          echo "FONTE NEXUS 350 CONFIRMADA"
-          ls -lh www
+          ZIP="NEXUS350_FONTE_ORIGINAL_SEM_MUDANCAS.zip"
+
+          if [ ! -f "$ZIP" ]; then
+            echo "ERRO: A fonte original ZIP nao esta na raiz do repositorio."
+            echo "Arquivos encontrados:"
+            ls -la
+            exit 1
+          fi
+
+          mkdir -p fonte_nexus
+          unzip -oq "$ZIP" -d fonte_nexus
+
+          test -f fonte_nexus/package.json
+          test -f fonte_nexus/capacitor.config.json
+          test -f fonte_nexus/www/index.html
+          test -f fonte_nexus/www/game.js
+          test -f fonte_nexus/www/style.css
+
+          echo "FONTE ORIGINAL VALIDADA"
 
       - name: Instalar dependencias
+        working-directory: fonte_nexus
         run: npm install
 
-      - name: Verificar arquivos do jogo
-        run: |
-          test -s www/index.html
-          test -s www/game.js
-          test -s www/style.css
-
-      - name: Adicionar Android
+      - name: Instalar plataforma Android
+        working-directory: fonte_nexus
         run: npx cap add android
 
-      - name: Sincronizar jogo original
+      - name: Sincronizar Android
+        working-directory: fonte_nexus
         run: npx cap sync android
 
-      - name: Conferir arquivos copiados
-        run: |
-          test -f android/app/src/main/assets/public/index.html
-          test -f android/app/src/main/assets/public/game.js
-          test -f android/app/src/main/assets/public/style.css
-
       - name: Compilar APK
+        working-directory: fonte_nexus/android
         run: |
-          cd android
           chmod +x gradlew
           ./gradlew --no-daemon assembleDebug
 
-      - name: Enviar APK
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: NEXUS350-APK-FONTE-ORIGINAL
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: NEXUS350-FONTE-ORIGINAL
+          path: fonte_nexus/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           
