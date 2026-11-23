@@ -1,5 +1,5 @@
 
-name: NEXUS 350 - TROCAR ICONE ORIGINAL
+name: NEXUS 350 - NOVA BUILD SEM ALTERAR O JOGO
 
 on:
   workflow_dispatch:
@@ -8,128 +8,58 @@ permissions:
   contents: read
 
 jobs:
-  trocar_icone:
+  construir:
     runs-on: ubuntu-latest
 
     steps:
       - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Configurar Java
+      - name: Preparar Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: '17'
 
-      - name: Configurar Android SDK
+      - name: Preparar Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Instalar ferramentas
-        run: |
-          sdkmanager "build-tools;35.0.0"
-          sudo apt-get update
-          sudo apt-get install -y unzip zip imagemagick
-
-      - name: Localizar pacote
+      - name: Localizar projeto Android
+        id: projeto
         shell: bash
         run: |
           set -e
-
-          ZIP=$(find . -type f -name 'NEXUS350_ICONE_RECURSOS_APK_ORIGINAL.zip' | head -1)
-
-          if [ -z "$ZIP" ]; then
-            echo "ZIP de recursos nao encontrado"
-            find . -maxdepth 3 -type f
+          if [ -f "gradlew" ]; then
+            echo "dir=." >> "$GITHUB_OUTPUT"
+          elif [ -f "android/gradlew" ]; then
+            echo "dir=android" >> "$GITHUB_OUTPUT"
+          else
+            echo "ERRO: Gradle nao encontrado no projeto."
             exit 1
           fi
 
-          mkdir -p pacote
-          unzip -oq "$ZIP" -d pacote
-
-          APK=$(find pacote -type f -name 'NEXUS350_APK_ORIGINAL_INALTERADO.apk' | head -1)
-
-          test -n "$APK"
-          test -f pacote/icons/ic_launcher_mdpi.png
-          test -f pacote/icons/ic_launcher_hdpi.png
-          test -f pacote/icons/ic_launcher_xhdpi.png
-          test -f pacote/icons/ic_launcher_xxhdpi.png
-          test -f pacote/icons/ic_launcher_xxxhdpi.png
-
-          echo "APK=$APK" >> "$GITHUB_ENV"
-
-      - name: Extrair APK original
-        run: |
-          mkdir apk_original
-          unzip -oq "$APK" -d apk_original
-
-      - name: Substituir icones mantendo arquivos do jogo
+      - name: Compilar APK sem modificar o jogo
         shell: bash
         run: |
           set -e
+          cd "${{ steps.projeto.outputs.dir }}"
+          chmod +x gradlew
+          ./gradlew assembleDebug
 
-          for density in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
-            case "$density" in
-              mdpi) size=48 ;;
-              hdpi) size=72 ;;
-              xhdpi) size=96 ;;
-              xxhdpi) size=144 ;;
-              xxxhdpi) size=192 ;;
-            esac
-
-            DIR="apk_original/res/mipmap-${density}-v4"
-            SRC="pacote/icons/ic_launcher_${density}.png"
-
-            if [ -d "$DIR" ] && [ -f "$SRC" ]; then
-              for name in ic_launcher.png ic_launcher_round.png ic_launcher_foreground.png; do
-                if [ -f "$DIR/$name" ]; then
-                  convert "$SRC" -resize "${size}x${size}" \
-                    -background none -gravity center \
-                    -extent "${size}x${size}" "$DIR/$name"
-                fi
-              done
-            fi
-          done
-
-      - name: Reempacotar APK
+      - name: Localizar APK gerado
+        shell: bash
         run: |
-          cd apk_original
-          zip -qr -0 ../nexus_unsigned.apk .
+          set -e
+          mkdir -p entrega
+          find . -type f -name "*.apk" -path "*/build/outputs/apk/*" -exec cp {} entrega/ \;
+          if [ -z "$(ls -A entrega)" ]; then
+            echo "ERRO: Nenhum APK foi gerado."
+            exit 1
+          fi
 
-      - name: Alinhar APK
-        run: |
-          $ANDROID_HOME/build-tools/35.0.0/zipalign \
-            -f 4 nexus_unsigned.apk nexus_aligned.apk
-
-      - name: Criar chave de assinatura
-        run: |
-          keytool -genkeypair \
-            -keystore nexus.keystore \
-            -alias nexus \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -storepass nexus350123 \
-            -keypass nexus350123 \
-            -dname "CN=Nexus350, O=Nexus350, C=BR"
-
-      - name: Assinar APK
-        run: |
-          $ANDROID_HOME/build-tools/35.0.0/apksigner sign \
-            --ks nexus.keystore \
-            --ks-key-alias nexus \
-            --ks-pass pass:nexus350123 \
-            --key-pass pass:nexus350123 \
-            --out NEXUS350-ICONE-NOVO.apk \
-            nexus_aligned.apk
-
-      - name: Validar APK
-        run: |
-          $ANDROID_HOME/build-tools/35.0.0/apksigner verify NEXUS350-ICONE-NOVO.apk
-          unzip -t NEXUS350-ICONE-NOVO.apk
-
-      - name: Enviar APK
+      - name: Disponibilizar novo APK
         uses: actions/upload-artifact@v4
         with:
-          name: NEXUS350-APK-ICONE
-          path: NEXUS350-ICONE-NOVO.apk
-          if-no-files-found: error
+          name: NEXUS-350-NOVA-BUILD
+          path: entrega/*.apk
+          retention-days: 30
