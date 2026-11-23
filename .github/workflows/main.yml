@@ -1,5 +1,5 @@
 
-name: NEXUS 350 - CORRIGIR JOGO E ICONE
+name: NEXUS 350 - APK DA FONTE ORIGINAL
 
 on:
   workflow_dispatch:
@@ -15,7 +15,7 @@ jobs:
       - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Configurar Node
+      - name: Configurar Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -26,59 +26,49 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Extrair fonte
+      - name: Verificar fonte original
         run: |
           set -e
-          mkdir -p /tmp/nexus
-          unzip -oq NEXUS350_ATUALIZACAO_ICONE_REDONDO_FONTE.zip -d /tmp/nexus
-
-          DIR=$(find /tmp/nexus -name package.json -printf '%h\n' | head -1)
-
-          if [ -z "$DIR" ]; then
-            echo "package.json nao encontrado"
-            exit 1
-          fi
-
-          echo "PROJECT_DIR=$DIR" >> $GITHUB_ENV
-          echo "Fonte: $DIR"
-
-      - name: Verificar jogo
-        run: |
-          cd "$PROJECT_DIR"
+          test -f package.json
+          test -f capacitor.config.json
           test -f www/index.html
-          grep -q '<canvas' www/index.html
-          grep -q 'id="start"' www/index.html
-          grep -q 'function generate' www/index.html
-          echo "JOGO HTML CONFIRMADO"
+          test -f www/game.js
+          test -f www/style.css
+
+          echo "FONTE NEXUS 350 CONFIRMADA"
+          ls -lh www
 
       - name: Instalar dependencias
-        run: |
-          cd "$PROJECT_DIR"
-          npm install
+        run: npm install
 
-      - name: Preparar Android
+      - name: Verificar arquivos do jogo
         run: |
-          cd "$PROJECT_DIR"
-          npx cap add android
+          test -s www/index.html
+          test -s www/game.js
+          test -s www/style.css
 
-      - name: Copiar jogo para Android
+      - name: Adicionar Android
+        run: npx cap add android
+
+      - name: Sincronizar jogo original
+        run: npx cap sync android
+
+      - name: Conferir arquivos copiados
         run: |
-          cd "$PROJECT_DIR"
-          npx cap sync android
           test -f android/app/src/main/assets/public/index.html
-          grep -q '<canvas' android/app/src/main/assets/public/index.html
-          echo "JOGO COPIADO PARA ANDROID"
+          test -f android/app/src/main/assets/public/game.js
+          test -f android/app/src/main/assets/public/style.css
 
       - name: Compilar APK
         run: |
-          cd "$PROJECT_DIR/android"
+          cd android
           chmod +x gradlew
           ./gradlew --no-daemon assembleDebug
 
-      - name: Publicar APK
+      - name: Enviar APK
         uses: actions/upload-artifact@v4
         with:
-          name: NEXUS350-JOGO-CORRIGIDO
-          path: /tmp/nexus/**/android/app/build/outputs/apk/debug/app-debug.apk
+          name: NEXUS350-APK-FONTE-ORIGINAL
+          path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           
