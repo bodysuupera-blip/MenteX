@@ -1,5 +1,5 @@
 
-name: NEXUS 350 - TROCAR ICONE APK ORIGINAL
+name: NEXUS 350 - TROCAR ICONE SEM RECONSTRUIR JOGO
 
 on:
   workflow_dispatch:
@@ -15,79 +15,56 @@ jobs:
       - name: Baixar repositorio
         uses: actions/checkout@v4
 
-      - name: Configurar Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 17
-
-      - name: Instalar ferramentas Android
+      - name: Instalar ferramentas
         run: |
           sudo apt-get update
-          sudo apt-get install -y apktool zipalign apksigner unzip
+          sudo apt-get install -y unzip zip imagemagick
 
-      - name: Extrair pacote original
+      - name: Extrair pacote
         run: |
           set -e
           mkdir -p pacote
-
           unzip -oq NEXUS350_ICONE_RECURSOS_APK_ORIGINAL.zip -d pacote
 
-          APK=$(find pacote -type f -name 'NEXUS350_APK_ORIGINAL_INALTERADO.apk' | head -1)
+          APK=$(find pacote -type f -name '*.apk' | head -1)
+          ICON=$(find pacote -type f \( -name 'ic_launcher.png' -o -name 'icon.png' \) | grep -v '\.apk$' | head -1)
 
           test -n "$APK"
-          echo "APK_ORIGINAL=$APK" >> $GITHUB_ENV
+          test -n "$ICON"
 
-      - name: Decodificar APK original
+          echo "APK=$APK" >> $GITHUB_ENV
+          echo "ICON=$ICON" >> $GITHUB_ENV
+
+      - name: Extrair APK sem reconstruir recursos
         run: |
-          apktool d -f "$APK_ORIGINAL" -o apk_decodificado
+          set -e
+          mkdir apk_original
+          unzip -oq "$APK" -d apk_original
 
-      - name: Substituir somente recursos de icone
+      - name: Substituir somente PNG dos icones
         run: |
           set -e
 
-          ICONS="pacote/icons"
+          find apk_original/res -type f -name '*.png' | while read FILE; do
+            NAME=$(basename "$FILE")
 
-          for DIR in apk_decodificado/res/mipmap-*; do
-            [ -d "$DIR" ] || continue
-
-            if [ -f "$ICONS/ic_launcher.png" ]; then
-              cp "$ICONS/ic_launcher.png" "$DIR/ic_launcher.png"
-            fi
-
-            if [ -f "$ICONS/ic_launcher_mdpi.png" ]; then
-              cp "$ICONS/ic_launcher_mdpi.png" "$DIR/ic_launcher.png"
-            fi
-
-            if [ -f "$ICONS/ic_launcher_hdpi.png" ]; then
-              cp "$ICONS/ic_launcher_hdpi.png" "$DIR/ic_launcher.png"
-            fi
-
-            if [ -f "$ICONS/ic_launcher_xhdpi.png" ]; then
-              cp "$ICONS/ic_launcher_xhdpi.png" "$DIR/ic_launcher.png"
-            fi
-
-            if [ -f "$ICONS/ic_launcher_xxhdpi.png" ]; then
-              cp "$ICONS/ic_launcher_xxhdpi.png" "$DIR/ic_launcher.png"
-            fi
-
-            if [ -f "$ICONS/ic_launcher_xxxhdpi.png" ]; then
-              cp "$ICONS/ic_launcher_xxxhdpi.png" "$DIR/ic_launcher.png"
-            fi
+            case "$NAME" in
+              ic_launcher.png|ic_launcher_round.png|ic_launcher_foreground.png)
+                echo "Atualizando: $FILE"
+                convert "$ICON" -resize 512x512 \
+                  -background none -gravity center -extent 512x512 "$FILE"
+                ;;
+            esac
           done
 
-      - name: Reconstruir APK
+      - name: Reempacotar APK original
         run: |
-          apktool b apk_decodificado -o nexus_unsigned.apk
-
-      - name: Alinhar APK
-        run: |
-          zipalign -f 4 nexus_unsigned.apk nexus_aligned.apk
+          cd apk_original
+          zip -qr ../nexus_unsigned.apk .
 
       - name: Criar chave de assinatura
         run: |
           keytool -genkeypair \
-            -v \
             -keystore nexus.keystore \
             -alias nexus \
             -keyalg RSA \
@@ -95,7 +72,7 @@ jobs:
             -validity 10000 \
             -storepass nexus350123 \
             -keypass nexus350123 \
-            -dname "CN=Nexus350, OU=Game, O=Nexus, L=Sorocaba, S=SP, C=BR"
+            -dname "CN=Nexus350, O=Nexus350, C=BR"
 
       - name: Assinar APK
         run: |
@@ -104,17 +81,18 @@ jobs:
             --ks-key-alias nexus \
             --ks-pass pass:nexus350123 \
             --key-pass pass:nexus350123 \
-            --out NEXUS350-ICONE-NOVO.apk \
-            nexus_aligned.apk
+            --out NEXUS350-ICONE.apk \
+            nexus_unsigned.apk
 
-      - name: Verificar assinatura
+      - name: Verificar APK
         run: |
-          apksigner verify --verbose NEXUS350-ICONE-NOVO.apk
+          apksigner verify NEXUS350-ICONE.apk
+          unzip -t NEXUS350-ICONE.apk
 
-      - name: Disponibilizar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: NEXUS350-APK-ICONE-NOVO
-          path: NEXUS350-ICONE-NOVO.apk
+          name: NEXUS350-ICONE-ORIGINAL
+          path: NEXUS350-ICONE.apk
           if-no-files-found: error
           
