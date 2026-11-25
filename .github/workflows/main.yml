@@ -1,56 +1,43 @@
 
-name: MENTEX - Assinar APK
+name: MENTEX 2.0 - Gerar APK
 
 on:
   workflow_dispatch:
-
-permissions:
-  contents: read
+  push:
+    branches:
+      - main
 
 jobs:
-  assinar:
+  build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar arquivos do repositorio
+      - name: Baixar projeto
         uses: actions/checkout@v4
 
-      - name: Preparar Java
+      - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Preparar assinatura
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Verificar arquivos
         run: |
-          mkdir -p assinatura
-          echo "${{ secrets.MENTEX_KEYSTORE_BASE64 }}" | base64 -d > assinatura/mentex.jks
+          ls -la
+          test -f settings.gradle || test -f settings.gradle.kts
+          test -d app
 
-      - name: Assinar APK
-        run: |
-          APK="MENTEX-original.apk"
-
-          if [ ! -f "$APK" ]; then
-            echo "APK nao encontrado: $APK"
-            exit 1
-          fi
-
-          $ANDROID_HOME/build-tools/35.0.0/apksigner sign \
-            --ks assinatura/mentex.jks \
-            --ks-key-alias "${{ secrets.MENTEX_KEY_ALIAS }}" \
-            --ks-pass env:KEYSTORE_PASSWORD \
-            --key-pass env:KEY_PASSWORD \
-            --out MENTEX-assinado.apk \
-            "$APK"
-
-          $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose MENTEX-assinado.apk
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.MENTEX_STORE_PASSWORD }}
-          KEY_PASSWORD: ${{ secrets.MENTEX_KEY_PASSWORD }}
+      - name: Gerar APK
+        run: gradle --no-daemon clean assembleDebug
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-APK-ASSINADO
-          path: MENTEX-assinado.apk
+          name: MENTEX-2.0-APK
+          path: app/build/outputs/apk/debug/*.apk
           
