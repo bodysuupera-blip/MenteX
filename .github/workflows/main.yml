@@ -12,57 +12,71 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar repositório
+      - name: Baixar projeto
         uses: actions/checkout@v4
+
+      - name: Configurar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
 
       - name: Configurar Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
-      - name: Localizar e extrair projeto
+      - name: Extrair MENTEX
         run: |
           mkdir -p projeto
-          ZIP=$(find . -maxdepth 2 -type f -iname "*.zip" | grep -i "mentex" | head -n 1)
+
+          ZIP=$(find . -type f -iname '*mentex*.zip' | head -n 1)
 
           if [ -z "$ZIP" ]; then
-            ZIP=$(find . -maxdepth 2 -type f -iname "*.zip" | head -n 1)
-          fi
-
-          if [ -z "$ZIP" ]; then
-            echo "ERRO: Nenhum ZIP encontrado"
+            echo "ZIP do MENTEX não encontrado"
             exit 1
           fi
 
-          echo "ZIP encontrado: $ZIP"
           unzip -o "$ZIP" -d projeto
 
-      - name: Localizar Gradle
-        run: |
-          FILE=$(find projeto -name settings.gradle -o -name settings.gradle.kts | head -n 1)
+          APP=$(find projeto -name capacitor.config.json -printf '%h\n' | head -n 1)
 
-          if [ -z "$FILE" ]; then
-            echo "ERRO: O ZIP não contém projeto Android Gradle"
-            find projeto -maxdepth 4 -type f | head -100
+          if [ -z "$APP" ]; then
+            echo "Configuração Capacitor não encontrada"
             exit 1
           fi
 
-          DIR=$(dirname "$FILE")
-          echo "PROJECT_DIR=$DIR" >> $GITHUB_ENV
+          echo "APP_DIR=$APP" >> $GITHUB_ENV
 
-      - name: Configurar Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Gerar APK
+      - name: Instalar dependências
         run: |
-          cd "$PROJECT_DIR"
-          gradle --no-daemon assembleDebug
+          cd "$APP_DIR"
+          npm install
+          npm install @capacitor/core @capacitor/cli @capacitor/android
 
-      - name: Publicar APK
+      - name: Criar Android
+        run: |
+          cd "$APP_DIR"
+
+          if [ ! -d android ]; then
+            npx cap add android
+          fi
+
+      - name: Sincronizar aplicativo
+        run: |
+          cd "$APP_DIR"
+          npx cap sync android
+
+      - name: Compilar APK
+        run: |
+          cd "$APP_DIR/android"
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-2.0-APK
-          path: projeto/**/build/outputs/apk/debug/*.apk
+          path: projeto/**/android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           
