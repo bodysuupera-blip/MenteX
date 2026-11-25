@@ -12,32 +12,57 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar projeto
+      - name: Baixar repositório
         uses: actions/checkout@v4
 
-      - name: Configurar Java 17
+      - name: Configurar Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
+      - name: Localizar e extrair projeto
+        run: |
+          mkdir -p projeto
+          ZIP=$(find . -maxdepth 2 -type f -iname "*.zip" | grep -i "mentex" | head -n 1)
+
+          if [ -z "$ZIP" ]; then
+            ZIP=$(find . -maxdepth 2 -type f -iname "*.zip" | head -n 1)
+          fi
+
+          if [ -z "$ZIP" ]; then
+            echo "ERRO: Nenhum ZIP encontrado"
+            exit 1
+          fi
+
+          echo "ZIP encontrado: $ZIP"
+          unzip -o "$ZIP" -d projeto
+
+      - name: Localizar Gradle
+        run: |
+          FILE=$(find projeto -name settings.gradle -o -name settings.gradle.kts | head -n 1)
+
+          if [ -z "$FILE" ]; then
+            echo "ERRO: O ZIP não contém projeto Android Gradle"
+            find projeto -maxdepth 4 -type f | head -100
+            exit 1
+          fi
+
+          DIR=$(dirname "$FILE")
+          echo "PROJECT_DIR=$DIR" >> $GITHUB_ENV
+
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.7'
-
-      - name: Verificar arquivos
-        run: |
-          ls -la
-          test -f settings.gradle || test -f settings.gradle.kts
-          test -d app
 
       - name: Gerar APK
-        run: gradle --no-daemon clean assembleDebug
+        run: |
+          cd "$PROJECT_DIR"
+          gradle --no-daemon assembleDebug
 
-      - name: Disponibilizar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-2.0-APK
-          path: app/build/outputs/apk/debug/*.apk
+          path: projeto/**/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
           
