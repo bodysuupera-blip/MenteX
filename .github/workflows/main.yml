@@ -1,24 +1,16 @@
 
-name: MENTEX 2.0 - Gerar APK
+name: MENTEX 2.0 - APK CORRETO
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar projeto
+      - name: Baixar repositório
         uses: actions/checkout@v4
-
-      - name: Configurar Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
 
       - name: Configurar Java
         uses: actions/setup-java@v4
@@ -26,27 +18,48 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Extrair MENTEX
+      - name: Configurar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Encontrar MENTEX
         run: |
           mkdir -p projeto
+          FOUND=""
 
-          ZIP=$(find . -type f -iname '*mentex*.zip' | head -n 1)
+          for ZIP in $(find . -type f -iname "*.zip"); do
+            rm -rf projeto/*
+            unzip -oq "$ZIP" -d projeto
 
-          if [ -z "$ZIP" ]; then
-            echo "ZIP do MENTEX não encontrado"
+            APP=$(find projeto -type f -name capacitor.config.json \
+              -exec dirname {} \; | head -n 1)
+
+            if [ -n "$APP" ]; then
+              if echo "$APP" | grep -qi "mentex"; then
+                FOUND="$APP"
+                echo "MENTEX encontrado: $APP"
+                break
+              fi
+            fi
+          done
+
+          if [ -z "$FOUND" ]; then
+            echo "ERRO: Projeto MENTEX não encontrado."
             exit 1
           fi
 
-          unzip -o "$ZIP" -d projeto
+          echo "APP_DIR=$FOUND" >> $GITHUB_ENV
 
-          APP=$(find projeto -name capacitor.config.json -printf '%h\n' | head -n 1)
-
-          if [ -z "$APP" ]; then
-            echo "Configuração Capacitor não encontrada"
+      - name: Validar identidade
+        run: |
+          echo "Projeto selecionado: $APP_DIR"
+          test -f "$APP_DIR/package.json"
+          test -f "$APP_DIR/www/index.html"
+          grep -qi "mentex" "$APP_DIR/package.json" "$APP_DIR/www/index.html" || {
+            echo "ERRO: Identidade MENTEX não confirmada."
             exit 1
-          fi
-
-          echo "APP_DIR=$APP" >> $GITHUB_ENV
+          }
 
       - name: Instalar dependências
         run: |
@@ -57,26 +70,23 @@ jobs:
       - name: Criar Android
         run: |
           cd "$APP_DIR"
+          npx cap add android
 
-          if [ ! -d android ]; then
-            npx cap add android
-          fi
-
-      - name: Sincronizar aplicativo
+      - name: Sincronizar
         run: |
           cd "$APP_DIR"
           npx cap sync android
 
-      - name: Compilar APK
+      - name: Gerar APK
         run: |
           cd "$APP_DIR/android"
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Disponibilizar APK
+      - name: Publicar MENTEX 2.0
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-2.0-APK
-          path: projeto/**/android/app/build/outputs/apk/debug/*.apk
+          name: MENTEX-2.0-APK-CORRETO
+          path: ${{ env.APP_DIR }}/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           
