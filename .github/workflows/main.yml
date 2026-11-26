@@ -1,5 +1,5 @@
 
-name: Fuga dos Fantasmas - Gerar APK
+name: FUGA DOS FANTASMAS - APK
 
 on:
   workflow_dispatch:
@@ -8,17 +8,12 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  construir:
     runs-on: ubuntu-latest
 
     steps:
       - name: Baixar repositório
         uses: actions/checkout@v4
-
-      - name: Configurar Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
 
       - name: Configurar Java
         uses: actions/setup-java@v4
@@ -26,55 +21,56 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Preparar arquivos do jogo
+      - name: Configurar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Localizar ZIP correto
         shell: bash
         run: |
           set -e
+          ZIP="./Fuga_dos_Fantasmas_Atualizacao.zip"
 
-          ZIP=$(find . -maxdepth 4 -iname "*.zip" | head -n 1)
-
-          if [ -z "$ZIP" ]; then
-            echo "ERRO: Coloque o ZIP do jogo no repositório."
+          if [ ! -f "$ZIP" ]; then
+            echo "ERRO: ZIP Fuga dos Fantasmas não encontrado."
             exit 1
           fi
 
-          mkdir -p /tmp/fuga_source
-          unzip -oq "$ZIP" -d /tmp/fuga_source
+          mkdir -p /tmp/fuga
+          unzip -oq "$ZIP" -d /tmp/fuga
 
-          WEB_DIR=$(find /tmp/fuga_source -type f -name "index.html" -print -quit)
+          HTML=$(find /tmp/fuga -type f -name index.html | head -n 1)
 
-          if [ -z "$WEB_DIR" ]; then
-            echo "ERRO: index.html não encontrado no ZIP."
+          if [ -z "$HTML" ]; then
+            echo "ERRO: index.html não encontrado."
             exit 1
           fi
 
-          WEB_DIR=$(dirname "$WEB_DIR")
+          if ! grep -qi "Fuga dos Fantasmas" "$HTML"; then
+            echo "ERRO: O ZIP não é do Fuga dos Fantasmas."
+            exit 1
+          fi
 
+          WEB_DIR=$(dirname "$HTML")
           mkdir -p www
           cp -r "$WEB_DIR"/. www/
 
           test -f www/index.html
-          test -f www/game.js || test -f www/assets/public/game.js || true
+          test -f www/game.js
+          test -f www/style.css
 
-      - name: Criar projeto Capacitor
-        shell: bash
+          echo "JOGO_VALIDADO=FUGA_DOS_FANTASMAS"
+          echo "JOGO_VALIDADO=FUGA_DOS_FANTASMAS" >> $GITHUB_ENV
+
+      - name: Criar estrutura Android
         run: |
           set -e
 
-          cat > package.json <<'EOF'
-          {
-            "name": "fuga-dos-fantasmas",
-            "version": "1.0.0",
-            "private": true,
-            "scripts": {},
-            "dependencies": {
-              "@capacitor/core": "6.1.2"
-            },
-            "devDependencies": {
-              "@capacitor/cli": "6.1.2"
-            }
-          }
-          EOF
+          npm init -y
+          npm install @capacitor/core@6.1.2
+          npm install --save-dev @capacitor/cli@6.1.2
+          npm install @capacitor/android@6.1.2
 
           cat > capacitor.config.json <<'EOF'
           {
@@ -84,23 +80,23 @@ jobs:
           }
           EOF
 
-          npm install
-          npm install @capacitor/android@6.1.2
           npx cap add android
           npx cap sync android
 
-      - name: Compilar APK
-        shell: bash
+      - name: Garantir nome do aplicativo
         run: |
-          set -e
+          sed -i 's/<string name="app_name">.*<\/string>/<string name="app_name">Fuga dos Fantasmas<\/string>/' android/app/src/main/res/values/strings.xml
+
+      - name: Compilar APK
+        run: |
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Salvar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: FUGA-DOS-FANTASMAS
+          name: FUGA-DOS-FANTASMAS-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           
