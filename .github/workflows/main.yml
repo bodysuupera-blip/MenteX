@@ -1,92 +1,68 @@
 
-name: MENTEX 2.0 - APK CORRETO
+name: Gerar APK - Fuga dos Fantasmas
 
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  build:
+  construir:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar repositório
+      - name: Baixar arquivos
         uses: actions/checkout@v4
 
       - name: Configurar Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: '17'
 
-      - name: Configurar Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      - name: Encontrar MENTEX
+      - name: Localizar projeto
+        shell: bash
         run: |
-          mkdir -p projeto
-          FOUND=""
+          set -e
+          mkdir -p /tmp/fuga
 
-          for ZIP in $(find . -type f -iname "*.zip"); do
-            rm -rf projeto/*
-            unzip -oq "$ZIP" -d projeto
+          ZIP=$(find . -maxdepth 3 -iname "*.zip" | head -n 1)
 
-            APP=$(find projeto -type f -name capacitor.config.json \
-              -exec dirname {} \; | head -n 1)
+          if [ -n "$ZIP" ]; then
+            unzip -oq "$ZIP" -d /tmp/fuga
+          else
+            cp -r . /tmp/fuga
+          fi
 
-            if [ -n "$APP" ]; then
-              if echo "$APP" | grep -qi "mentex"; then
-                FOUND="$APP"
-                echo "MENTEX encontrado: $APP"
-                break
-              fi
-            fi
-          done
+          GRADLE_FILE=$(find /tmp/fuga -name settings.gradle -o -name settings.gradle.kts | head -n 1)
 
-          if [ -z "$FOUND" ]; then
-            echo "ERRO: Projeto MENTEX não encontrado."
+          if [ -z "$GRADLE_FILE" ]; then
+            echo "ERRO: Projeto Android Gradle não encontrado."
+            echo "O APK original não contém necessariamente o código-fonte."
             exit 1
           fi
 
-          echo "APP_DIR=$FOUND" >> $GITHUB_ENV
+          PROJECT_DIR=$(dirname "$GRADLE_FILE")
+          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
 
-      - name: Validar identidade
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Compilar APK
+        working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          echo "Projeto selecionado: $APP_DIR"
-          test -f "$APP_DIR/package.json"
-          test -f "$APP_DIR/www/index.html"
-          grep -qi "mentex" "$APP_DIR/package.json" "$APP_DIR/www/index.html" || {
-            echo "ERRO: Identidade MENTEX não confirmada."
-            exit 1
-          }
+          chmod +x gradlew || true
+          if [ -f gradlew ]; then
+            ./gradlew assembleDebug
+          else
+            gradle assembleDebug
+          fi
 
-      - name: Instalar dependências
-        run: |
-          cd "$APP_DIR"
-          npm install
-          npm install @capacitor/core @capacitor/cli @capacitor/android
-
-      - name: Criar Android
-        run: |
-          cd "$APP_DIR"
-          npx cap add android
-
-      - name: Sincronizar
-        run: |
-          cd "$APP_DIR"
-          npx cap sync android
-
-      - name: Gerar APK
-        run: |
-          cd "$APP_DIR/android"
-          chmod +x gradlew
-          ./gradlew assembleDebug
-
-      - name: Publicar MENTEX 2.0
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-2.0-APK-CORRETO
-          path: ${{ env.APP_DIR }}/android/app/build/outputs/apk/debug/app-debug.apk
+          name: FUGA-DOS-FANTASMAS-APK
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           
