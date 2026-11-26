@@ -1,5 +1,5 @@
 
-name: Gerar APK - Fuga dos Fantasmas
+name: Fuga dos Fantasmas - Gerar APK
 
 on:
   workflow_dispatch:
@@ -8,12 +8,17 @@ permissions:
   contents: read
 
 jobs:
-  construir:
+  build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar arquivos
+      - name: Baixar repositório
         uses: actions/checkout@v4
+
+      - name: Configurar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
 
       - name: Configurar Java
         uses: actions/setup-java@v4
@@ -21,48 +26,81 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Localizar projeto
+      - name: Preparar arquivos do jogo
         shell: bash
         run: |
           set -e
-          mkdir -p /tmp/fuga
 
-          ZIP=$(find . -maxdepth 3 -iname "*.zip" | head -n 1)
+          ZIP=$(find . -maxdepth 4 -iname "*.zip" | head -n 1)
 
-          if [ -n "$ZIP" ]; then
-            unzip -oq "$ZIP" -d /tmp/fuga
-          else
-            cp -r . /tmp/fuga
-          fi
-
-          GRADLE_FILE=$(find /tmp/fuga -name settings.gradle -o -name settings.gradle.kts | head -n 1)
-
-          if [ -z "$GRADLE_FILE" ]; then
-            echo "ERRO: Projeto Android Gradle não encontrado."
-            echo "O APK original não contém necessariamente o código-fonte."
+          if [ -z "$ZIP" ]; then
+            echo "ERRO: Coloque o ZIP do jogo no repositório."
             exit 1
           fi
 
-          PROJECT_DIR=$(dirname "$GRADLE_FILE")
-          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
+          mkdir -p /tmp/fuga_source
+          unzip -oq "$ZIP" -d /tmp/fuga_source
 
-      - name: Configurar Gradle
-        uses: gradle/actions/setup-gradle@v4
+          WEB_DIR=$(find /tmp/fuga_source -type f -name "index.html" -print -quit)
 
-      - name: Compilar APK
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: |
-          chmod +x gradlew || true
-          if [ -f gradlew ]; then
-            ./gradlew assembleDebug
-          else
-            gradle assembleDebug
+          if [ -z "$WEB_DIR" ]; then
+            echo "ERRO: index.html não encontrado no ZIP."
+            exit 1
           fi
 
-      - name: Disponibilizar APK
+          WEB_DIR=$(dirname "$WEB_DIR")
+
+          mkdir -p www
+          cp -r "$WEB_DIR"/. www/
+
+          test -f www/index.html
+          test -f www/game.js || test -f www/assets/public/game.js || true
+
+      - name: Criar projeto Capacitor
+        shell: bash
+        run: |
+          set -e
+
+          cat > package.json <<'EOF'
+          {
+            "name": "fuga-dos-fantasmas",
+            "version": "1.0.0",
+            "private": true,
+            "scripts": {},
+            "dependencies": {
+              "@capacitor/core": "6.1.2"
+            },
+            "devDependencies": {
+              "@capacitor/cli": "6.1.2"
+            }
+          }
+          EOF
+
+          cat > capacitor.config.json <<'EOF'
+          {
+            "appId": "com.fugadosfantasmas.game",
+            "appName": "Fuga dos Fantasmas",
+            "webDir": "www"
+          }
+          EOF
+
+          npm install
+          npm install @capacitor/android@6.1.2
+          npx cap add android
+          npx cap sync android
+
+      - name: Compilar APK
+        shell: bash
+        run: |
+          set -e
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Salvar APK
         uses: actions/upload-artifact@v4
         with:
-          name: FUGA-DOS-FANTASMAS-APK
-          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
+          name: FUGA-DOS-FANTASMAS
+          path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           
